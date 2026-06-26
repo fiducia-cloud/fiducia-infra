@@ -63,12 +63,35 @@ The Raft peer transports must be routable **between** clusters:
 - node ↔ node on **:9090**
 - brain ↔ brain on **:9095**
 
-Pick one and wire the addresses into each overlay's `FIDUCIA_PEERS` /
-`FIDUCIA_BRAIN_PEERS` (currently placeholders):
+Wire the addresses into each overlay's `FIDUCIA_PEERS` / `FIDUCIA_BRAIN_PEERS`
+(currently placeholders). Options:
 
-- a cross-cluster **service mesh** (Cilium Cluster Mesh, Istio multi-primary, Linkerd multicluster),
+- **Cilium Cluster Mesh (recommended)** — eBPF-based, purpose-built for secure
+  pod-to-pod connectivity across clusters/clouds, with stable cross-cluster
+  service DNS. It also gives **Hubble** observability for free (see below), so it
+  solves connectivity *and* network visibility in one choice.
 - **VPN / VPC peering** between the clusters, or
 - **public endpoints with mTLS** (per-node/brain LoadBalancers + cert auth).
+
+## Observability
+
+Layered — pick the right tool per question, don't reach for packet capture first:
+
+| Question | Tool |
+|----------|------|
+| service-to-service & cross-cluster network flows | **Cilium + Hubble** (eBPF; node/cluster/Cluster-Mesh scope) |
+| app request latency / traces / metrics / logs | **OpenTelemetry → Prometheus + Grafana + Loki + Tempo** |
+| "what exact bytes / TCP weirdness / TLS handshake?" | **PCAP** via `ksniff` or cloud packet mirroring → **Wireshark** |
+| always-on security analysis | **Zeek / Suricata** |
+
+The `fiducia-node-sidecar` already exposes `/metrics` and ships logs — that's the
+feed for the Prometheus/OTel layer. **Hubble/Kubeshark tell you *where* to look;
+Wireshark tells you *what* happened once you've captured.** Reach for PCAP only
+for low-level bugs, not as the multi-cluster backbone.
+
+Standardizing on **Cilium** makes this cohesive: Cluster Mesh provides the
+cross-cluster Raft connectivity above, and Hubble provides the network view on
+the same data path.
 
 ## Layout
 
