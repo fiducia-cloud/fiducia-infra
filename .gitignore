@@ -1,0 +1,6 @@
+*.log
+.DS_Store
+# rendered output / local secrets — never commit
+rendered/
+*.local.yaml
+secrets/

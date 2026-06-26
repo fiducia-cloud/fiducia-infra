@@ -1,0 +1,37 @@
+# fiducia-load-balance: stateless regional router (key -> shard -> leader). Plain
+# Deployment — no consensus state, just a cache — so it scales freely. Each
+# cluster runs its own; the Cloudflare edge (fiducia-edge) routes clients to a
+# healthy cluster's LB.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fiducia-load-balance
+  namespace: fiducia
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: fiducia-load-balance
+  template:
+    metadata:
+      labels:
+        app: fiducia-load-balance
+    spec:
+      containers:
+        - name: lb
+          image: ghcr.io/fiducia-cloud/fiducia-load-balance:latest   # TODO: build + push
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { containerPort: 8088, name: http }
+          env:
+            - name: PORT
+              value: "8088"
+            - name: FIDUCIA_NODES
+              value: "http://fiducia-node-client.fiducia.svc.cluster.local:8090"
+            - name: FIDUCIA_BRAIN_URL
+              value: "http://fiducia-brain.fiducia.svc.cluster.local:8095"
+          envFrom:
+            - configMapRef: { name: fiducia-cluster }   # FIDUCIA_SHARD_COUNT
+          readinessProbe: { httpGet: { path: /healthz, port: 8088 }, periodSeconds: 10 }
+          resources:
+            requests: { cpu: "100m", memory: "64Mi" }

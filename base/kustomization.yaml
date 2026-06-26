@@ -1,0 +1,14 @@
+# Base manifests shared by every cluster. NOT applied directly — each overlay
+# under clusters/ adds the cluster-specific ConfigMap (fiducia-cluster), storage
+# class, and replica counts.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: fiducia
+resources:
+  - namespace.yaml
+  - node/statefulset.yaml
+  - node/service.yaml
+  - brain/statefulset.yaml
+  - brain/service.yaml
+  - load-balance/deployment.yaml
+  - load-balance/service.yaml

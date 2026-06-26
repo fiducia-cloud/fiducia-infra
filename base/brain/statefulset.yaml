@@ -1,0 +1,51 @@
+# fiducia-brain: the control plane. Runs ONE member per cluster; the three
+# members (one each in gcp/aws/3rd) form a single Raft group, so the control
+# plane itself survives losing any one cluster (2/3 quorum). StatefulSet for
+# stable identity + durable placement-map storage.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fiducia-brain
+  namespace: fiducia
+spec:
+  serviceName: fiducia-brain
+  replicas: 1                         # one brain member per cluster
+  selector:
+    matchLabels:
+      app: fiducia-brain
+  template:
+    metadata:
+      labels:
+        app: fiducia-brain
+    spec:
+      containers:
+        - name: brain
+          image: ghcr.io/fiducia-cloud/fiducia-brain:latest   # TODO: build + push
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { containerPort: 8095, name: http }
+            - { containerPort: 9095, name: peer }   # cross-cluster brain Raft
+          env:
+            - name: PORT
+              value: "8095"
+            # Replication factor 3 + failure-domain spreading (by cluster) is what
+            # delivers the "survive 1 cluster" guarantee for DATA shards.
+            - name: FIDUCIA_REPLICATION_FACTOR
+              value: "3"
+          envFrom:
+            - configMapRef: { name: fiducia-cluster }   # FIDUCIA_CLUSTER_ID, FIDUCIA_SHARD_COUNT, FIDUCIA_TARGET_NODES, FIDUCIA_BRAIN_PEERS
+          readinessProbe: { httpGet: { path: /readyz, port: 8095 }, initialDelaySeconds: 5, periodSeconds: 10 }
+          livenessProbe:  { httpGet: { path: /healthz, port: 8095 }, periodSeconds: 15 }
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/fiducia-brain }
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 2Gi
+        # storageClassName set per-cluster by the overlay.

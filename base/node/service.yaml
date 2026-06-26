@@ -1,0 +1,28 @@
+# Headless service: stable per-pod DNS for the node StatefulSet, e.g.
+# fiducia-node-0.fiducia-node.fiducia.svc.cluster.local — used for intra-cluster
+# peer addressing. Cross-CLUSTER peer addressing needs routable endpoints (see
+# README "Cross-cluster connectivity").
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-node
+  namespace: fiducia
+spec:
+  clusterIP: None
+  selector:
+    app: fiducia-node
+  ports:
+    - { name: http, port: 8090 }
+    - { name: peer, port: 9090 }
+---
+# Regular client service: the load balancer / sidecars reach any local node here.
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-node-client
+  namespace: fiducia
+spec:
+  selector:
+    app: fiducia-node
+  ports:
+    - { name: http, port: 8090, targetPort: 8090 }

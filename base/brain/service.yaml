@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-brain
+  namespace: fiducia
+spec:
+  clusterIP: None            # headless: stable DNS for the brain member + peer port
+  selector:
+    app: fiducia-brain
+  ports:
+    - { name: http, port: 8095 }
+    - { name: peer, port: 9095 }

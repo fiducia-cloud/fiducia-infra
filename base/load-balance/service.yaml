@@ -1,0 +1,14 @@
+# Public per-cluster entrypoint. The Cloudflare edge (fiducia-edge) lists one of
+# these LoadBalancer addresses per cluster in FIDUCIA_REGIONS and steers clients
+# to a healthy one.
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-load-balance
+  namespace: fiducia
+spec:
+  type: LoadBalancer
+  selector:
+    app: fiducia-load-balance
+  ports:
+    - { name: http, port: 80, targetPort: 8088 }
