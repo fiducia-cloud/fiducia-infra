@@ -131,12 +131,18 @@ the same data path.
 ## Layout
 
 ```
+topology.toml              SOURCE OF TRUTH — clusters, endpoints, shard/RF, connectivity
+tools/
+  render.mjs               topology.toml -> per-cluster inputs + edge regions (--check)
+  render.test.mjs          renderer self-tests
+  clustermesh.sh           Cilium Cluster Mesh bootstrap (enable + connect pairs)
 base/                      shared manifests (don't apply directly)
   node/        StatefulSet (node + sidecar container) + services
   brain/       StatefulSet (1 member/cluster) + headless service
   load-balance/ Deployment + LoadBalancer service
 clusters/                  per-cluster Kustomize overlays
-  gcp/  aws/  hetzner/     set FIDUCIA_CLUSTER, peers, storageClass, replicas
+  gcp/ aws/ hetzner/       kustomization.yaml + GENERATED topology.env & patches.yaml
+generated/edge-regions.json  FIDUCIA_REGIONS for fiducia-edge (generated)
 argocd/                    ApplicationSet fanning out clusters/<name> -> cluster
 ```
 
