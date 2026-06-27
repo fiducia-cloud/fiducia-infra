@@ -94,6 +94,39 @@ So the discovery wiring is: **edit `topology.toml` → `render` → commit → A
 applies each overlay**. Nodes/brains read their peers from the generated
 ConfigMap; the edge reads the region list. One place to declare IPs/DNS.
 
+## Leadership is elected, not declared
+
+`topology.toml` declares **membership** (which peers exist + how to reach them) —
+never **leadership**. There is no "master node" to point k8s or this config at:
+
+- **Kubernetes control plane** — each cluster has its own (GKE/EKS-managed, or
+  kubeadm/k3s on Hetzner). fiducia neither declares nor cares about it; k8s just
+  schedules our pods. Nothing in this repo touches it.
+- **fiducia leadership** — sharded multi-Raft: every shard's replicas elect their
+  own leader, and the brain members elect a brain leader. Leadership is **chosen
+  by Raft at runtime**, spreads across nodes/clusters, and **moves automatically
+  on failure**. A single `fiducia-node` pod leads some shards and follows others,
+  so there isn't even one "master" per cluster.
+
+| Thing | Source | Changes |
+|-------|--------|---------|
+| membership + endpoints | `topology.toml` → `FIDUCIA_PEERS` / `FIDUCIA_BRAIN_PEERS` | only when you edit + render |
+| **which member is leader** | **Raft election** (per shard; per brain group) | continuously; on every failover |
+| current leader for routing | LB cache, seeded by the brain + `NotLeader` redirects | continuously |
+| *preferred* leader (locality) | brain placement map (its own Raft) | scheduler converges via leadership transfer |
+
+Hardcoding a leader would defeat the design — if the declared master died,
+nothing could take over. The point is that election re-runs when a node, or a
+whole cluster, fails.
+
+**Bootstrap (the one seed):** a brand-new Raft group still needs a first member
+to count the first vote — bring up **one** member as a single-member group, then
+add the rest via Raft membership change (join as learner → promote to voter).
+That seed is *not* a permanent master; leadership floats freely once the group
+forms. (In the current single-node build the node self-elects leader of every
+shard at startup; the multi-node election/join path is the `TODO(cluster)` in
+`fiducia-node`'s `consensus.rs`.)
+
 ## Cross-cluster connectivity (the transport)
 
 The peer endpoints above must be routable **between** clusters — node ↔ node on

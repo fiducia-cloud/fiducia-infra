@@ -6,6 +6,11 @@
 # class, replicas) and the edge's region list, so all three clusters discover
 # each other from one place. CI (`npm run check`) fails if anything is stale.
 #
+# This declares MEMBERSHIP (peers + endpoints) only — NOT leadership. Which node
+# leads each shard, and which brain member leads, is ELECTED by Raft at runtime
+# and moves on failure; never hardcode a "master". See README ("Leadership is
+# elected, not declared").
+#
 # Quorum rule: with replication_factor = 3 and one replica per cluster, you need
 # at least 3 clusters; losing any one keeps a 2/3 majority. See README.
 # ─────────────────────────────────────────────────────────────────────────────
