@@ -23,6 +23,9 @@ spec:
       labels:
         app: fiducia-node
     spec:
+      securityContext:
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
       # Spread node pods across zones WITHIN a cluster. Cross-CLUSTER spread of a
       # shard's replicas is enforced by the brain (failure domain = cluster), not
       # by k8s scheduling.
@@ -37,6 +40,13 @@ spec:
         - name: node
           image: ghcr.io/fiducia-cloud/fiducia-node:latest   # TODO: build + push images (see README)
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ "ALL" ] }
+            readOnlyRootFilesystem: true
+            runAsGroup: 10001
+            runAsNonRoot: true
+            runAsUser: 10001
           ports:
             - { containerPort: 8090, name: http }
             - { containerPort: 9090, name: peer }   # cross-cluster Raft transport
@@ -55,6 +65,7 @@ spec:
           livenessProbe:  { httpGet: { path: /healthz, port: 8090 }, periodSeconds: 15 }
           resources:
             requests: { cpu: "250m", memory: "256Mi" }
+            limits: { cpu: "1000m", memory: "1Gi" }
           volumeMounts:
             - { name: data, mountPath: /var/lib/fiducia }
 
@@ -62,6 +73,13 @@ spec:
         - name: sidecar
           image: ghcr.io/fiducia-cloud/fiducia-node-sidecar:latest   # TODO: build + push
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ "ALL" ] }
+            readOnlyRootFilesystem: true
+            runAsGroup: 10001
+            runAsNonRoot: true
+            runAsUser: 10001
           ports:
             - { containerPort: 8091, name: sidecar }
           env:
@@ -87,6 +105,7 @@ spec:
           readinessProbe: { httpGet: { path: /healthz, port: 8091 }, periodSeconds: 10 }
           resources:
             requests: { cpu: "50m", memory: "64Mi" }
+            limits: { cpu: "250m", memory: "256Mi" }
   volumeClaimTemplates:
     - metadata:
         name: data

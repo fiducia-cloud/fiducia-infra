@@ -17,10 +17,20 @@ spec:
       labels:
         app: fiducia-load-balance
     spec:
+      securityContext:
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
       containers:
         - name: lb
           image: ghcr.io/fiducia-cloud/fiducia-load-balance:latest   # TODO: build + push
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ "ALL" ] }
+            readOnlyRootFilesystem: true
+            runAsGroup: 10001
+            runAsNonRoot: true
+            runAsUser: 10001
           ports:
             - { containerPort: 8088, name: http }
           env:
@@ -33,5 +43,7 @@ spec:
           envFrom:
             - configMapRef: { name: fiducia-cluster }   # FIDUCIA_SHARD_COUNT
           readinessProbe: { httpGet: { path: /healthz, port: 8088 }, periodSeconds: 10 }
+          livenessProbe:  { httpGet: { path: /healthz, port: 8088 }, periodSeconds: 15 }
           resources:
             requests: { cpu: "100m", memory: "64Mi" }
+            limits: { cpu: "500m", memory: "256Mi" }

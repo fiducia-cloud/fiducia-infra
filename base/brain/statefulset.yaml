@@ -18,10 +18,20 @@ spec:
       labels:
         app: fiducia-brain
     spec:
+      securityContext:
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
       containers:
         - name: brain
           image: ghcr.io/fiducia-cloud/fiducia-brain:latest   # TODO: build + push
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ "ALL" ] }
+            readOnlyRootFilesystem: true
+            runAsGroup: 10001
+            runAsNonRoot: true
+            runAsUser: 10001
           ports:
             - { containerPort: 8095, name: http }
             - { containerPort: 9095, name: peer }   # cross-cluster brain Raft
@@ -38,6 +48,7 @@ spec:
           livenessProbe:  { httpGet: { path: /healthz, port: 8095 }, periodSeconds: 15 }
           resources:
             requests: { cpu: "100m", memory: "128Mi" }
+            limits: { cpu: "500m", memory: "512Mi" }
           volumeMounts:
             - { name: data, mountPath: /var/lib/fiducia-brain }
   volumeClaimTemplates:
