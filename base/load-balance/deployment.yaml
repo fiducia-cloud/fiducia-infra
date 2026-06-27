@@ -17,10 +17,25 @@ spec:
       labels:
         app: fiducia-load-balance
     spec:
+      # Hardened baseline: run unprivileged, drop all Linux capabilities, and
+      # forbid privilege escalation. The binary listens on a high port (8088) so
+      # it needs no capabilities. rootfs is read-only with a writable /tmp.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: lb
           image: ghcr.io/fiducia-cloud/fiducia-load-balance:latest   # TODO: build + push
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           ports:
             - { containerPort: 8088, name: http }
           env:
