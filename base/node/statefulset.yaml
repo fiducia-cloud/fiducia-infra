@@ -33,10 +33,25 @@ spec:
           labelSelector:
             matchLabels:
               app: fiducia-node
+      # Hardened baseline for both containers: unprivileged, no added Linux
+      # capabilities, no privilege escalation, read-only rootfs (+ writable /tmp).
+      # Raft state lives only on the per-pod PVC, made writable via fsGroup.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: node
           image: ghcr.io/fiducia-cloud/fiducia-node:latest   # TODO: build + push images (see README)
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           ports:
             - { containerPort: 8090, name: http }
             - { containerPort: 9090, name: peer }   # cross-cluster Raft transport
