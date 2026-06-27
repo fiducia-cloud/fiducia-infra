@@ -8,5 +8,8 @@
     "render": "node tools/render.mjs",
     "check": "node tools/render.mjs --check",
     "test": "node --test tools/*.test.mjs"
+  },
+  "dependencies": {
+    "@fiducia/interfaces": "file:../fiducia-interfaces"
   }
 }
