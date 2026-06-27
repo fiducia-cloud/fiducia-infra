@@ -1,0 +1,55 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# fiducia multi-cluster topology — THE single declarative source of truth.
+#
+# Edit this file, then run `node tools/render.mjs` (or `npm run render`). It fans
+# these values out into every cluster's kustomize inputs (peer lists, storage
+# class, replicas) and the edge's region list, so all three clusters discover
+# each other from one place. CI (`npm run check`) fails if anything is stale.
+#
+# Quorum rule: with replication_factor = 3 and one replica per cluster, you need
+# at least 3 clusters; losing any one keeps a 2/3 majority. See README.
+# ─────────────────────────────────────────────────────────────────────────────
+
+cluster_id = "fiducia-prod"
+shard_count = 256
+replication_factor = 3
+
+# How the clusters are wired together at L3/L7. One of:
+#   clustermesh   — Cilium Cluster Mesh (recommended; see tools/clustermesh.sh)
+#   wireguard     — VPN / VPC peering between clusters
+#   public-mtls   — public per-cluster endpoints with mTLS
+connectivity = "clustermesh"
+
+# One [[cluster]] block per Kubernetes cluster. The *_endpoint values are how the
+# OTHER clusters reach this one — replace the placeholders with real DNS/IPs
+# (LoadBalancer addresses, mesh global-service names, or VPN addresses).
+
+[[cluster]]
+name = "gcp"
+platform = "gcp"
+region = "us-central1"
+storage_class = "standard-rwo"
+node_replicas = 3
+brain_endpoint = "brain.gcp.fiducia.cloud:9095"
+node_peer_endpoint = "node.gcp.fiducia.cloud:9090"
+lb_endpoint = "https://gcp.lb.fiducia.cloud"
+
+[[cluster]]
+name = "aws"
+platform = "aws"
+region = "us-east-1"
+storage_class = "gp3"
+node_replicas = 3
+brain_endpoint = "brain.aws.fiducia.cloud:9095"
+node_peer_endpoint = "node.aws.fiducia.cloud:9090"
+lb_endpoint = "https://aws.lb.fiducia.cloud"
+
+[[cluster]]
+name = "hetzner"
+platform = "hetzner"
+region = "eu-central"
+storage_class = "hcloud-volumes"
+node_replicas = 3
+brain_endpoint = "brain.hetzner.fiducia.cloud:9095"
+node_peer_endpoint = "node.hetzner.fiducia.cloud:9090"
+lb_endpoint = "https://hetzner.lb.fiducia.cloud"

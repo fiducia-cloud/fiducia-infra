@@ -28,12 +28,12 @@ spec:
           env:
             - name: PORT
               value: "8095"
-            # Replication factor 3 + failure-domain spreading (by cluster) is what
-            # delivers the "survive 1 cluster" guarantee for DATA shards.
-            - name: FIDUCIA_REPLICATION_FACTOR
-              value: "3"
+          # cluster id, shard count, replication factor, target nodes, and the
+          # cross-cluster brain peers all come from topology.env (see topology.toml).
+          # RF + failure-domain spreading (by cluster) is what delivers the
+          # "survive losing 1 cluster" guarantee for data shards.
           envFrom:
-            - configMapRef: { name: fiducia-cluster }   # FIDUCIA_CLUSTER_ID, FIDUCIA_SHARD_COUNT, FIDUCIA_TARGET_NODES, FIDUCIA_BRAIN_PEERS
+            - configMapRef: { name: fiducia-cluster }
           readinessProbe: { httpGet: { path: /readyz, port: 8095 }, initialDelaySeconds: 5, periodSeconds: 10 }
           livenessProbe:  { httpGet: { path: /healthz, port: 8095 }, periodSeconds: 15 }
           resources:

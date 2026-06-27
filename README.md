@@ -56,22 +56,57 @@ into "3 replicas, one per platform".
   round-trip to the 2nd-fastest cluster**. That's the price of platform-level
   fault tolerance; the brain places shard leaders to minimize it.
 
-## Cross-cluster connectivity (the prerequisite)
+## Stitching the clusters together: one declarative topology
 
-The Raft peer transports must be routable **between** clusters:
+[`topology.toml`](topology.toml) is the **single source of truth** for the whole
+multi-cluster deployment — cluster ids, shard count, replication factor, the
+connectivity mode, and (crucially) every cluster's **reachable endpoints**:
 
-- node ↔ node on **:9090**
-- brain ↔ brain on **:9095**
+```toml
+[[cluster]]
+name = "gcp"
+storage_class = "standard-rwo"
+node_replicas = 3
+brain_endpoint = "brain.gcp.fiducia.cloud:9095"     # how OTHER clusters reach this brain
+node_peer_endpoint = "node.gcp.fiducia.cloud:9090"  # how OTHER clusters reach these nodes
+lb_endpoint = "https://gcp.lb.fiducia.cloud"        # for the edge
+```
 
-Wire the addresses into each overlay's `FIDUCIA_PEERS` / `FIDUCIA_BRAIN_PEERS`
-(currently placeholders). Options:
+`tools/render.mjs` fans that one file out into every cluster's kustomize inputs,
+computing each cluster's cross-cluster peer lists automatically (each cluster
+gets the *other* clusters' endpoints — never itself):
 
-- **Cilium Cluster Mesh (recommended)** — eBPF-based, purpose-built for secure
-  pod-to-pod connectivity across clusters/clouds, with stable cross-cluster
-  service DNS. It also gives **Hubble** observability for free (see below), so it
-  solves connectivity *and* network visibility in one choice.
-- **VPN / VPC peering** between the clusters, or
-- **public endpoints with mTLS** (per-node/brain LoadBalancers + cert auth).
+```sh
+node tools/render.mjs          # write the generated inputs
+node tools/render.mjs --check  # CI: fail if anything is stale
+node --test tools/*.test.mjs   # renderer self-tests
+```
+
+Generated, checked-in outputs (do not hand-edit):
+
+| File | Feeds |
+|------|-------|
+| `clusters/<name>/topology.env` | the `fiducia-cluster` ConfigMap → `FIDUCIA_CLUSTER`, `FIDUCIA_PEERS`, `FIDUCIA_BRAIN_PEERS`, shard count, RF, target nodes |
+| `clusters/<name>/patches.yaml` | per-cluster storage class + node replicas |
+| `generated/edge-regions.json` | `FIDUCIA_REGIONS` for [`fiducia-edge`](https://github.com/fiducia-cloud/fiducia-edge) |
+
+So the discovery wiring is: **edit `topology.toml` → `render` → commit → ArgoCD
+applies each overlay**. Nodes/brains read their peers from the generated
+ConfigMap; the edge reads the region list. One place to declare IPs/DNS.
+
+## Cross-cluster connectivity (the transport)
+
+The peer endpoints above must be routable **between** clusters — node ↔ node on
+**:9090**, brain ↔ brain on **:9095**. Pick a `connectivity` mode in
+`topology.toml`:
+
+- **`clustermesh` (recommended)** — Cilium Cluster Mesh: eBPF pod-to-pod across
+  clusters/clouds with stable global-service DNS (so the endpoints can be e.g.
+  `fiducia-node.fiducia.svc.clusterset.local:9090`). Bootstrap it with
+  [`tools/clustermesh.sh`](tools/clustermesh.sh) (enables mesh on each cluster +
+  connects every pair). Also gives **Hubble** observability for free.
+- **`wireguard`** — VPN / VPC peering between the clusters.
+- **`public-mtls`** — public per-node/brain LoadBalancers with mTLS.
 
 ## Observability
 
@@ -96,12 +131,18 @@ the same data path.
 ## Layout
 
 ```
+topology.toml              SOURCE OF TRUTH — clusters, endpoints, shard/RF, connectivity
+tools/
+  render.mjs               topology.toml -> per-cluster inputs + edge regions (--check)
+  render.test.mjs          renderer self-tests
+  clustermesh.sh           Cilium Cluster Mesh bootstrap (enable + connect pairs)
 base/                      shared manifests (don't apply directly)
   node/        StatefulSet (node + sidecar container) + services
   brain/       StatefulSet (1 member/cluster) + headless service
   load-balance/ Deployment + LoadBalancer service
 clusters/                  per-cluster Kustomize overlays
-  gcp/  aws/  hetzner/     set FIDUCIA_CLUSTER, peers, storageClass, replicas
+  gcp/ aws/ hetzner/       kustomization.yaml + GENERATED topology.env & patches.yaml
+generated/edge-regions.json  FIDUCIA_REGIONS for fiducia-edge (generated)
 argocd/                    ApplicationSet fanning out clusters/<name> -> cluster
 ```
 

@@ -1,0 +1,12 @@
+{
+  "name": "fiducia-infra",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Multi-cluster Kubernetes config for fiducia.cloud. topology.toml is the source of truth; tools/render.mjs fans it out into per-cluster kustomize inputs.",
+  "scripts": {
+    "render": "node tools/render.mjs",
+    "check": "node tools/render.mjs --check",
+    "test": "node --test tools/*.test.mjs"
+  }
+}

@@ -1,0 +1,14 @@
+[
+  {
+    "name": "gcp",
+    "url": "https://gcp.lb.fiducia.cloud"
+  },
+  {
+    "name": "aws",
+    "url": "https://aws.lb.fiducia.cloud"
+  },
+  {
+    "name": "hetzner",
+    "url": "https://hetzner.lb.fiducia.cloud"
+  }
+]
