@@ -1,3 +1,5 @@
+# Per-cluster overlay. Cluster-specific values come from topology.env + patches.yaml,
+# both GENERATED from ../../topology.toml by tools/render.mjs — do not hand-edit them.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: fiducia
@@ -5,15 +7,8 @@ resources:
   - ../../base
 configMapGenerator:
   - name: fiducia-cluster
-    literals:
-      - FIDUCIA_CLUSTER=gcp          # this cluster's failure-domain name
-      - FIDUCIA_CLUSTER_ID=fiducia-prod
-      - FIDUCIA_SHARD_COUNT=256
-      - FIDUCIA_TARGET_NODES=9       # total desired nodes across all 3 clusters
-      # Cross-cluster Raft peers (the OTHER two clusters). TODO: real routable
-      # endpoints — see README "Cross-cluster connectivity".
-      - FIDUCIA_PEERS=node.aws.fiducia.cloud:9090,node.hetzner.fiducia.cloud:9090
-      - FIDUCIA_BRAIN_PEERS=brain.aws.fiducia.cloud:9095,brain.hetzner.fiducia.cloud:9095
+    envs:
+      - topology.env
 generatorOptions:
   disableNameSuffixHash: true
 patches:
