@@ -72,11 +72,17 @@ spec:
             requests: { cpu: "250m", memory: "256Mi" }
           volumeMounts:
             - { name: data, mountPath: /var/lib/fiducia }
+            - { name: tmp, mountPath: /tmp }
 
         # --- sidecar: control-plane heartbeat/metadata + logs/metrics ---
         - name: sidecar
           image: ghcr.io/fiducia-cloud/fiducia-node-sidecar:latest   # TODO: build + push
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           ports:
             - { containerPort: 8091, name: sidecar }
           env:
