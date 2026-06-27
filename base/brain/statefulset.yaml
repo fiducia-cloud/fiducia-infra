@@ -18,10 +18,25 @@ spec:
       labels:
         app: fiducia-brain
     spec:
+      # Hardened baseline: unprivileged, no added capabilities, no privilege
+      # escalation. Listens on a high port (8095). rootfs read-only + writable /tmp;
+      # durable state lives only on the mounted PVC (fsGroup makes it writable).
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: brain
           image: ghcr.io/fiducia-cloud/fiducia-brain:latest   # TODO: build + push
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           ports:
             - { containerPort: 8095, name: http }
             - { containerPort: 9095, name: peer }   # cross-cluster brain Raft
