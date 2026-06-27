@@ -53,6 +53,7 @@ spec:
           livenessProbe:  { httpGet: { path: /healthz, port: 8095 }, periodSeconds: 15 }
           resources:
             requests: { cpu: "100m", memory: "128Mi" }
+            limits: { cpu: "500m", memory: "512Mi" }
           volumeMounts:
             - { name: data, mountPath: /var/lib/fiducia-brain }
             - { name: tmp, mountPath: /tmp }

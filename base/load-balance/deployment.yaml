@@ -48,8 +48,10 @@ spec:
           envFrom:
             - configMapRef: { name: fiducia-cluster }   # FIDUCIA_SHARD_COUNT
           readinessProbe: { httpGet: { path: /healthz, port: 8088 }, periodSeconds: 10 }
+          livenessProbe:  { httpGet: { path: /healthz, port: 8088 }, periodSeconds: 15 }
           resources:
             requests: { cpu: "100m", memory: "64Mi" }
+            limits: { cpu: "500m", memory: "256Mi" }
           volumeMounts:
             - { name: tmp, mountPath: /tmp }
       volumes:
