@@ -1,0 +1,25 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  topology:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # renderer self-tests
+      - run: node --test tools/*.test.mjs
+      # fail if the generated per-cluster inputs are stale vs topology.toml
+      - run: node tools/render.mjs --check
+      # every overlay must still build
+      - run: |
+          for c in clusters/*/; do
+            echo "== $c =="
+            kubectl kustomize "$c" >/dev/null
+          done
