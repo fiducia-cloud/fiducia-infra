@@ -108,6 +108,13 @@ spec:
           readinessProbe: { httpGet: { path: /healthz, port: 8091 }, periodSeconds: 10 }
           resources:
             requests: { cpu: "50m", memory: "64Mi" }
+          volumeMounts:
+            - { name: tmp-sidecar, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: tmp-sidecar
+          emptyDir: {}
   volumeClaimTemplates:
     - metadata:
         name: data
