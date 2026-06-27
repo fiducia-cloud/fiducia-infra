@@ -38,9 +38,16 @@ spec:
               drop: ["ALL"]
           ports:
             - { containerPort: 8088, name: http }
+            - { containerPort: 8443, name: https }
           env:
             - name: PORT
               value: "8088"
+            - name: TLS_PORT
+              value: "8443"
+            - name: FIDUCIA_TLS_CERT_PATH
+              value: "/etc/fiducia/tls/tls.crt"
+            - name: FIDUCIA_TLS_KEY_PATH
+              value: "/etc/fiducia/tls/tls.key"
             - name: FIDUCIA_NODES
               value: "http://fiducia-node-client.fiducia.svc.cluster.local:8090"
             - name: FIDUCIA_BRAIN_URL
@@ -54,6 +61,10 @@ spec:
             limits: { cpu: "500m", memory: "256Mi" }
           volumeMounts:
             - { name: tmp, mountPath: /tmp }
+            - { name: tls, mountPath: /etc/fiducia/tls, readOnly: true }
       volumes:
         - name: tmp
           emptyDir: {}
+        - name: tls
+          secret:
+            secretName: fiducia-load-balance-tls

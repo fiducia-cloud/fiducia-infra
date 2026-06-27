@@ -119,6 +119,32 @@ Hardcoding a leader would defeat the design — if the declared master died,
 nothing could take over. The point is that election re-runs when a node, or a
 whole cluster, fails.
 
+## Traffic Paths
+
+The load balancer is only for customer/application coordination API traffic.
+Internal control and replication planes use direct pod/service paths:
+
+| Caller | Target | Uses `fiducia-load-balance`? | Path |
+|--------|--------|------------------------------|------|
+| external clients / future Cloudflare edge | coordination API | yes | `client -> regional LB :443 -> shard leader node` |
+| in-cluster application pods | coordination API | yes | `app pod -> svc/fiducia-load-balance -> shard leader node` |
+| `fiducia-load-balance` | data-plane nodes | direct after routing | `LB -> fiducia-node-peer/fiducia-node-client :8090` |
+| `fiducia-node` | other `fiducia-node` peers | no | direct Raft RPC from `FIDUCIA_PEERS` to `/raft/{shard}/{append,vote}` |
+| `fiducia-node-sidecar` | its local node | no | `localhost:8090 /v1/status` inside the same pod |
+| `fiducia-node-sidecar` | `fiducia-brain` | no | direct `svc/fiducia-brain:8095 /v1/nodes/{id}/heartbeat` |
+| `fiducia-brain` | node membership/placement state | no | receives sidecar heartbeats; it does not route through the LB |
+| Kubernetes kubelet | pod health probes | no | direct pod IP HTTP probes on each container port |
+
+TLS terminates at the regional LB on port 443. The LB still keeps a private HTTP
+listener on `PORT` for health probes and private callers. Before deploying the
+base manifests, create the per-cluster secret:
+
+```sh
+kubectl -n fiducia create secret tls fiducia-load-balance-tls \
+  --cert=/path/to/tls.crt \
+  --key=/path/to/tls.key
+```
+
 **Bootstrap (the one seed):** a brand-new Raft group still needs a first member
 to count the first vote — bring up **one** member as a single-member group, then
 add the rest via Raft membership change (join as learner → promote to voter).
