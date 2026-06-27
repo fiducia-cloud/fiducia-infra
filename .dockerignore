@@ -1,0 +1,10 @@
+node_modules
+rendered
+secrets
+.git
+.github
+.env
+.env.*
+*.local.yaml
+*.log
+.DS_Store
