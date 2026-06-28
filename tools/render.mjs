@@ -112,6 +112,11 @@ export function render(t) {
       `FIDUCIA_TARGET_NODES=${targetNodes}`,
       `FIDUCIA_PEERS=${peers}`,
       `FIDUCIA_BRAIN_PEERS=${brainPeers}`,
+      // Cross-cloud Raft timing (read by RaftTiming::from_env in fiducia-node).
+      `FIDUCIA_RAFT_TICK_MS=${t.raft.tick_ms}`,
+      `FIDUCIA_RAFT_HEARTBEAT_MS=${t.raft.heartbeat_ms}`,
+      `FIDUCIA_RAFT_ELECTION_MIN_MS=${t.raft.election_min_ms}`,
+      `FIDUCIA_RAFT_ELECTION_JITTER_MS=${t.raft.election_jitter_ms}`,
       "",
     ].join("\n");
 
