@@ -76,6 +76,18 @@ export function loadTopology() {
   if (!["clustermesh", "wireguard", "public-mtls"].includes(t.connectivity)) {
     fail(`connectivity must be clustermesh|wireguard|public-mtls, got ${t.connectivity}`);
   }
+  // Raft timing is optional; default to WAN-safe values (the node's own built-in
+  // defaults are LAN values that would flap across clouds). If present, sanity-
+  // check that the election timeout sits comfortably above the heartbeat — the
+  // same invariant RaftTiming::from_env warns about at runtime.
+  const raft = { tick_ms: 50, heartbeat_ms: 150, election_min_ms: 1000, election_jitter_ms: 1000, ...(t.raft || {}) };
+  for (const k of ["tick_ms", "heartbeat_ms", "election_min_ms", "election_jitter_ms"]) {
+    if (!Number.isInteger(raft[k]) || raft[k] <= 0) fail(`[raft].${k} must be a positive integer`);
+  }
+  if (raft.election_min_ms < raft.heartbeat_ms * 3) {
+    fail(`[raft].election_min_ms (${raft.election_min_ms}) must be >= 3x heartbeat_ms (${raft.heartbeat_ms}) to avoid spurious elections`);
+  }
+  t.raft = raft;
   return t;
 }
 
@@ -100,6 +112,11 @@ export function render(t) {
       `FIDUCIA_TARGET_NODES=${targetNodes}`,
       `FIDUCIA_PEERS=${peers}`,
       `FIDUCIA_BRAIN_PEERS=${brainPeers}`,
+      // Cross-cloud Raft timing (read by RaftTiming::from_env in fiducia-node).
+      `FIDUCIA_RAFT_TICK_MS=${t.raft.tick_ms}`,
+      `FIDUCIA_RAFT_HEARTBEAT_MS=${t.raft.heartbeat_ms}`,
+      `FIDUCIA_RAFT_ELECTION_MIN_MS=${t.raft.election_min_ms}`,
+      `FIDUCIA_RAFT_ELECTION_JITTER_MS=${t.raft.election_jitter_ms}`,
       "",
     ].join("\n");
 
