@@ -30,7 +30,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: brain
-          image: ghcr.io/fiducia-cloud/fiducia-brain:latest   # TODO: build + push
+          image: ghcr.io/fiducia-cloud/fiducia-brain:latest
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false

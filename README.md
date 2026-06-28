@@ -6,8 +6,8 @@ one goal:
 
 > **As long as 2 of the 3 clusters are alive, fiducia keeps working.**
 
-This is a **skeleton**: the manifests and the multi-cluster topology are in place;
-image references and cross-cluster endpoints are marked `TODO`.
+The manifests, multi-cluster topology, image references, and cross-cluster
+endpoint rendering are declared here.
 
 ## Why 2-of-3 works: quorum at the cluster level
 
@@ -123,9 +123,8 @@ whole cluster, fails.
 to count the first vote — bring up **one** member as a single-member group, then
 add the rest via Raft membership change (join as learner → promote to voter).
 That seed is *not* a permanent master; leadership floats freely once the group
-forms. (In the current single-node build the node self-elects leader of every
-shard at startup; the multi-node election/join path is the `TODO(cluster)` in
-`fiducia-node`'s `consensus.rs`.)
+forms. Static peer membership is declared through the generated topology env,
+and runtime leadership remains a Raft decision.
 
 ## Cross-cluster connectivity (the transport)
 
@@ -197,9 +196,9 @@ kubectl --context hetzner apply -k clusters/hetzner
 Or GitOps it: register all three clusters with one ArgoCD and apply
 [`argocd/applicationset.yaml`](argocd/applicationset.yaml).
 
-## Prerequisites / TODO
+## Prerequisites
 
-- **Container images** at `ghcr.io/fiducia-cloud/fiducia-{node,brain,load-balance,node-sidecar}` — build + push (Dockerfiles + CI are a follow-up; the service repos build from source today).
+- **Container images** at `ghcr.io/fiducia-cloud/fiducia-{node,brain,load-balance,node-sidecar}`.
 - **Cross-cluster networking** + real `FIDUCIA_PEERS` / `FIDUCIA_BRAIN_PEERS`.
 - **StorageClass** names per cluster (overlays use `standard-rwo` / `gp3` / `hcloud-volumes` — adjust to yours).
 - Per-cluster **public LB exposure** so the edge can reach each cluster.
