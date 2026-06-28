@@ -1,8 +1,8 @@
 # One ArgoCD (a "hub") registers all three clusters and applies each cluster's
 # overlay to it. This ApplicationSet fans out: clusters/<name> -> that cluster.
 #
-# Prereqs: `argocd cluster add` each of the 3 clusters, then fill in their API
-# server URLs below.
+# Prereqs: `argocd cluster add` each cluster and label its cluster secret with
+# `fiducia.cloud/cluster=true`. The cluster generator supplies `name` + `server`.
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -10,23 +10,19 @@ metadata:
   namespace: argocd
 spec:
   generators:
-    - list:
-        elements:
-          - cluster: gcp
-            server: https://GCP_API_SERVER       # TODO
-          - cluster: aws
-            server: https://AWS_API_SERVER       # TODO
-          - cluster: hetzner
-            server: https://HETZNER_API_SERVER   # TODO
+    - clusters:
+        selector:
+          matchLabels:
+            fiducia.cloud/cluster: "true"
   template:
     metadata:
-      name: "fiducia-{{cluster}}"
+      name: "fiducia-{{name}}"
     spec:
       project: default
       source:
         repoURL: https://github.com/fiducia-cloud/fiducia-infra.git
         targetRevision: main
-        path: "clusters/{{cluster}}"
+        path: "clusters/{{name}}"
       destination:
         server: "{{server}}"
         namespace: fiducia
