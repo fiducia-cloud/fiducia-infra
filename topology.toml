@@ -25,6 +25,19 @@ replication_factor = 3
 #   public-mtls   — public per-cluster endpoints with mTLS
 connectivity = "clustermesh"
 
+# Raft timing, sized for a CROSS-CLOUD group. The node's built-in defaults are
+# LAN values (heartbeat 50ms, election 150–300ms) — below a single transatlantic
+# round trip, so on this gcp(us)+aws(us)+hetzner(eu) topology they would cause
+# continuous spurious elections and leadership flapping. These render into the
+# fiducia-cluster ConfigMap as FIDUCIA_RAFT_* and are read by RaftTiming::from_env.
+# Rule of thumb: heartbeat >= inter-cloud RTT; election_min >= ~10x RTT; a wide
+# jitter spreads campaigns to avoid split votes. US<->EU RTT is ~90–100ms.
+[raft]
+tick_ms = 50
+heartbeat_ms = 150
+election_min_ms = 1000
+election_jitter_ms = 1000
+
 # One [[cluster]] block per Kubernetes cluster. The *_endpoint values are how the
 # OTHER clusters reach this one — replace the placeholders with real DNS/IPs
 # (LoadBalancer addresses, mesh global-service names, or VPN addresses).
