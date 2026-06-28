@@ -6,8 +6,10 @@ kind: Kustomization
 namespace: fiducia
 resources:
   - namespace.yaml
+  - observability/otel-agent.yaml
   - node/statefulset.yaml
   - node/service.yaml
+  - node/pdb.yaml
   - brain/statefulset.yaml
   - brain/service.yaml
   - load-balance/deployment.yaml

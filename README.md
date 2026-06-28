@@ -174,14 +174,23 @@ Layered — pick the right tool per question, don't reach for packet capture fir
 | Question | Tool |
 |----------|------|
 | service-to-service & cross-cluster network flows | **Cilium + Hubble** (eBPF; node/cluster/Cluster-Mesh scope) |
-| app request latency / traces / metrics / logs | **OpenTelemetry → Prometheus + Grafana + Loki + Tempo** |
+| app request latency / traces / metrics / logs | **OpenTelemetry agents → central gateway → Prometheus/Grafana + Loki/ClickHouse/object storage + Tempo** |
+| recent structured ops/security events | **CockroachDB TTL tables** fed by the gateway, not by raw log firehose |
 | "what exact bytes / TCP weirdness / TLS handshake?" | **PCAP** via `ksniff` or cloud packet mirroring → **Wireshark** |
 | always-on security analysis | **Zeek / Suricata** |
 
-The `fiducia-node-sidecar` already exposes `/metrics` and ships logs — that's the
-feed for the Prometheus/OTel layer. **Hubble/Kubeshark tell you *where* to look;
-Wireshark tells you *what* happened once you've captured.** Reach for PCAP only
-for low-level bugs, not as the multi-cluster backbone.
+Each cluster now inherits `base/observability/otel-agent.yaml`: an OTel Collector
+DaemonSet that receives OTLP, tails JSON pod logs, redacts known sensitive
+attributes, batches data, and uses a file-backed queue before forwarding to the
+central gateway. The gateway is where tail sampling and durable storage fan-out
+belong. Raw logs should land in Loki, ClickHouse, or object storage; CockroachDB
+only stores compact high-value events with row-level TTL. See
+[`docs/observability.md`](docs/observability.md) and
+[`docs/observability-events.sql`](docs/observability-events.sql).
+
+**Hubble/Kubeshark tell you *where* to look; Wireshark tells you *what* happened
+once you've captured.** Reach for PCAP only for low-level bugs, not as the
+multi-cluster backbone.
 
 Standardizing on **Cilium** makes this cohesive: Cluster Mesh provides the
 cross-cluster Raft connectivity above, and Hubble provides the network view on
