@@ -118,6 +118,10 @@ export function render(t) {
       `FIDUCIA_RAFT_HEARTBEAT_MS=${t.raft.heartbeat_ms}`,
       `FIDUCIA_RAFT_ELECTION_MIN_MS=${t.raft.election_min_ms}`,
       `FIDUCIA_RAFT_ELECTION_JITTER_MS=${t.raft.election_jitter_ms}`,
+      // CheckQuorum / leader lease: a partitioned leader steps down and refuses
+      // stale linearizable reads instead of answering authoritatively. On by
+      // default; only set to off to debug a leadership/liveness issue.
+      `FIDUCIA_RAFT_CHECK_QUORUM=${t.raft.check_quorum ? "on" : "off"}`,
       "",
     ].join("\n");
 
