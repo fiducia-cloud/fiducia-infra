@@ -8,3 +8,6 @@ rendered/
 *.local.yaml
 secrets/
 .env
+
+# Scratch / git worktrees (tmp/worktrees/*)
+tmp/
