@@ -67,6 +67,14 @@ spec:
             - name: FIDUCIA_BRAIN_RAFT_SECRET
               valueFrom:
                 secretKeyRef: { name: fiducia-secrets, key: brain-raft-secret, optional: true }
+            # Trusted-hop secret for the /v1 control plane: when set, the brain
+            # requires it on /v1 (node sidecar heartbeats, LB/admin reads, and the
+            # brain's own follower→leader forwarding all attach it). Same Secret
+            # key as the node/LB data-plane secret. `optional: true` ⇒ guard stays
+            # OFF until provisioned.
+            - name: FIDUCIA_INTERNAL_SECRET
+              valueFrom:
+                secretKeyRef: { name: fiducia-secrets, key: internal-secret, optional: true }
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://fiducia-otel-agent.fiducia.svc.cluster.local:4317"
             - name: OTEL_SERVICE_NAMESPACE
