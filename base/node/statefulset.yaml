@@ -71,7 +71,13 @@ spec:
             - name: FIDUCIA_NODE_ID
               value: "$(POD_NAME).$(FIDUCIA_CLUSTER)"
             - name: PORT
-              value: "8090"
+              value: "8090"                # client/data plane: /healthz, /readyz, /v1/*
+            # Peer plane: node↔node Raft RPC (/raft/*). Peers address each other at
+            # this port (FIDUCIA_PEERS / topology node_peer_endpoint = host:9090) and
+            # the NetworkPolicy leaves it reachable cross-cluster while locking :8090
+            # to in-namespace. Matches the `peer` containerPort + Service port.
+            - name: FIDUCIA_PEER_PORT
+              value: "9090"
             # Durable Raft state (term/vote/log) lives here — MUST be the PVC mount
             # below, never ephemeral storage, or a pod restart drops this member's
             # log. Read by fiducia-node's RaftTiming/NodeConfig.
