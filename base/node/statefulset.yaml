@@ -69,6 +69,16 @@ spec:
             # log. Read by fiducia-node's RaftTiming/NodeConfig.
             - name: FIDUCIA_DATA_DIR
               value: "/var/lib/fiducia"
+            # Trusted-hop secret: when present, the node requires it on /v1 (from
+            # the LB) and /raft (from peer nodes), so a direct caller can't forge
+            # the LB-injected x-fiducia-org-id. `optional: true` keeps the guard
+            # OFF (and pods schedulable) until the `fiducia-secrets` Secret is
+            # provisioned with the same value the LB uses. Provision out-of-band:
+            #   kubectl -n fiducia create secret generic fiducia-secrets \
+            #     --from-literal=internal-secret=$(openssl rand -hex 32)
+            - name: FIDUCIA_INTERNAL_SECRET
+              valueFrom:
+                secretKeyRef: { name: fiducia-secrets, key: internal-secret, optional: true }
           envFrom:
             - configMapRef: { name: fiducia-cluster }   # FIDUCIA_CLUSTER, FIDUCIA_SHARD_COUNT, FIDUCIA_PEERS
           readinessProbe: { httpGet: { path: /readyz, port: 8090 }, initialDelaySeconds: 5, periodSeconds: 10 }

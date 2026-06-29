@@ -80,10 +80,11 @@ export function loadTopology() {
   // defaults are LAN values that would flap across clouds). If present, sanity-
   // check that the election timeout sits comfortably above the heartbeat — the
   // same invariant RaftTiming::from_env warns about at runtime.
-  const raft = { tick_ms: 50, heartbeat_ms: 150, election_min_ms: 1000, election_jitter_ms: 1000, ...(t.raft || {}) };
+  const raft = { tick_ms: 50, heartbeat_ms: 150, election_min_ms: 1000, election_jitter_ms: 1000, check_quorum: true, ...(t.raft || {}) };
   for (const k of ["tick_ms", "heartbeat_ms", "election_min_ms", "election_jitter_ms"]) {
     if (!Number.isInteger(raft[k]) || raft[k] <= 0) fail(`[raft].${k} must be a positive integer`);
   }
+  if (typeof raft.check_quorum !== "boolean") fail(`[raft].check_quorum must be a boolean`);
   if (raft.election_min_ms < raft.heartbeat_ms * 3) {
     fail(`[raft].election_min_ms (${raft.election_min_ms}) must be >= 3x heartbeat_ms (${raft.heartbeat_ms}) to avoid spurious elections`);
   }
@@ -117,6 +118,10 @@ export function render(t) {
       `FIDUCIA_RAFT_HEARTBEAT_MS=${t.raft.heartbeat_ms}`,
       `FIDUCIA_RAFT_ELECTION_MIN_MS=${t.raft.election_min_ms}`,
       `FIDUCIA_RAFT_ELECTION_JITTER_MS=${t.raft.election_jitter_ms}`,
+      // CheckQuorum / leader lease: a partitioned leader steps down and refuses
+      // stale linearizable reads instead of answering authoritatively. On by
+      // default; only set to off to debug a leadership/liveness issue.
+      `FIDUCIA_RAFT_CHECK_QUORUM=${t.raft.check_quorum ? "on" : "off"}`,
       "",
     ].join("\n");
 

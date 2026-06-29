@@ -45,6 +45,13 @@ spec:
               value: "http://fiducia-node-client.fiducia.svc.cluster.local:8090"
             - name: FIDUCIA_BRAIN_URL
               value: "http://fiducia-brain.fiducia.svc.cluster.local:8095"
+            # Trusted-hop secret the LB attaches to every node request so the node
+            # trusts the identity headers it injects. MUST match the value the node
+            # StatefulSet reads from the same Secret. `optional: true` until the
+            # `fiducia-secrets` Secret exists (until then the node guard is off too).
+            - name: FIDUCIA_INTERNAL_SECRET
+              valueFrom:
+                secretKeyRef: { name: fiducia-secrets, key: internal-secret, optional: true }
           envFrom:
             - configMapRef: { name: fiducia-cluster }   # FIDUCIA_SHARD_COUNT
           readinessProbe: { httpGet: { path: /healthz, port: 8088 }, periodSeconds: 10 }

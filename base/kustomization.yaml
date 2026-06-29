@@ -8,6 +8,7 @@ resources:
   - namespace.yaml
   - node/statefulset.yaml
   - node/service.yaml
+  - node/networkpolicy.yaml
   - brain/statefulset.yaml
   - brain/service.yaml
   - load-balance/deployment.yaml
