@@ -1,30 +1,25 @@
 # NetworkPolicy — L3/L4 belt-and-suspenders for the node, BEHIND the L7
 # trusted-hop secret (FIDUCIA_INTERNAL_SECRET).
 #
-# Goal: the node's client/data plane (:8090, which serves /v1) must not be
-# reachable from outside this namespace — only the in-namespace load balancer
+# Goal: the node's client/data plane (:8090, which serves /healthz + /v1) must not
+# be reachable from outside this namespace — only the in-namespace load balancer
 # should call it. Selecting the node pod with an Ingress policy implicitly denies
 # any ingress not matched below.
 #
-# Why a NetworkPolicy ALONE is not enough (hence the L7 secret): the node binary
-# serves BOTH /v1 (client) and /raft (peer) on the same port (:8090), so L3/L4
-# rules can't tell a forged /v1 from a legitimate /raft. The trusted-hop secret
-# authenticates the hop at L7; this policy narrows the network blast radius.
+# The node serves the two planes on SEPARATE ports (see fiducia-node main.rs):
+#   :8090 — client/data plane: /healthz, /readyz, /v1/*  (LB only, in-namespace)
+#   :9090 — peer plane: node↔node Raft RPC /raft/*        (cross-cluster)
+# so the planes are cleanly separable at L4. The L7 trusted-hop secret
+# (FIDUCIA_INTERNAL_SECRET) still authenticates both planes; this policy narrows
+# the network blast radius behind it.
 #
-# Cross-cluster Raft: topology.toml declares the peer transport on :9090
+# Cross-cluster Raft: topology.toml addresses peers at :9090
 # (node_peer_endpoint = node.<cluster>.fiducia.cloud:9090), reachable from the
 # OTHER clusters — i.e. from outside this namespace. Rule (2) keeps :9090 open
 # from any source so inter-region consensus is never severed; it is guarded at L7
 # by the secret and at L3 by the mesh (connectivity = clustermesh / WireGuard /
-# mTLS). Nothing listens on :9090 today (the binary binds only :8090 and
-# cross-cluster endpoints are still TODO placeholders), so opening it exposes
-# nothing now and is purely forward-compatible.
-#
-# RECONCILE BEFORE MULTI-REGION RAFT GOES LIVE: the node currently serves /raft on
-# :8090, but peers are declared at :9090. When real cross-cluster connectivity is
-# wired, make the routable node endpoint target the port the node actually serves
-# Raft on (and have the node listen there), or widen rule (2) to that port — else
-# cross-cluster AppendEntries will be dropped by this policy.
+# mTLS). The client plane (:8090) is NOT opened to outside sources — that is the
+# whole point.
 #
 # Kubelet liveness/readiness probes (to :8090) are exempted by the CNI's
 # health-check failsafe — true for Cilium (this topology's declared CNI) and
