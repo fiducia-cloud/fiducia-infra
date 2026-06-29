@@ -52,7 +52,21 @@ spec:
             - name: NODE_NAME
               valueFrom: { fieldRef: { fieldPath: spec.nodeName } }
             - name: PORT
-              value: "8095"
+              value: "8095"                # control plane: /healthz, /readyz, /v1/*
+            # Peer plane: cross-cluster brain-Raft RPC (/raft/*). Brain members
+            # address each other at this port (FIDUCIA_BRAIN_PEERS = host:9095) and
+            # the NetworkPolicy leaves it reachable cross-cluster while locking
+            # :8095 to in-namespace. Matches the `peer` containerPort + Service port.
+            - name: FIDUCIA_BRAIN_PEER_PORT
+              value: "9095"
+            # Shared secret peer brains present (bearer) on /raft/*; the brain
+            # enables Raft auth only when this is set. `optional: true` until the
+            # `fiducia-secrets` Secret is provisioned (same Secret as the node/LB
+            # trusted-hop secret; a distinct key keeps the brain-Raft secret
+            # separable from the data-plane one).
+            - name: FIDUCIA_BRAIN_RAFT_SECRET
+              valueFrom:
+                secretKeyRef: { name: fiducia-secrets, key: brain-raft-secret, optional: true }
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://fiducia-otel-agent.fiducia.svc.cluster.local:4317"
             - name: OTEL_SERVICE_NAMESPACE
