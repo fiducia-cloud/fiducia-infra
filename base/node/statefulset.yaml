@@ -147,6 +147,13 @@ spec:
             # distinct values (= clusters).
             - name: FIDUCIA_REGION
               valueFrom: { configMapKeyRef: { name: fiducia-cluster, key: FIDUCIA_CLUSTER } }
+            # Trusted-hop secret: the sidecar scrapes the local node's guarded
+            # /v1/status and POSTs to the brain's guarded /v1; it must present this
+            # on both. Same Secret key as the node container. `optional: true` ⇒
+            # the guards (and this) stay off until the Secret is provisioned.
+            - name: FIDUCIA_INTERNAL_SECRET
+              valueFrom:
+                secretKeyRef: { name: fiducia-secrets, key: internal-secret, optional: true }
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://fiducia-otel-agent.fiducia.svc.cluster.local:4317"
             - name: OTEL_SERVICE_NAMESPACE
