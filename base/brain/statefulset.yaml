@@ -10,6 +10,10 @@ metadata:
 spec:
   serviceName: fiducia-brain
   replicas: 1                         # one brain member per cluster
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      partition: 0
   selector:
     matchLabels:
       app: fiducia-brain
@@ -30,7 +34,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: brain
-          image: ghcr.io/fiducia-cloud/fiducia-brain:latest   # TODO: build + push
+          image: ghcr.io/fiducia-cloud/fiducia-brain:v0.1.0
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -41,8 +45,22 @@ spec:
             - { containerPort: 8095, name: http }
             - { containerPort: 9095, name: peer }   # cross-cluster brain Raft
           env:
+            - name: POD_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            - name: POD_NAMESPACE
+              valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
+            - name: NODE_NAME
+              valueFrom: { fieldRef: { fieldPath: spec.nodeName } }
             - name: PORT
               value: "8095"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://fiducia-otel-agent.fiducia.svc.cluster.local:4317"
+            - name: OTEL_SERVICE_NAMESPACE
+              value: "fiducia-cloud"
+            - name: FIDUCIA_DEPLOYMENT_ENV
+              value: "prod"
+            - name: FIDUCIA_LOG_FORMAT
+              value: "json"
           # cluster id, shard count, replication factor, target nodes, and the
           # cross-cluster brain peers all come from topology.env (see topology.toml).
           # RF + failure-domain spreading (by cluster) is what delivers the

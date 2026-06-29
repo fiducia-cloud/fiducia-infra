@@ -1,0 +1,251 @@
+# Per-cluster OpenTelemetry agent. It receives OTLP from fiducia services, tails
+# pod stdout/stderr logs, redacts known sensitive attributes, batches locally,
+# and uses a file-backed exporter queue before forwarding to the central gateway.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fiducia-otel-agent
+  namespace: fiducia
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fiducia-otel-agent
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces", "nodes", "pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["daemonsets", "deployments", "replicasets", "statefulsets"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fiducia-otel-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fiducia-otel-agent
+subjects:
+  - kind: ServiceAccount
+    name: fiducia-otel-agent
+    namespace: fiducia
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fiducia-otel-agent
+  namespace: fiducia
+data:
+  collector.yaml: |
+    extensions:
+      file_storage/queues:
+        directory: /var/lib/otelcol/queues
+        timeout: 10s
+      health_check:
+        endpoint: 0.0.0.0:13133
+
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+      filelog/fiducia_pods:
+        include:
+          - /var/log/pods/fiducia_*/*/*.log
+        exclude:
+          - /var/log/pods/fiducia_fiducia-otel-agent-*/*/*.log
+        start_at: end
+        include_file_path: true
+        include_file_name: false
+        operators:
+          - id: container-parser
+            type: container
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_percentage: 75
+        spike_limit_percentage: 20
+      k8sattributes:
+        auth_type: serviceAccount
+        passthrough: false
+        extract:
+          metadata:
+            - k8s.namespace.name
+            - k8s.pod.name
+            - k8s.pod.uid
+            - k8s.node.name
+            - k8s.container.name
+            - k8s.deployment.name
+            - k8s.statefulset.name
+            - k8s.daemonset.name
+          labels:
+            - tag_name: service.name
+              key: app
+              from: pod
+      resource/fiducia:
+        attributes:
+          - key: service.namespace
+            value: fiducia-cloud
+            action: upsert
+          - key: deployment.environment
+            value: prod
+            action: upsert
+          - key: fiducia.cluster
+            value: ${env:FIDUCIA_CLUSTER}
+            action: upsert
+          - key: fiducia.cluster_id
+            value: ${env:FIDUCIA_CLUSTER_ID}
+            action: upsert
+      attributes/redact:
+        actions:
+          - key: authorization
+            action: delete
+          - key: http.request.header.authorization
+            action: delete
+          - key: http.response.header.set-cookie
+            action: delete
+          - key: cookie
+            action: delete
+          - key: password
+            action: delete
+          - key: secret
+            action: delete
+          - key: token
+            action: hash
+          - key: api_key
+            action: hash
+      batch:
+        send_batch_size: 2048
+        timeout: 5s
+
+    exporters:
+      otlphttp/gateway:
+        endpoint: ${env:OBSERVABILITY_GATEWAY_OTLP_ENDPOINT}
+        compression: gzip
+        timeout: 10s
+        headers:
+          x-fiducia-otel-token: ${env:OBSERVABILITY_GATEWAY_TOKEN}
+        retry_on_failure:
+          enabled: true
+          initial_interval: 1s
+          max_interval: 30s
+          max_elapsed_time: 0s
+        sending_queue:
+          enabled: true
+          num_consumers: 8
+          queue_size: 10000
+          storage: file_storage/queues
+
+    service:
+      extensions: [file_storage/queues, health_check]
+      telemetry:
+        logs:
+          level: info
+        metrics:
+          address: 0.0.0.0:8888
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, k8sattributes, resource/fiducia, attributes/redact, batch]
+          exporters: [otlphttp/gateway]
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, k8sattributes, resource/fiducia, attributes/redact, batch]
+          exporters: [otlphttp/gateway]
+        logs:
+          receivers: [otlp, filelog/fiducia_pods]
+          processors: [memory_limiter, k8sattributes, resource/fiducia, attributes/redact, batch]
+          exporters: [otlphttp/gateway]
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fiducia-otel-agent
+  namespace: fiducia
+  labels:
+    app: fiducia-otel-agent
+spec:
+  selector:
+    matchLabels:
+      app: fiducia-otel-agent
+  template:
+    metadata:
+      labels:
+        app: fiducia-otel-agent
+    spec:
+      serviceAccountName: fiducia-otel-agent
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: otelcol
+          image: otel/opentelemetry-collector-contrib:0.155.0
+          imagePullPolicy: IfNotPresent
+          args: ["--config=/conf/collector.yaml"]
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - { containerPort: 4317, name: otlp-grpc }
+            - { containerPort: 4318, name: otlp-http }
+            - { containerPort: 8888, name: metrics }
+            - { containerPort: 13133, name: health }
+          env:
+            - name: FIDUCIA_CLUSTER
+              valueFrom: { configMapKeyRef: { name: fiducia-cluster, key: FIDUCIA_CLUSTER } }
+            - name: FIDUCIA_CLUSTER_ID
+              valueFrom: { configMapKeyRef: { name: fiducia-cluster, key: FIDUCIA_CLUSTER_ID } }
+            - name: OBSERVABILITY_GATEWAY_OTLP_ENDPOINT
+              value: "https://otel-gateway.fiducia.cloud:4318"
+            - name: OBSERVABILITY_GATEWAY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: fiducia-observability
+                  key: gateway-token
+                  optional: true
+          readinessProbe: { httpGet: { path: /, port: 13133 }, periodSeconds: 10 }
+          livenessProbe: { httpGet: { path: /, port: 13133 }, periodSeconds: 15 }
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits: { cpu: "1000m", memory: "1Gi" }
+          volumeMounts:
+            - { name: config, mountPath: /conf, readOnly: true }
+            - { name: varlogpods, mountPath: /var/log/pods, readOnly: true }
+            - { name: queue, mountPath: /var/lib/otelcol }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: config
+          configMap:
+            name: fiducia-otel-agent
+        - name: varlogpods
+          hostPath:
+            path: /var/log/pods
+            type: Directory
+        - name: queue
+          hostPath:
+            path: /var/lib/fiducia/otelcol
+            type: DirectoryOrCreate
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-otel-agent
+  namespace: fiducia
+  labels:
+    app: fiducia-otel-agent
+spec:
+  selector:
+    app: fiducia-otel-agent
+  ports:
+    - { name: otlp-grpc, port: 4317, targetPort: 4317 }
+    - { name: otlp-http, port: 4318, targetPort: 4318 }
+    - { name: metrics, port: 8888, targetPort: 8888 }

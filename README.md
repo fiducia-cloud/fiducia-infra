@@ -6,8 +6,8 @@ one goal:
 
 > **As long as 2 of the 3 clusters are alive, fiducia keeps working.**
 
-This is a **skeleton**: the manifests and the multi-cluster topology are in place;
-image references and cross-cluster endpoints are marked `TODO`.
+The manifests, multi-cluster topology, image references, and cross-cluster
+endpoint rendering are declared here.
 
 ## Why 2-of-3 works: quorum at the cluster level
 
@@ -119,13 +119,38 @@ Hardcoding a leader would defeat the design — if the declared master died,
 nothing could take over. The point is that election re-runs when a node, or a
 whole cluster, fails.
 
+## Traffic Paths
+
+The load balancer is only for customer/application coordination API traffic.
+Internal control and replication planes use direct pod/service paths:
+
+| Caller | Target | Uses `fiducia-load-balance`? | Path |
+|--------|--------|------------------------------|------|
+| external clients / future Cloudflare edge | coordination API | yes | `client -> regional LB :443 -> shard leader node` |
+| in-cluster application pods | coordination API | yes | `app pod -> svc/fiducia-load-balance -> shard leader node` |
+| `fiducia-load-balance` | data-plane nodes | direct after routing | `LB -> fiducia-node-peer/fiducia-node-client :8090` |
+| `fiducia-node` | other `fiducia-node` peers | no | direct Raft RPC from `FIDUCIA_PEERS` to `/raft/{shard}/{append,vote}` |
+| `fiducia-node-sidecar` | its local node | no | `localhost:8090 /v1/status` inside the same pod |
+| `fiducia-node-sidecar` | `fiducia-brain` | no | direct `svc/fiducia-brain:8095 /v1/nodes/{id}/heartbeat` |
+| `fiducia-brain` | node membership/placement state | no | receives sidecar heartbeats; it does not route through the LB |
+| Kubernetes kubelet | pod health probes | no | direct pod IP HTTP probes on each container port |
+
+TLS terminates at the regional LB on port 443. The LB still keeps a private HTTP
+listener on `PORT` for health probes and private callers. Before deploying the
+base manifests, create the per-cluster secret:
+
+```sh
+kubectl -n fiducia create secret tls fiducia-load-balance-tls \
+  --cert=/path/to/tls.crt \
+  --key=/path/to/tls.key
+```
+
 **Bootstrap (the one seed):** a brand-new Raft group still needs a first member
 to count the first vote — bring up **one** member as a single-member group, then
 add the rest via Raft membership change (join as learner → promote to voter).
 That seed is *not* a permanent master; leadership floats freely once the group
-forms. (In the current single-node build the node self-elects leader of every
-shard at startup; the multi-node election/join path is the `TODO(cluster)` in
-`fiducia-node`'s `consensus.rs`.)
+forms. Static peer membership is declared through the generated topology env,
+and runtime leadership remains a Raft decision.
 
 ## Cross-cluster connectivity (the transport)
 
@@ -148,14 +173,23 @@ Layered — pick the right tool per question, don't reach for packet capture fir
 | Question | Tool |
 |----------|------|
 | service-to-service & cross-cluster network flows | **Cilium + Hubble** (eBPF; node/cluster/Cluster-Mesh scope) |
-| app request latency / traces / metrics / logs | **OpenTelemetry → Prometheus + Grafana + Loki + Tempo** |
+| app request latency / traces / metrics / logs | **OpenTelemetry agents → central gateway → Prometheus/Grafana + Loki/ClickHouse/object storage + Tempo** |
+| recent structured ops/security events | **CockroachDB TTL tables** fed by the gateway, not by raw log firehose |
 | "what exact bytes / TCP weirdness / TLS handshake?" | **PCAP** via `ksniff` or cloud packet mirroring → **Wireshark** |
 | always-on security analysis | **Zeek / Suricata** |
 
-The `fiducia-node-sidecar` already exposes `/metrics` and ships logs — that's the
-feed for the Prometheus/OTel layer. **Hubble/Kubeshark tell you *where* to look;
-Wireshark tells you *what* happened once you've captured.** Reach for PCAP only
-for low-level bugs, not as the multi-cluster backbone.
+Each cluster now inherits `base/observability/otel-agent.yaml`: an OTel Collector
+DaemonSet that receives OTLP, tails JSON pod logs, redacts known sensitive
+attributes, batches data, and uses a file-backed queue before forwarding to the
+central gateway. The gateway is where tail sampling and durable storage fan-out
+belong. Raw logs should land in Loki, ClickHouse, or object storage; CockroachDB
+only stores compact high-value events with row-level TTL. See
+[`docs/observability.md`](docs/observability.md) and
+[`docs/observability-events.sql`](docs/observability-events.sql).
+
+**Hubble/Kubeshark tell you *where* to look; Wireshark tells you *what* happened
+once you've captured.** Reach for PCAP only for low-level bugs, not as the
+multi-cluster backbone.
 
 Standardizing on **Cilium** makes this cohesive: Cluster Mesh provides the
 cross-cluster Raft connectivity above, and Hubble provides the network view on
@@ -197,9 +231,9 @@ kubectl --context hetzner apply -k clusters/hetzner
 Or GitOps it: register all three clusters with one ArgoCD and apply
 [`argocd/applicationset.yaml`](argocd/applicationset.yaml).
 
-## Prerequisites / TODO
+## Prerequisites
 
-- **Container images** at `ghcr.io/fiducia-cloud/fiducia-{node,brain,load-balance,node-sidecar}` — build + push (Dockerfiles + CI are a follow-up; the service repos build from source today).
+- **Container images** at `ghcr.io/fiducia-cloud/fiducia-{node,brain,load-balance,node-sidecar}`.
 - **Cross-cluster networking** + real `FIDUCIA_PEERS` / `FIDUCIA_BRAIN_PEERS`.
 - **StorageClass** names per cluster (overlays use `standard-rwo` / `gp3` / `hcloud-volumes` — adjust to yours).
 - Per-cluster **public LB exposure** so the edge can reach each cluster.
