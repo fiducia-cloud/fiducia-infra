@@ -12,3 +12,4 @@ spec:
     app: fiducia-load-balance
   ports:
     - { name: http, port: 80, targetPort: 8088 }
+    - { name: https, port: 443, targetPort: 8443 }

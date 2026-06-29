@@ -57,7 +57,10 @@ function parseVal(v, raw) {
 export function loadTopology() {
   const file = path.join(root, "topology.toml");
   if (!fs.existsSync(file)) fail("missing topology.toml");
-  const t = parseToml(fs.readFileSync(file, "utf8"));
+  return validateTopology(parseToml(fs.readFileSync(file, "utf8")));
+}
+
+export function validateTopology(t) {
   for (const k of ["cluster_id", "shard_count", "replication_factor", "connectivity"]) {
     if (t[k] === undefined) fail(`topology.toml missing top-level ${k}`);
   }

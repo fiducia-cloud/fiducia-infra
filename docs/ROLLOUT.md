@@ -5,10 +5,10 @@ quorum. The data plane is **sharded multi-Raft**, so an upgrade is not a simple
 "replace the pods" — each node leads some shards and follows others, and a node
 must be **drained of leadership** before it stops.
 
-> Status: this runbook describes the target procedure. Some primitives it relies
-> on are still `TODO` in the code (called out under **Required primitives**); the
-> data-plane roll should be gated on those landing. The stateless tiers (edge,
-> load-balance, backend) can already roll today.
+> Status: this runbook describes the target procedure. Gate data-plane rolls on
+> the required drain and transfer controls being available in the deployed
+> services. The stateless tiers (edge, load-balance, backend) can already roll
+> today.
 
 ## Invariants (never violate)
 
@@ -37,12 +37,12 @@ must be **drained of leadership** before it stops.
 
 | Primitive | Where | Today |
 |-----------|-------|-------|
-| Leadership transfer (Raft TimeoutNow) to a named in-sync follower | `fiducia-node` | TODO (`consensus.rs`) |
-| Local **drain/cordon**: shed all leaderships + report `/readyz` = false | `fiducia-node` | TODO |
+| Leadership transfer (Raft TimeoutNow) to a named in-sync follower | `fiducia-node` | rollout gate |
+| Local **drain/cordon**: shed all leaderships + report `/readyz` = false | `fiducia-node` | rollout gate |
 | Per-shard `role` + `commit_index` + `last_log_index` | `fiducia-node` `/v1/status` | ✅ exists |
 | `NotLeader` → `421` + `x-fiducia-leader` redirect | `fiducia-node` | ✅ exists |
-| Mark node **Draining** (suppress Dead → re-placement) | `fiducia-brain` `membership.drain` / `DELETE /v1/nodes/{id}` | TODO (stub) |
-| Placement refresh skips Draining nodes | `fiducia-load-balance` `table.refresh_from_brain` | TODO (stub) |
+| Mark node **Draining** (suppress Dead → re-placement) | `fiducia-brain` `membership.drain` / `DELETE /v1/nodes/{id}` | rollout gate |
+| Placement refresh skips Draining nodes | `fiducia-load-balance` `table.refresh_from_brain` | consumes brain health |
 | Readiness = "caught up", not "process up" | `fiducia-node` `/readyz` | needs catch-up gate |
 
 ## Version compatibility (do before any rollout)
@@ -82,9 +82,9 @@ The cluster is **mixed-version** during the roll, so N and N+1 must interoperate
    leadership-transfer first.
 4. **Data plane:** `fiducia-node`, per cluster, per node, leadership-drain
    rolling — the careful part, below.
-5. **`fiducia-admin` / `fiducia-auth`** — rolling update (once `auth` is
-   Postgres-backed it is stateless; the in-memory keystore skeleton is not, so
-   don't run >1 replica of skeleton auth).
+5. **`fiducia-admin` / `fiducia-auth`** — rolling update. `fiducia-auth` stores
+   API keys in a file-backed store, so run it with a durable volume or a single
+   writer per store path.
 
 ## The core procedure: data-plane node upgrade (per node)
 

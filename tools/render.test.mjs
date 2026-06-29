@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { parseToml, loadTopology, render } from "./render.mjs";
+import { parseToml, loadTopology, render, validateTopology } from "./render.mjs";
 
 test("parseToml handles scalars + array-of-tables", () => {
   const t = parseToml(`
@@ -32,6 +32,35 @@ node_replicas = 5
 test("real topology loads + validates", () => {
   const t = loadTopology();
   assert.ok(t.cluster.length >= t.replication_factor, "need >= RF clusters");
+});
+
+test("validateTopology rejects duplicate cluster names", () => {
+  const t = loadTopology();
+  const duplicate = {
+    ...t,
+    cluster: [t.cluster[0], { ...t.cluster[1], name: t.cluster[0].name }, t.cluster[2]],
+  };
+
+  assert.throws(() => validateTopology(duplicate), /duplicate cluster name/);
+});
+
+test("validateTopology rejects topologies that cannot form quorum", () => {
+  const t = loadTopology();
+  const tooSmall = {
+    ...t,
+    replication_factor: t.cluster.length + 1,
+  };
+
+  assert.throws(() => validateTopology(tooSmall), /need at least replication_factor/);
+});
+
+test("validateTopology rejects unsupported connectivity modes", () => {
+  const t = loadTopology();
+
+  assert.throws(
+    () => validateTopology({ ...t, connectivity: "plain-http" }),
+    /connectivity must be/,
+  );
 });
 
 test("render computes cross-cluster peers (each excludes itself)", () => {

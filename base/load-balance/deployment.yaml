@@ -9,6 +9,11 @@ metadata:
   namespace: fiducia
 spec:
   replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: fiducia-load-balance
@@ -29,7 +34,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: lb
-          image: ghcr.io/fiducia-cloud/fiducia-load-balance:latest   # TODO: build + push
+          image: ghcr.io/fiducia-cloud/fiducia-load-balance:v0.1.0
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -38,9 +43,22 @@ spec:
               drop: ["ALL"]
           ports:
             - { containerPort: 8088, name: http }
+            - { containerPort: 8443, name: https }
           env:
+            - name: POD_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            - name: POD_NAMESPACE
+              valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
+            - name: NODE_NAME
+              valueFrom: { fieldRef: { fieldPath: spec.nodeName } }
             - name: PORT
               value: "8088"
+            - name: TLS_PORT
+              value: "8443"
+            - name: FIDUCIA_TLS_CERT_PATH
+              value: "/etc/fiducia/tls/tls.crt"
+            - name: FIDUCIA_TLS_KEY_PATH
+              value: "/etc/fiducia/tls/tls.key"
             - name: FIDUCIA_NODES
               value: "http://fiducia-node-client.fiducia.svc.cluster.local:8090"
             - name: FIDUCIA_BRAIN_URL
@@ -52,6 +70,14 @@ spec:
             - name: FIDUCIA_INTERNAL_SECRET
               valueFrom:
                 secretKeyRef: { name: fiducia-secrets, key: internal-secret, optional: true }
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://fiducia-otel-agent.fiducia.svc.cluster.local:4317"
+            - name: OTEL_SERVICE_NAMESPACE
+              value: "fiducia-cloud"
+            - name: FIDUCIA_DEPLOYMENT_ENV
+              value: "prod"
+            - name: FIDUCIA_LOG_FORMAT
+              value: "json"
           envFrom:
             - configMapRef: { name: fiducia-cluster }   # FIDUCIA_SHARD_COUNT
           readinessProbe: { httpGet: { path: /healthz, port: 8088 }, periodSeconds: 10 }
@@ -61,6 +87,10 @@ spec:
             limits: { cpu: "500m", memory: "256Mi" }
           volumeMounts:
             - { name: tmp, mountPath: /tmp }
+            - { name: tls, mountPath: /etc/fiducia/tls, readOnly: true }
       volumes:
         - name: tmp
           emptyDir: {}
+        - name: tls
+          secret:
+            secretName: fiducia-load-balance-tls
