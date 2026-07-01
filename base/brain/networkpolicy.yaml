@@ -1,0 +1,55 @@
+# NetworkPolicy — L3/L4 boundary for the brain (control plane), mirroring the
+# node policy.
+#
+# Goal: the brain's control plane (:8095, serving /healthz + /v1) must not be
+# reachable from outside this namespace — only in-namespace callers (the node
+# sidecars heartbeating, the load balancer reading placement/membership, admin)
+# should reach it. Selecting the brain pod with an Ingress policy implicitly
+# denies any ingress not matched below.
+#
+# The brain serves its two planes on SEPARATE ports (see fiducia-brain main.rs):
+#   :8095 — control plane: /healthz, /readyz, /v1/*  (in-namespace only)
+#   :9095 — peer plane: cross-cluster brain-Raft /raft/*
+# so the planes are cleanly separable at L4. The brain-Raft plane is additionally
+# bearer-authenticated by FIDUCIA_BRAIN_RAFT_SECRET at L7.
+#
+# Cross-cluster brain Raft: topology.toml addresses brain peers at :9095
+# (brain_endpoint / FIDUCIA_BRAIN_PEERS = brain.<cluster>.fiducia.cloud:9095),
+# reachable from the OTHER clusters. Rule (2) keeps :9095 open from any source so
+# the 3-member (one-per-cloud) brain Raft is never severed; it is guarded at L7 by
+# the bearer secret and at L3 by the mesh (connectivity = clustermesh / WireGuard
+# / mTLS). The control plane (:8095) is NOT opened to outside sources.
+#
+# NOTE: the brain's /v1 control plane is not yet L7-authenticated (unlike the
+# node's /v1, which requires FIDUCIA_INTERNAL_SECRET). This policy confines it to
+# the namespace; adding a trusted-hop secret on brain /v1 (and having the sidecar
+# / LB / admin attach it) is the remaining defense-in-depth follow-up.
+#
+# Kubelet liveness/readiness probes (to :8095) are exempted by the CNI's
+# health-check failsafe — true for Cilium (this topology's declared CNI) and
+# Calico. On a CNI that subjects kubelet traffic to NetworkPolicy, add an ipBlock
+# allow for the node/pod CIDRs in each cluster overlay.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fiducia-brain-ingress
+  namespace: fiducia
+spec:
+  podSelector:
+    matchLabels:
+      app: fiducia-brain
+  policyTypes: [Ingress]
+  ingress:
+    # (1) Any pod in the fiducia namespace → all brain ports. Covers node sidecars
+    #     heartbeating (:8095 /v1), the LB / admin reading placement, and
+    #     intra-cluster brain-Raft. namespaceSelector matches the auto-applied
+    #     kubernetes.io/metadata.name label (Kubernetes >= 1.21).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: fiducia
+    # (2) Cross-cluster brain-Raft: the declared peer port, from any source (peers
+    #     arrive from outside this namespace). Authenticated at L7 by
+    #     FIDUCIA_BRAIN_RAFT_SECRET; the network layer is the mesh/VPN/mTLS.
+    - ports:
+        - { protocol: TCP, port: 9095 }

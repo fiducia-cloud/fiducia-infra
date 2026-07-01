@@ -13,5 +13,6 @@ resources:
   - node/pdb.yaml
   - brain/statefulset.yaml
   - brain/service.yaml
+  - brain/networkpolicy.yaml
   - load-balance/deployment.yaml
   - load-balance/service.yaml
