@@ -26,3 +26,6 @@ jobs:
             echo "== $c =="
             kubectl kustomize "$c" >/dev/null
           done
+      # Advisory-only dependency audit; never gates the build.
+      - run: npm audit
+        continue-on-error: true
