@@ -223,6 +223,11 @@ pod (its bridge to brain + telemetry).
 > failure domains; the 4th cluster adds a spare domain + capacity and does **not**
 > change the "survive losing 1 cluster" guarantee. The kustomize model is N-cluster
 > already — `render.mjs` fans out to every `[[cluster]]` block.
+>
+> Azure is added **node-only** (`brain = false`): the brain Raft group must stay an
+> **odd** size, so it's pinned at 3 (gcp/aws/hetzner). Brain-member clusters include
+> the [`base/components/brain`](base/components/brain) Component; node-only clusters
+> omit it. `render.mjs` enforces an odd, ≥ RF brain group.
 
 ## Provisioning & testing
 
