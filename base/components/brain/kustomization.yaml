@@ -1,0 +1,13 @@
+# The brain control-plane workload as an OPTIONAL kustomize Component.
+#
+# Only clusters that are members of the brain Raft group include this (via
+# `components:` in their clusters/<name>/kustomization.yaml). The group must be an
+# ODD number of members (topology.toml + tools/render.mjs enforce it), so a 4th
+# platform is added node-only (brain = false) and simply does NOT list this
+# Component. That keeps the brain a clean 3-member group instead of an even 4.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - ../../brain/statefulset.yaml
+  - ../../brain/service.yaml
+  - ../../brain/networkpolicy.yaml
