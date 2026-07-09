@@ -1,0 +1,15 @@
+# Per-cluster overlay. Cluster-specific values come from topology.env + patches.yaml,
+# both GENERATED from ../../topology.toml by tools/render.mjs — do not hand-edit them.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: fiducia
+resources:
+  - ../../base
+configMapGenerator:
+  - name: fiducia-cluster
+    envs:
+      - topology.env
+generatorOptions:
+  disableNameSuffixHash: true
+patches:
+  - path: patches.yaml
