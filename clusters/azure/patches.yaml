@@ -11,25 +11,3 @@ spec:
         name: data
       spec:
         storageClassName: managed-csi
----
-# node-only cluster (brain = false): remove the brain workload.
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: fiducia-brain
-  namespace: fiducia
-$patch: delete
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: fiducia-brain
-  namespace: fiducia
-$patch: delete
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: fiducia-brain-ingress
-  namespace: fiducia
-$patch: delete
