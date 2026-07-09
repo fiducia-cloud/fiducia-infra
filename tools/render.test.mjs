@@ -86,3 +86,28 @@ test("edge region list mirrors lb endpoints", () => {
   assert.deepEqual(regions.map((r) => r.name), ["gcp", "aws", "hetzner", "azure"]);
   assert.ok(regions.every((r) => r.url.startsWith("https://")));
 });
+
+test("node-only cluster (brain=false) is excluded from the brain group", () => {
+  const files = render(loadTopology());
+  // No brain cluster lists azure as a brain peer, and azure's overlay carries no
+  // brain StatefulSet patch (it doesn't include the brain Component).
+  for (const c of ["gcp", "aws", "hetzner"]) {
+    assert.doesNotMatch(files[`clusters/${c}/topology.env`], /FIDUCIA_BRAIN_PEERS=[^\n]*brain\.azure\./);
+  }
+  assert.doesNotMatch(files["clusters/azure/patches.yaml"], /name: fiducia-brain/);
+  // A node-only cluster still reaches all three brains (its sidecar contacts them).
+  const azure = files["clusters/azure/topology.env"];
+  for (const b of ["gcp", "aws", "hetzner"]) {
+    assert.match(azure, new RegExp(`FIDUCIA_BRAIN_PEERS=[^\\n]*brain\\.${b}\\.`));
+  }
+});
+
+test("validateTopology rejects an even-sized brain group", () => {
+  const t = loadTopology();
+  // Flip azure back to a brain member → 4 members (even) → must be rejected.
+  const evenBrain = {
+    ...t,
+    cluster: t.cluster.map((c) => (c.name === "azure" ? { ...c, brain: true } : c)),
+  };
+  assert.throws(() => validateTopology(evenBrain), /ODD number of members/);
+});
