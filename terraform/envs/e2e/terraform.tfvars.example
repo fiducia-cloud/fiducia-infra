@@ -1,0 +1,19 @@
+# Copy to terraform.tfvars and fill in. Toggle the clouds you want.
+# Credentials are NOT set here — use each provider's standard auth:
+#   GCP:     gcloud auth application-default login   (or GOOGLE_APPLICATION_CREDENTIALS)
+#   AWS:     AWS_PROFILE / AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY
+#   Azure:   az login
+#   Hetzner: export HCLOUD_TOKEN=...
+
+enable_gcp     = true
+enable_aws     = true
+enable_azure   = true
+enable_hetzner = true
+
+node_count = 3
+
+# Required when enable_gcp = true:
+gcp_project_id = "your-gcp-project-id"
+
+# Required when enable_hetzner = true (contents of e.g. ~/.ssh/id_ed25519.pub):
+hetzner_ssh_public_key = "ssh-ed25519 AAAA... you@host"
