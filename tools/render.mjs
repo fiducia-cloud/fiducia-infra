@@ -76,6 +76,21 @@ export function validateTopology(t) {
     if (seen.has(c.name)) fail(`duplicate cluster name: ${c.name}`);
     seen.add(c.name);
   }
+  // Brain membership: a cluster runs a brain member unless `brain = false`
+  // (node-only). The brain Raft group must be an ODD number >= replication_factor
+  // for clean quorum — an even group (e.g. 4) has the same fault tolerance as the
+  // odd one below it but worse quorum math. So a 4th cluster is added node-only.
+  for (const c of clusters) {
+    if (c.brain === undefined) c.brain = true;
+    if (typeof c.brain !== "boolean") fail(`cluster ${c.name} brain must be a boolean`);
+  }
+  const brainCount = clusters.filter((c) => c.brain).length;
+  if (brainCount < t.replication_factor) {
+    fail(`brain group (${brainCount}) must be >= replication_factor (${t.replication_factor})`);
+  }
+  if (brainCount % 2 === 0) {
+    fail(`brain group must be an ODD number of members for clean quorum; got ${brainCount} — mark a cluster brain = false`);
+  }
   if (!["clustermesh", "wireguard", "public-mtls"].includes(t.connectivity)) {
     fail(`connectivity must be clustermesh|wireguard|public-mtls, got ${t.connectivity}`);
   }
