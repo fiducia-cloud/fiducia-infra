@@ -1,0 +1,29 @@
+# kind overlay patches: 4 replicas (one per zone), kind's local-path storage
+# class, and a fixed NodePort so localhost:8090 reaches the coordination API.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fiducia-node
+  namespace: fiducia
+spec:
+  replicas: 4
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        storageClassName: standard
+---
+# Expose the client HTTP service on a fixed NodePort matching kind's
+# extraPortMapping (30090 -> hostPort 8090 in multizone.yaml).
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-node-client
+  namespace: fiducia
+spec:
+  type: NodePort
+  ports:
+    - name: http
+      port: 8090
+      targetPort: 8090
+      nodePort: 30090
