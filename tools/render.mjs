@@ -117,10 +117,16 @@ export function render(t) {
   const targetNodes = clusters.reduce((n, c) => n + c.node_replicas, 0);
   const files = {};
 
+  const brainClusters = clusters.filter((o) => o.brain);
   for (const c of clusters) {
     const others = clusters.filter((o) => o.name !== c.name);
     const peers = others.map((o) => o.node_peer_endpoint).join(",");
-    const brainPeers = others.map((o) => o.brain_endpoint).join(",");
+    // Brain members list their OTHER brain peers (their Raft peer set); node-only
+    // clusters list ALL brains (their sidecars reach the control plane but they
+    // are not members of the brain Raft group).
+    const brainPeers = (c.brain ? brainClusters.filter((o) => o.name !== c.name) : brainClusters)
+      .map((o) => o.brain_endpoint)
+      .join(",");
 
     files[`clusters/${c.name}/topology.env`] = [
       `# ${BANNER}`,
