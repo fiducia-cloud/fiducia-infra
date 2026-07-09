@@ -83,6 +83,6 @@ test("target nodes is the sum across clusters", () => {
 test("edge region list mirrors lb endpoints", () => {
   const files = render(loadTopology());
   const regions = JSON.parse(files["generated/edge-regions.json"]);
-  assert.deepEqual(regions.map((r) => r.name), ["gcp", "aws", "hetzner"]);
+  assert.deepEqual(regions.map((r) => r.name), ["gcp", "aws", "hetzner", "azure"]);
   assert.ok(regions.every((r) => r.url.startsWith("https://")));
 });
