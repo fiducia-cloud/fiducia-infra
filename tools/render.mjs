@@ -149,8 +149,8 @@ export function render(t) {
       "",
     ].join("\n");
 
-    files[`clusters/${c.name}/patches.yaml`] = `# ${BANNER}
-apiVersion: apps/v1
+    // Node StatefulSet patch (replicas + storage class) applies to every cluster.
+    const nodePatch = `apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: fiducia-node
@@ -161,9 +161,13 @@ spec:
     - metadata:
         name: data
       spec:
-        storageClassName: ${c.storage_class}
----
-apiVersion: apps/v1
+        storageClassName: ${c.storage_class}`;
+
+    // Brain: storage patch on brain clusters; on node-only clusters, delete the
+    // brain workload (StatefulSet + Service + NetworkPolicy) from the overlay so
+    // it never joins the (odd-sized) brain Raft group.
+    const brainSection = c.brain
+      ? `apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: fiducia-brain
@@ -173,8 +177,30 @@ spec:
     - metadata:
         name: data
       spec:
-        storageClassName: ${c.storage_class}
-`;
+        storageClassName: ${c.storage_class}`
+      : `# node-only cluster (brain = false): remove the brain workload.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fiducia-brain
+  namespace: fiducia
+$patch: delete
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-brain
+  namespace: fiducia
+$patch: delete
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fiducia-brain-ingress
+  namespace: fiducia
+$patch: delete`;
+
+    files[`clusters/${c.name}/patches.yaml`] = `# ${BANNER}\n${nodePatch}\n---\n${brainSection}\n`;
   }
 
   // Edge region list (fiducia-edge FIDUCIA_REGIONS).
