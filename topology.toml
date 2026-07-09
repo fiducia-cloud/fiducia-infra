@@ -71,3 +71,18 @@ node_replicas = 3
 brain_endpoint = "brain.hetzner.fiducia.cloud:9095"
 node_peer_endpoint = "node.hetzner.fiducia.cloud:9090"
 lb_endpoint = "https://hetzner.lb.fiducia.cloud"
+
+# A 4th platform. With RF=3 each shard's replicas still spread one-per-cluster
+# across THREE distinct failure domains; a 4th cluster adds a spare domain (the
+# brain may place a shard's 3 replicas on any 3 of the 4 platforms) plus extra
+# capacity — it does NOT change the "survive losing 1 cluster" guarantee. Storage
+# class is Azure's default CSI managed-disk provisioner.
+[[cluster]]
+name = "azure"
+platform = "azure"
+region = "eastus"
+storage_class = "managed-csi"
+node_replicas = 3
+brain_endpoint = "brain.azure.fiducia.cloud:9095"
+node_peer_endpoint = "node.azure.fiducia.cloud:9090"
+lb_endpoint = "https://azure.lb.fiducia.cloud"
