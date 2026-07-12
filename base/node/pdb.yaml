@@ -1,3 +1,5 @@
+# PodDisruptionBudget capping voluntary disruptions (drains/upgrades) to one
+# fiducia-node at a time so shard Raft quorum is preserved during maintenance.
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
