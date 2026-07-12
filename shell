@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Convenience entrypoint into the Nix dev shell (.nix/flake.nix): runs the given
+# command inside `nix develop`, or drops into an interactive dev shell if none given.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"

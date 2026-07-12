@@ -1,3 +1,4 @@
+# The `fiducia` namespace that every workload in this repo is deployed into.
 apiVersion: v1
 kind: Namespace
 metadata:

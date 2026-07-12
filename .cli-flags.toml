@@ -1,3 +1,5 @@
+# Declares this repo's CLI flags and their env-var mappings. Consumed by the
+# flags-2-env tool (scripts/with-flags2env.sh) and audited by the cli-flags CI job.
 [help]
 url = "https://github.com/fiducia-cloud/fiducia-infra"
 columns = ["options", "env", "type", "description"]

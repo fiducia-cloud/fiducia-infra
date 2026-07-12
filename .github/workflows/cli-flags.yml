@@ -1,3 +1,5 @@
+# Audits .cli-flags.toml against the flags-2-env submodule so documented CLI flags
+# stay in sync. Triggers only when the flag config or its tooling changes.
 name: CLI flags
 
 on:
