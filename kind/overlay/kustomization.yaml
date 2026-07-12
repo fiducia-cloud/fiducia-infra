@@ -1,0 +1,15 @@
+# Local kind overlay — deploys the fiducia base onto the ../multizone.yaml cluster.
+# Unlike ../../clusters/*, this is single-cluster and hand-authored (not rendered).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: fiducia
+resources:
+  - ../../base
+configMapGenerator:
+  - name: fiducia-cluster
+    envs:
+      - topology.env
+generatorOptions:
+  disableNameSuffixHash: true
+patches:
+  - path: patches.yaml

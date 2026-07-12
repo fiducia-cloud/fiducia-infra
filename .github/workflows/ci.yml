@@ -20,12 +20,51 @@ jobs:
       - run: node --test tools/*.test.mjs
       # fail if the generated per-cluster inputs are stale vs topology.toml
       - run: node tools/render.mjs --check
-      # every overlay must still build
+      # every overlay must still build — the real clusters AND the local kind tier
       - run: |
-          for c in clusters/*/; do
+          for c in clusters/*/ kind/overlay; do
             echo "== $c =="
             kubectl kustomize "$c" >/dev/null
           done
       # Advisory-only dependency audit; never gates the build.
       - run: npm audit
         continue-on-error: true
+
+  # Tier 2 provisioning IaC is never APPLIED in CI (that spends real money) — it is
+  # only format-checked and validated. `terraform validate` needs `terraform init`
+  # to fetch provider schemas, which is why this runs with network (GH-hosted).
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+      - name: fmt
+        run: terraform -chdir=terraform fmt -recursive -check -diff
+      - name: validate modules + e2e env
+        run: |
+          set -e
+          for d in terraform/modules/* terraform/envs/e2e; do
+            echo "== validate $d =="
+            terraform -chdir="$d" init -backend=false -input=false >/dev/null
+            terraform -chdir="$d" validate
+          done
+
+  # Local kind tier (Tier 1). Operator-run: it needs a built fiducia-node image, so
+  # it is workflow_dispatch-gated, not on every push. Documents the standing-up
+  # path the fiducia-e2e suite consumes; see docs/e2e.md.
+  kind-e2e:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: helm/kind-action@v1
+        with:
+          config: kind/multizone.yaml
+          cluster_name: fiducia
+      # A real run then builds+loads the fiducia-node image and applies kind/overlay
+      # (FIDUCIA_LOAD_IMAGES=1 tools/kind-up.sh), then checks out fiducia-e2e and runs
+      # `npm test` with FIDUCIA_E2E_BASE_URL=http://localhost:8090.
+       - name: overlay builds
+         run: kubectl kustomize kind/overlay >/dev/null

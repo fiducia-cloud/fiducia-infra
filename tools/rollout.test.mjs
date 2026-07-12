@@ -83,7 +83,7 @@ test("node rollout limits disruption and preserves StatefulSet canary mechanics"
 
 test("brain rollout uses one rolling StatefulSet member per cluster", () => {
   const doc = read("docs/ROLLOUT.md");
-  const statefulSet = read("base/brain/statefulset.yaml");
+  const statefulSet = read("base/components/brain/statefulset.yaml");
 
   assert.match(doc, /Brain upgrade \(per member, one per cluster\)/);
   assert.match(statefulSet, /kind:\s*StatefulSet/);
@@ -109,7 +109,7 @@ test("server rollout targets use versioned images for new releases", () => {
       repository: "ghcr.io/fiducia-cloud/fiducia-load-balance",
     },
     {
-      file: "base/brain/statefulset.yaml",
+      file: "base/components/brain/statefulset.yaml",
       kind: "StatefulSet",
       workload: "fiducia-brain",
       container: "brain",

@@ -76,6 +76,21 @@ export function validateTopology(t) {
     if (seen.has(c.name)) fail(`duplicate cluster name: ${c.name}`);
     seen.add(c.name);
   }
+  // Brain membership: a cluster runs a brain member unless `brain = false`
+  // (node-only). The brain Raft group must be an ODD number >= replication_factor
+  // for clean quorum — an even group (e.g. 4) has the same fault tolerance as the
+  // odd one below it but worse quorum math. So a 4th cluster is added node-only.
+  for (const c of clusters) {
+    if (c.brain === undefined) c.brain = true;
+    if (typeof c.brain !== "boolean") fail(`cluster ${c.name} brain must be a boolean`);
+  }
+  const brainCount = clusters.filter((c) => c.brain).length;
+  if (brainCount < t.replication_factor) {
+    fail(`brain group (${brainCount}) must be >= replication_factor (${t.replication_factor})`);
+  }
+  if (brainCount % 2 === 0) {
+    fail(`brain group must be an ODD number of members for clean quorum; got ${brainCount} — mark a cluster brain = false`);
+  }
   if (!["clustermesh", "wireguard", "public-mtls"].includes(t.connectivity)) {
     fail(`connectivity must be clustermesh|wireguard|public-mtls, got ${t.connectivity}`);
   }
@@ -102,10 +117,16 @@ export function render(t) {
   const targetNodes = clusters.reduce((n, c) => n + c.node_replicas, 0);
   const files = {};
 
+  const brainClusters = clusters.filter((o) => o.brain);
   for (const c of clusters) {
     const others = clusters.filter((o) => o.name !== c.name);
     const peers = others.map((o) => o.node_peer_endpoint).join(",");
-    const brainPeers = others.map((o) => o.brain_endpoint).join(",");
+    // Brain members list their OTHER brain peers (their Raft peer set); node-only
+    // clusters list ALL brains (their sidecars reach the control plane but they
+    // are not members of the brain Raft group).
+    const brainPeers = (c.brain ? brainClusters.filter((o) => o.name !== c.name) : brainClusters)
+      .map((o) => o.brain_endpoint)
+      .join(",");
 
     files[`clusters/${c.name}/topology.env`] = [
       `# ${BANNER}`,
@@ -128,8 +149,8 @@ export function render(t) {
       "",
     ].join("\n");
 
-    files[`clusters/${c.name}/patches.yaml`] = `# ${BANNER}
-apiVersion: apps/v1
+    // Node StatefulSet patch (replicas + storage class) applies to every cluster.
+    const patches = [`apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: fiducia-node
@@ -140,9 +161,14 @@ spec:
     - metadata:
         name: data
       spec:
-        storageClassName: ${c.storage_class}
----
-apiVersion: apps/v1
+        storageClassName: ${c.storage_class}`];
+
+    // Brain storage patch only on brain clusters. Whether a cluster RUNS a brain
+    // is decided by its overlay including the `base/components/brain` Component
+    // (hand-authored in clusters/<name>/kustomization.yaml); node-only clusters
+    // omit both the Component and this patch, so they never join the brain group.
+    if (c.brain) {
+      patches.push(`apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: fiducia-brain
@@ -152,8 +178,10 @@ spec:
     - metadata:
         name: data
       spec:
-        storageClassName: ${c.storage_class}
-`;
+        storageClassName: ${c.storage_class}`);
+    }
+
+    files[`clusters/${c.name}/patches.yaml`] = `# ${BANNER}\n${patches.join("\n---\n")}\n`;
   }
 
   // Edge region list (fiducia-edge FIDUCIA_REGIONS).
