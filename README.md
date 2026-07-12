@@ -218,6 +218,31 @@ Why these workload types: **node** and **brain** are Raft members → `StatefulS
 stateless cache → `Deployment`. The **sidecar** is a second container in the node
 pod (its bridge to brain + telemetry).
 
+> **A 4th platform (Azure) is now in [`topology.toml`](topology.toml).** RF stays 3,
+> so each shard's replicas still spread one-per-cluster across three distinct
+> failure domains; the 4th cluster adds a spare domain + capacity and does **not**
+> change the "survive losing 1 cluster" guarantee. The kustomize model is N-cluster
+> already — `render.mjs` fans out to every `[[cluster]]` block.
+>
+> Azure is added **node-only** (`brain = false`): the brain Raft group must stay an
+> **odd** size, so it's pinned at 3 (gcp/aws/hetzner). Brain-member clusters include
+> the [`base/components/brain`](base/components/brain) Component; node-only clusters
+> omit it. `render.mjs` enforces an odd, ≥ RF brain group.
+
+## Provisioning & testing
+
+The overlays below assume the clusters exist. Two sibling tiers stand them up and
+test the coordination API across them — see [`docs/e2e.md`](docs/e2e.md):
+
+- [`terraform/`](terraform) — **Tier 2**: IaC for the real managed clusters
+  (GKE / EKS / AKS / Hetzner k3s), each behind an `enable_<cloud>` toggle.
+- [`kind/`](kind) + [`tools/kind-up.sh`](tools/kind-up.sh) — **Tier 1**: one local
+  kind cluster with four zone-labeled workers simulating the failure domains, for
+  free CI conformance + chaos runs.
+- [`fiducia-e2e`](https://github.com/fiducia-cloud/fiducia-e2e) — the shared
+  Node `--test` suite (per-primitive conformance + multi-cluster fault injection)
+  that runs against either tier.
+
 ## Deploy
 
 Render/apply one cluster:
@@ -226,9 +251,10 @@ Render/apply one cluster:
 kubectl --context gcp     apply -k clusters/gcp
 kubectl --context aws     apply -k clusters/aws
 kubectl --context hetzner apply -k clusters/hetzner
+kubectl --context azure   apply -k clusters/azure
 ```
 
-Or GitOps it: register all three clusters with one ArgoCD and apply
+Or GitOps it: register all the clusters with one ArgoCD and apply
 [`argocd/applicationset.yaml`](argocd/applicationset.yaml).
 
 ## Prerequisites

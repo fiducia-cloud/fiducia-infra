@@ -1,0 +1,21 @@
+# Remote state with locking — rename to backend.tf and fill in for any shared/
+# long-lived e2e fleet. The default (no backend) uses local state, fine only for
+# throwaway single-operator runs. NEVER commit real state files.
+#
+# terraform {
+#   backend "gcs" {
+#     bucket = "fiducia-tfstate"
+#     prefix = "e2e"
+#   }
+# }
+#
+# or S3 + DynamoDB lock table (itself a coordination lock — cf. fiducia locks):
+# terraform {
+#   backend "s3" {
+#     bucket         = "fiducia-tfstate"
+#     key            = "e2e/terraform.tfstate"
+#     region         = "us-east-1"
+#     dynamodb_table = "fiducia-tflock"
+#     encrypt        = true
+#   }
+# }

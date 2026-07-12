@@ -10,5 +10,9 @@
   {
     "name": "hetzner",
     "url": "https://hetzner.lb.fiducia.cloud"
+  },
+  {
+    "name": "azure",
+    "url": "https://azure.lb.fiducia.cloud"
   }
 ]
