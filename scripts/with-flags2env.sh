@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Wrapper that turns .cli-flags.toml flags into environment variables (via the
+# flags-2-env submodule) and then execs the given command with them applied:
+#   scripts/with-flags2env.sh [flags...] -- command [args...]
 set -euo pipefail
 
 root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
