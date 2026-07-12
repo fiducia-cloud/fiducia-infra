@@ -194,7 +194,7 @@ spec:
 // --- run ---------------------------------------------------------------------
 
 function main() {
-  const check = process.argv.includes("--check");
+  const check = process.argv.includes("--check") || /^(1|true|yes|on)$/i.test(process.env.FIDUCIA_RENDER_CHECK ?? "");
   let files;
   try {
     files = render(loadTopology());
