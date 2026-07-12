@@ -1,5 +1,7 @@
-# One ArgoCD (a "hub") registers all three clusters and applies each cluster's
+# One ArgoCD (a "hub") registers all the clusters and applies each cluster's
 # overlay to it. This ApplicationSet fans out: clusters/<name> -> that cluster.
+# The cluster generator is label-driven, so a new platform (e.g. azure) is picked
+# up automatically once its cluster secret is labeled and clusters/<name> exists.
 #
 # Prereqs: `argocd cluster add` each cluster and label its cluster secret with
 # `fiducia.cloud/cluster=true`. The cluster generator supplies `name` + `server`.

@@ -5,8 +5,6 @@ kind: Kustomization
 namespace: fiducia
 resources:
   - ../../base
-components:
-  - ../../base/components/brain    # brain Raft member (topology.toml brain != false)
 configMapGenerator:
   - name: fiducia-cluster
     envs:
