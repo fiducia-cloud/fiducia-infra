@@ -1,3 +1,6 @@
+# CI that validates the infra without touching real clusters: renderer self-tests,
+# a topology staleness check, a kustomize build of every overlay, and terraform
+# fmt/validate. The kind e2e job is workflow_dispatch-gated (needs a built image).
 name: ci
 on:
   push:
