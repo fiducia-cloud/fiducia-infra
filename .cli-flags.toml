@@ -1,0 +1,13 @@
+[help]
+url = "https://github.com/fiducia-cloud/fiducia-infra"
+columns = ["options", "env", "type", "description"]
+
+[parse]
+allow_unknown = false
+
+[flags.check]
+env = "FIDUCIA_RENDER_CHECK"
+aliases = ["check"]
+type = "bool"
+help = "Verify generated infrastructure files without writing them."
+

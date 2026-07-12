@@ -12,8 +12,8 @@ jobs:
   topology:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: "22"
       # renderer self-tests
@@ -66,5 +66,5 @@ jobs:
       # A real run then builds+loads the fiducia-node image and applies kind/overlay
       # (FIDUCIA_LOAD_IMAGES=1 tools/kind-up.sh), then checks out fiducia-e2e and runs
       # `npm test` with FIDUCIA_E2E_BASE_URL=http://localhost:8090.
-      - name: overlay builds
-        run: kubectl kustomize kind/overlay >/dev/null
+       - name: overlay builds
+         run: kubectl kustomize kind/overlay >/dev/null
