@@ -78,6 +78,15 @@ resource "aws_iam_role_policy_attachment" "node" {
 }
 
 # --- cluster + node group ---------------------------------------------------
+locals {
+  # Dedicated-VPC opt-in: use operator-supplied subnets when provided, else the
+  # default VPC's (e2e behavior).
+  subnet_ids = length(var.subnet_ids) > 0 ? var.subnet_ids : data.aws_subnets.default.ids
+  # Authorized-ranges opt-in: an empty list keeps the endpoint open to the world
+  # (EKS default), matching current e2e behavior.
+  public_access_cidrs = length(var.authorized_api_cidrs) > 0 ? var.authorized_api_cidrs : ["0.0.0.0/0"]
+}
+
 resource "aws_eks_cluster" "this" {
   name     = var.cluster_name
   role_arn = aws_iam_role.cluster.arn
@@ -85,7 +94,12 @@ resource "aws_eks_cluster" "this" {
   tags     = var.labels
 
   vpc_config {
-    subnet_ids = data.aws_subnets.default.ids
+    subnet_ids = local.subnet_ids
+    # Defaults below reproduce the e2e-grade public endpoint open to 0.0.0.0/0.
+    # Tighten for prod by opting into private access and/or authorized CIDRs.
+    endpoint_public_access  = var.endpoint_public_access
+    endpoint_private_access = var.endpoint_private_access
+    public_access_cidrs     = local.public_access_cidrs
   }
 
   depends_on = [aws_iam_role_policy_attachment.cluster_policy]
