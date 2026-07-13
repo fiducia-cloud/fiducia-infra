@@ -42,7 +42,7 @@ them uniformly:
 |-----------------|-----------------------------------------------------|
 | `cluster_name`  | cluster id (e.g. `fiducia-e2e-gcp`)                 |
 | `location`      | region/zone (matches the cluster's `region` in topology.toml) |
-| `node_count`    | worker node count (default 3 — one fiducia-node replica can schedule per node) |
+| `node_count`    | worker machines (e2e modules default 3; the prod trio defaults **5** — topology `node_replicas`=5, one node pod per machine) |
 | `k8s_version`   | Kubernetes minor (e.g. `1.30`)                      |
 | `labels`        | tags/labels applied to cluster + nodes              |
 
