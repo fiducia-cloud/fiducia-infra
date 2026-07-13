@@ -29,10 +29,10 @@ Fiducia is already a quorum system internally (Raft). The trick here is to make
                   ┌───────────────┼───────────────┐  (routes to a healthy cluster)
                   ▼               ▼               ▼
             ┌──────────┐    ┌──────────┐    ┌──────────┐
-            │  GCP k8s │    │  AWS k8s │    │ Hetzner  │
+            │  Hetzner │    │  Vultr   │    │  Civo    │
             │  LB      │    │  LB      │    │  LB      │
             │  brain-1 │◀──▶│  brain-2 │◀──▶│  brain-3 │   one Raft group (RF3)
-            │  nodes   │◀──▶│  nodes   │◀──▶│  nodes   │   shard replicas 1/cluster
+            │  nodes ×5│◀──▶│  nodes ×5│◀──▶│  nodes ×5│   shard replicas 1/cluster
             └──────────┘    └──────────┘    └──────────┘
                   └───────── cross-cluster Raft (peer transport) ─────────┘
 
