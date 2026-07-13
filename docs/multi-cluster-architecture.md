@@ -55,7 +55,7 @@ flowchart TB
 
     subgraph CI["🇬🇧 Civo — lon1 (London)"]
         direction TB
-        c_lb["fiducia-load-balance<br/>:443"]
+        c_lb["fiducia-load-balance<br/>:443 · key-aware router"]
         c_brain["fiducia-brain<br/>member (1 pod)"]
         c_nodes["fiducia-node<br/>5 pods · 5 machines"]
     end
