@@ -398,11 +398,13 @@ every overlay):
   edge `:443` ingress, otel egress, and cross-cluster peering with `kubectl
   kustomize` on every overlay.
 - **Terraform prod-hardening wired as opt-in variables** (defaults reproduce the
-  e2e baseline exactly — see **terraform prod-hardening** in
-  [`terraform/README.md`](terraform/README.md)): private VPC/subnets +
-  authorized API CIDRs on EKS, `deletion_protection` + private cluster +
-  authorized networks + network-policy on GKE, authorized API ranges +
-  network-policy on AKS, and an `hcloud_firewall` on Hetzner.
+  e2e baseline exactly — see **Prod-hardening (opt-in)** in
+  [`terraform/README.md`](terraform/README.md)): for the prod trio, an
+  `hcloud_firewall` on Hetzner (default-deny inbound except SSH/`:6443`/NodePorts;
+  Vultr VKE and Civo are managed control planes). The drop-in hyperscaler swap
+  modules keep their own knobs — private VPC/subnets + authorized API CIDRs on
+  EKS, `deletion_protection` + private cluster + network-policy on GKE, authorized
+  API ranges + network-policy on AKS.
 
 Accepted / known risks (reported, deliberately **not** auto-changed):
 
