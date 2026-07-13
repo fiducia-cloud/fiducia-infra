@@ -1,6 +1,11 @@
 # EKS cluster for a fiducia failure domain (AWS).
-# e2e/test-grade baseline: uses the account's DEFAULT VPC subnets to stay small.
-# TODO(prod): dedicated VPC, private subnets, restricted endpoint access.
+# e2e/test-grade baseline: by default uses the account's DEFAULT VPC subnets and a
+# public API endpoint open to 0.0.0.0/0 to stay small and CI-friendly.
+#
+# Prod-hardening is OPT-IN via variables that all DEFAULT to this e2e behavior
+# (see variables.tf): set var.subnet_ids to run in a dedicated/private VPC, and
+# var.authorized_api_cidrs / var.endpoint_private_access to restrict API access.
+# Existing e2e applies that pass none of these are unchanged.
 
 terraform {
   required_version = ">= 1.5"
