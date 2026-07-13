@@ -83,19 +83,32 @@ synchronous cross-cluster Raft affordable (see [§5](#5-cross-cluster-transport)
 
 ## 3. What runs where (pods & machines)
 
-Per cluster:
+The full cast — three deployed workloads, one in-pod sidecar, and one shared
+library that is **compiled in, not deployed**:
 
-- **5 × `fiducia-node`** pods. A **required** pod anti-affinity on
-  `kubernetes.io/hostname` (in [base/node/statefulset.yaml](../base/node/statefulset.yaml))
-  forces **one node pod per machine** → each cluster needs **≥ 5 worker
-  machines**. A `topologySpreadConstraint` additionally spreads them across
-  zones where the cloud exposes them.
-- **1 × `fiducia-brain`** pod. It has **no** node anti-affinity, so it **may
-  share a machine with a node** — 5 machines per cluster is the floor, not 6.
-- **1 × `fiducia-node-sidecar`** *container inside each node pod* (not a separate
-  pod): it reports the node's health + failure domain to the brain.
-- **`fiducia-load-balance`** Deployment (stateless cache) behind the cloud
-  LoadBalancer.
+| Component | Repo | Kind | Per cluster | Role |
+|-----------|------|------|-------------|------|
+| `fiducia-node` | `fiducia-node.rs` | StatefulSet | **5 pods** | data-plane Raft member; holds this cluster's replica of each shard |
+| `fiducia-brain` | `fiducia-brain.rs` | StatefulSet | **1 pod** | control-plane Raft member; shard placement + scaling |
+| `fiducia-node-sidecar` | `fiducia-node-sidecar.rs` | container *in* each node pod | 5 (1/node) | reports node health + failure domain (`FIDUCIA_REGION`) to the brain |
+| `fiducia-load-balance` | `fiducia-load-balance.rs` | Deployment | **2 pods** | edge **key-aware router**: `key → shard → leader`; the auth + idempotency boundary; stateless cache |
+| `fiducia-routing` | `fiducia-routing.rs` | **library — 0 pods** | — | the frozen `key → shard` hash, **linked into both `fiducia-load-balance` and `fiducia-node`** so they can never disagree on where a key lives |
+
+> **`fiducia-routing` is not a service.** It's a shared crate compiled into the LB
+> and node images (like `fiducia-interfaces`) — nothing to deploy, no pod to place.
+> It exists so the LB's `key → shard` and the node's `key → shard` are the *same*
+> function; see [§6](#6-request--commit-paths).
+
+Per-machine placement (what the diagram below shows):
+
+- The 5 `fiducia-node` pods land on **5 distinct machines** — a **required**
+  podAntiAffinity on `kubernetes.io/hostname`
+  ([base/node/statefulset.yaml](../base/node/statefulset.yaml)); a
+  `topologySpreadConstraint` also spreads them across zones where the cloud
+  exposes them ⇒ each cluster needs **≥ 5 worker machines**.
+- The `fiducia-brain` pod has **no** node anti-affinity, so it **may co-locate**
+  with a node — 5 machines/cluster is the floor, not 6.
+- `fiducia-load-balance` pods are stateless and float freely on any machine.
 
 ```mermaid
 flowchart LR
