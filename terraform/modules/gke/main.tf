@@ -1,5 +1,10 @@
 # GKE cluster for a fiducia failure domain (Google Cloud).
 # e2e/test-grade baseline — see terraform/README.md "Cost & safety".
+#
+# Prod-hardening is OPT-IN via variables that all DEFAULT to this e2e behavior
+# (see variables.tf): var.deletion_protection, var.enable_private_cluster,
+# var.authorized_api_cidrs and var.enable_network_policy. Existing e2e applies
+# that pass none of these are unchanged.
 
 terraform {
   required_version = ">= 1.5"
