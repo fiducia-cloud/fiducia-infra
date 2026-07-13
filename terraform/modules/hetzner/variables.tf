@@ -37,3 +37,17 @@ variable "labels" {
   default     = {}
   description = "Labels applied to the servers."
 }
+
+# --- prod-hardening (opt-in; defaults reproduce the e2e-grade baseline) ------
+
+variable "enable_firewall" {
+  type        = bool
+  default     = false
+  description = "Attach an hcloud_firewall to the servers. Default false so e2e servers keep unfiltered public IPs (k3s :6443 + NodePorts reachable publicly). When true, inbound is default-denied except SSH/:6443/NodePorts from var.firewall_allowed_cidrs."
+}
+
+variable "firewall_allowed_cidrs" {
+  type        = list(string)
+  default     = ["0.0.0.0/0", "::/0"]
+  description = "Source CIDRs permitted to SSH / :6443 / NodePorts when var.enable_firewall is true. Defaults to open (the firewall still default-denies every OTHER port); narrow this to operator/mesh CIDRs for real prod hardening."
+}
