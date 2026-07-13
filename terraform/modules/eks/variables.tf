@@ -38,6 +38,11 @@ variable "subnet_ids" {
   type        = list(string)
   default     = []
   description = "Subnets for the cluster + node group. Empty (default) uses the account's DEFAULT VPC subnets (e2e-grade). Set to a dedicated/private VPC's subnet ids to harden for prod."
+
+  validation {
+    condition     = alltrue([for id in var.subnet_ids : trimspace(id) != ""])
+    error_message = "subnet_ids cannot contain empty values."
+  }
 }
 
 variable "endpoint_public_access" {
@@ -56,4 +61,9 @@ variable "authorized_api_cidrs" {
   type        = list(string)
   default     = []
   description = "CIDRs allowed to reach the public API endpoint. Empty (default) means open to 0.0.0.0/0 (e2e). Set to operator/admin CIDRs to restrict for prod."
+
+  validation {
+    condition     = alltrue([for cidr in var.authorized_api_cidrs : can(cidrhost(cidr, 0))])
+    error_message = "authorized_api_cidrs must contain valid IPv4 or IPv6 CIDRs."
+  }
 }

@@ -32,10 +32,13 @@ spec:
   podSelector: {}
   policyTypes: [Ingress, Egress]
 ---
-# (1) DNS egress. Every pod must resolve service + external names (kube-dns lives
+# (1) DNS egress. Every pod must resolve service + external names (CoreDNS lives
 #     in kube-system, i.e. OUTSIDE this namespace, so allow-namespace-internal
-#     does not cover it). Allowed to any destination on :53 UDP/TCP; this is the
-#     one flow we never want to sever.
+#     does not cover it). Restrict the destination to the standard CoreDNS /
+#     kube-dns pod label instead of allowing arbitrary :53 endpoints, which
+#     would turn DNS into an egress bypass. GKE, EKS, AKS, k3s and kind all use
+#     this label; an overlay that deliberately enables NodeLocal DNSCache must
+#     add its link-local DNS address explicitly.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -45,7 +48,14 @@ spec:
   podSelector: {}
   policyTypes: [Egress]
   egress:
-    - ports:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
         - { protocol: UDP, port: 53 }
         - { protocol: TCP, port: 53 }
 ---

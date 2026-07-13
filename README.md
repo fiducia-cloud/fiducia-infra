@@ -327,7 +327,7 @@ if *any* policy permits it), so these compose cleanly:
 | Policy (file) | Kind | What it allows |
 |---------------|------|----------------|
 | `fiducia-default-deny` (`base/networkpolicy.yaml`) | Ingress+Egress, all pods, no rules | nothing — the baseline drop |
-| `fiducia-allow-dns-egress` (`base/networkpolicy.yaml`) | Egress, all pods | `:53` UDP/TCP to anywhere (kube-dns lives outside the namespace) |
+| `fiducia-allow-dns-egress` (`base/networkpolicy.yaml`) | Egress, all pods | `:53` UDP/TCP to the `kube-system` CoreDNS/kube-dns pods (kube-dns lives outside the namespace) |
 | `fiducia-allow-namespace-internal` (`base/networkpolicy.yaml`) | Ingress+Egress, all pods | all east-west **within** `fiducia`: LB→node/brain/otel, node↔node & brain↔brain intra-cluster, sidecar→brain, brain→sidecar `:8091`, app→LB `:8088`, every pod→otel `:4317` |
 | `fiducia-allow-kubelet-probes` (`base/networkpolicy.yaml`) | Ingress, all pods | health-only ports `:8091`/`:13133` from any source (see note) |
 | `fiducia-load-balance-edge-ingress` (`base/load-balance/networkpolicy.yaml`) | Ingress, LB | external clients → `:8443` (the public `:443` Service target) |

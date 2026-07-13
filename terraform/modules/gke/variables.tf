@@ -61,12 +61,22 @@ variable "master_ipv4_cidr_block" {
   type        = string
   default     = "172.16.0.0/28"
   description = "RFC1918 /28 for the private control plane. Only used when var.enable_private_cluster is true."
+
+  validation {
+    condition     = can(cidrnetmask(var.master_ipv4_cidr_block)) && endswith(var.master_ipv4_cidr_block, "/28")
+    error_message = "master_ipv4_cidr_block must be a valid /28 CIDR."
+  }
 }
 
 variable "authorized_api_cidrs" {
   type        = list(string)
   default     = []
   description = "CIDRs allowed to reach the API server (master_authorized_networks). Empty (default) leaves it unrestricted (e2e). Set to operator/admin CIDRs to harden."
+
+  validation {
+    condition     = alltrue([for cidr in var.authorized_api_cidrs : can(cidrhost(cidr, 0))])
+    error_message = "authorized_api_cidrs must contain valid IPv4 or IPv6 CIDRs."
+  }
 }
 
 variable "enable_network_policy" {

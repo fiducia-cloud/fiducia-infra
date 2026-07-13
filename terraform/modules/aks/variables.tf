@@ -38,6 +38,11 @@ variable "authorized_api_cidrs" {
   type        = list(string)
   default     = []
   description = "CIDRs allowed to reach the AKS API server (api_server_access_profile.authorized_ip_ranges). Empty (default) leaves the endpoint open (e2e). Set to operator/admin CIDRs to harden."
+
+  validation {
+    condition     = alltrue([for cidr in var.authorized_api_cidrs : can(cidrnetmask(cidr))])
+    error_message = "authorized_api_cidrs must contain valid IPv4 CIDRs."
+  }
 }
 
 variable "enable_network_policy" {

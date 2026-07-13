@@ -18,13 +18,15 @@ terraform {
 }
 
 data "aws_vpc" "default" {
+  count   = length(var.subnet_ids) == 0 ? 1 : 0
   default = true
 }
 
 data "aws_subnets" "default" {
+  count = length(var.subnet_ids) == 0 ? 1 : 0
   filter {
     name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
+    values = [data.aws_vpc.default[0].id]
   }
 }
 
@@ -81,7 +83,7 @@ resource "aws_iam_role_policy_attachment" "node" {
 locals {
   # Dedicated-VPC opt-in: use operator-supplied subnets when provided, else the
   # default VPC's (e2e behavior).
-  subnet_ids = length(var.subnet_ids) > 0 ? var.subnet_ids : data.aws_subnets.default.ids
+  subnet_ids = length(var.subnet_ids) > 0 ? var.subnet_ids : data.aws_subnets.default[0].ids
   # Authorized-ranges opt-in: an empty list keeps the endpoint open to the world
   # (EKS default), matching current e2e behavior.
   public_access_cidrs = length(var.authorized_api_cidrs) > 0 ? var.authorized_api_cidrs : ["0.0.0.0/0"]
@@ -103,6 +105,13 @@ resource "aws_eks_cluster" "this" {
   }
 
   depends_on = [aws_iam_role_policy_attachment.cluster_policy]
+
+  lifecycle {
+    precondition {
+      condition     = var.endpoint_public_access || var.endpoint_private_access
+      error_message = "At least one EKS API endpoint must remain enabled."
+    }
+  }
 }
 
 resource "aws_eks_node_group" "primary" {

@@ -66,8 +66,27 @@ resource "google_container_cluster" "this" {
     }
   }
 
+  # GKE requires both enforcement and the network-policy add-on. Keeping the
+  # two blocks behind the same flag prevents a half-enabled cluster that accepts
+  # NetworkPolicy objects but does not enforce them.
+  dynamic "addons_config" {
+    for_each = var.enable_network_policy ? [1] : []
+    content {
+      network_policy_config {
+        disabled = false
+      }
+    }
+  }
+
   release_channel {
     channel = "REGULAR"
+  }
+
+  lifecycle {
+    precondition {
+      condition     = !var.enable_private_endpoint || var.enable_private_cluster
+      error_message = "enable_private_endpoint requires enable_private_cluster."
+    }
   }
 }
 
