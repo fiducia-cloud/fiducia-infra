@@ -1,0 +1,100 @@
+# Namespace-wide NetworkPolicy baseline for `fiducia`: a blanket DEFAULT-DENY
+# (ingress + egress) plus the minimal explicit allows every workload needs. This
+# is the "belt" behind the per-component "suspenders" policies in
+# node/networkpolicy.yaml, components/brain/networkpolicy.yaml,
+# load-balance/networkpolicy.yaml and observability/networkpolicy.yaml.
+#
+# NetworkPolicies are ADDITIVE (a flow is permitted if ANY policy allows it), so
+# these documents compose with the per-component ones — the default-deny only
+# bites where nothing else grants the flow.
+#
+# The full traffic model these policies keep intact (see README "Traffic Paths"):
+#   external client        -> LB :8443            (edge, load-balance/networkpolicy)
+#   in-cluster app pods     -> LB :8088            (east-west, allow-namespace-internal)
+#   LB                     -> node :8090 / brain :8095 / otel :4317  (east-west)
+#   node <-> node           :9090  intra-cluster  (east-west) + cross-cluster (node policy)
+#   brain <-> brain         :9095  intra-cluster  (east-west) + cross-cluster (brain policy)
+#   sidecar                -> brain :8095, brain -> sidecar :8091     (east-west)
+#   all fiducia pods       -> otel-agent :4317 OTLP (east-west)
+#   otel-agent             -> OTLP gateway :4318 + k8s API           (observability policy)
+#   every pod              -> kube-dns :53                            (allow-dns-egress)
+#   kubelet                -> pod probe ports                         (allow-kubelet-probes)
+---
+# (0) DEFAULT-DENY: select every pod for BOTH directions with no rules, so any
+#     flow not explicitly allowed by a policy below (or a per-component policy)
+#     is dropped. This is what turns the namespace into deny-by-default.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fiducia-default-deny
+  namespace: fiducia
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+# (1) DNS egress. Every pod must resolve service + external names (kube-dns lives
+#     in kube-system, i.e. OUTSIDE this namespace, so allow-namespace-internal
+#     does not cover it). Allowed to any destination on :53 UDP/TCP; this is the
+#     one flow we never want to sever.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fiducia-allow-dns-egress
+  namespace: fiducia
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+---
+# (2) East-west within the namespace. Any fiducia pod may talk to any other
+#     fiducia pod (both directions). This one policy covers the entire in-cluster
+#     mesh: LB -> node/brain/otel, node <-> node (intra-cluster), brain <-> brain
+#     (intra-cluster) + follower->leader control forwarding, sidecar -> brain,
+#     brain -> sidecar :8091, in-cluster app pods -> LB :8088, and every pod ->
+#     otel-agent :4317. Cross-CLUSTER peer flows are NOT here — they arrive from
+#     outside the namespace and are handled by the node/brain peer policies.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fiducia-allow-namespace-internal
+  namespace: fiducia
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: fiducia
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: fiducia
+---
+# (3) Kubelet liveness/readiness probes. Probes originate from the node's kubelet
+#     (host-network source IP, i.e. outside the pod CIDR), so with default-deny
+#     ingress they must be allowed explicitly. We permit ingress on exactly the
+#     probe ports each workload declares — LB :8088, node :8090, sidecar :8091,
+#     brain :8095, otel-agent :13133 — from any source. These are health
+#     endpoints only; the sensitive planes are still confined by the other
+#     policies. (CNIs like Cilium/Calico also failsafe kubelet health traffic,
+#     but this keeps probes working on any CNI.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fiducia-allow-kubelet-probes
+  namespace: fiducia
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - ports:
+        - { protocol: TCP, port: 8088 }   # load-balance /healthz
+        - { protocol: TCP, port: 8090 }   # node /healthz + /readyz
+        - { protocol: TCP, port: 8091 }   # node sidecar /healthz
+        - { protocol: TCP, port: 8095 }   # brain /healthz + /readyz
+        - { protocol: TCP, port: 13133 }  # otel-agent health_check
