@@ -77,12 +77,20 @@ spec:
 ---
 # (3) Kubelet liveness/readiness probes. Probes originate from the node's kubelet
 #     (host-network source IP, i.e. outside the pod CIDR), so with default-deny
-#     ingress they must be allowed explicitly. We permit ingress on exactly the
-#     probe ports each workload declares — LB :8088, node :8090, sidecar :8091,
-#     brain :8095, otel-agent :13133 — from any source. These are health
-#     endpoints only; the sensitive planes are still confined by the other
-#     policies. (CNIs like Cilium/Calico also failsafe kubelet health traffic,
-#     but this keeps probes working on any CNI.)
+#     ingress they must be allowed. This topology's declared CNI (Cilium; also
+#     Calico) exempts kubelet health-check traffic from NetworkPolicy via its
+#     failsafe, so probes to EVERY port keep working under default-deny without a
+#     rule here — including the sensitive-plane probes (LB :8088, node :8090,
+#     brain :8095), which we deliberately do NOT open from any source because
+#     that would undo the in-namespace confinement the node/brain policies exist
+#     to provide (brain :8095 /v1 is not yet L7-authenticated).
+#
+#     Belt-and-suspenders: we still explicitly allow probes on the health-ONLY
+#     ports (sidecar :8091, otel-agent :13133), which carry no sensitive plane and
+#     so are safe to open cluster-wide. For a CNI WITHOUT a kubelet failsafe, add
+#     a per-overlay ipBlock allow for that cluster's node CIDR on :8088/:8090/:8095
+#     (same escape hatch called out in node/networkpolicy.yaml and
+#     components/brain/networkpolicy.yaml).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -93,8 +101,5 @@ spec:
   policyTypes: [Ingress]
   ingress:
     - ports:
-        - { protocol: TCP, port: 8088 }   # load-balance /healthz
-        - { protocol: TCP, port: 8090 }   # node /healthz + /readyz
-        - { protocol: TCP, port: 8091 }   # node sidecar /healthz
-        - { protocol: TCP, port: 8095 }   # brain /healthz + /readyz
-        - { protocol: TCP, port: 13133 }  # otel-agent health_check
+        - { protocol: TCP, port: 8091 }   # node sidecar /healthz (health-only)
+        - { protocol: TCP, port: 13133 }  # otel-agent health_check (health-only)
