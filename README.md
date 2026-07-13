@@ -65,12 +65,12 @@ connectivity mode, and (crucially) every cluster's **reachable endpoints**:
 
 ```toml
 [[cluster]]
-name = "gcp"
-storage_class = "standard-rwo"
-node_replicas = 3
-brain_endpoint = "brain.gcp.fiducia.cloud:9095"     # how OTHER clusters reach this brain
-node_peer_endpoint = "node.gcp.fiducia.cloud:9090"  # how OTHER clusters reach these nodes
-lb_endpoint = "https://gcp.lb.fiducia.cloud"        # for the edge
+name = "hetzner"
+storage_class = "hcloud-volumes"
+node_replicas = 5
+brain_endpoint = "brain.hetzner.fiducia.cloud:9095"     # how OTHER clusters reach this brain
+node_peer_endpoint = "node.hetzner.fiducia.cloud:9090"  # how OTHER clusters reach these nodes
+lb_endpoint = "https://hetzner.lb.fiducia.cloud"        # for the edge
 ```
 
 `tools/render.mjs` fans that one file out into every cluster's kustomize inputs,
