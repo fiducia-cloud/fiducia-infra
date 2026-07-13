@@ -29,9 +29,8 @@ jobs:
             echo "== $c =="
             kubectl kustomize "$c" >/dev/null
           done
-      # Advisory-only dependency audit; never gates the build.
+      # Dependency advisories are a required supply-chain gate.
       - run: npm audit
-        continue-on-error: true
 
   # Tier 2 provisioning IaC is never APPLIED in CI (that spends real money) — it is
   # only format-checked and validated. `terraform validate` needs `terraform init`

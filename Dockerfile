@@ -8,6 +8,6 @@ COPY base base
 COPY argocd argocd
 COPY generated generated
 COPY docs docs
-RUN npm ci && npm test && npm run check
+RUN npm ci --ignore-scripts && npm test && npm run check
 USER node
 CMD ["npm", "run", "check"]

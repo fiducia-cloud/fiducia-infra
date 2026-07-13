@@ -278,6 +278,10 @@ protected `fiducia-monorepo` deploy workflow from its exact submodule pins.
 
 ## Security posture
 
+CI fails on dependency advisories and installs the renderer's locked dependency
+graph with lifecycle scripts disabled in the validation image. Dependabot
+tracks npm, GitHub Actions, and Docker base-image updates weekly.
+
 Every workload ships a hardened baseline; the manifests are the source of truth,
 but the intent is:
 
