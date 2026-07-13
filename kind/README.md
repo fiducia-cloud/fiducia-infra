@@ -1,8 +1,11 @@
-# kind — local multi-zone test cluster (Tier 1)
+# kind — local single-cluster test (Tier 1)
 
 Ephemeral local Kubernetes for the fiducia-e2e conformance + chaos suite, with **no
-cloud spend**. This is Tier 1 of the test infrastructure; the real managed clusters
-(Tier 2) live in [`../terraform`](../terraform).
+cloud spend**. This is **Tier 1** (one cluster, zone-labeled workers) of the test
+ladder. For **cross-cluster** Raft — three *separate* kind clusters
+(hetzner/vultr/civo) with WAN latency + partition injection — see **Tier 2** in
+[`multicluster/`](multicluster). Real managed clusters (Tier 4) live in
+[`../terraform`](../terraform). Full ladder: [`../docs/e2e.md`](../docs/e2e.md).
 
 ## What it is
 
