@@ -4,8 +4,10 @@
 #   ./test/run.sh              # core: reachability + leadership spread + quorum
 #   ./test/run.sh --scenarios  # + WAN latency and partition/heal scenarios
 #
-# The CORE checks use the auth-exempt GET /v1/status (rich Raft state: per-shard
+# The CORE checks use GET /v1/status (rich Raft state: per-shard
 # role/term/leader_id/has_quorum + leading_shards) on each cluster's host API port.
+# /v1/status is org-exempt but still trusted-hop authenticated, so we send the
+# internal-auth header (org header is added only for tenant endpoints like KV).
 # The data check does an authed KV write/read across clusters (best-effort — skips
 # if direct-to-node writes aren't accepted). Scenarios drive netem.sh + partition.sh
 # and re-check, proving the prod cross-cloud Raft timing holds under emulated WAN.
