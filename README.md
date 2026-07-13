@@ -218,7 +218,7 @@ base/                      shared manifests (don't apply directly)
   brain/       StatefulSet (1 member/cluster) + headless service
   load-balance/ Deployment + LoadBalancer service
 clusters/                  per-cluster Kustomize overlays
-  gcp/ aws/ hetzner/       kustomization.yaml + GENERATED topology.env & patches.yaml
+  hetzner/ vultr/ civo/    kustomization.yaml + GENERATED topology.env & patches.yaml
 generated/edge-regions.json  FIDUCIA_REGIONS for fiducia-edge (generated)
 argocd/                    ApplicationSet fanning out clusters/<name> -> cluster
 ```
