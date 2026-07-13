@@ -41,7 +41,7 @@ flowchart TB
 
     subgraph HZ["🇩🇪 Hetzner — eu-central (Nuremberg)"]
         direction TB
-        h_lb["fiducia-load-balance<br/>:443"]
+        h_lb["fiducia-load-balance<br/>:443 · key-aware router"]
         h_brain["fiducia-brain<br/>member (1 pod)"]
         h_nodes["fiducia-node<br/>5 pods · 5 machines"]
     end
