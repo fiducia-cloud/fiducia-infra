@@ -409,4 +409,16 @@ The guarantee is honest: **survive 1 cluster loss, not 2.** That is why you need
   (component + deployment + sequence)
 - [docs/ROLLOUT.md](ROLLOUT.md) — step-by-step rollout runbook
 - [docs/e2e.md](e2e.md) — provisioning tiers + the e2e suite
+- [kind/multicluster/README.md](../kind/multicluster/README.md) — local 3-cluster
+  emulation (hetzner/vultr/civo Kind clusters + WAN fault injection) for testing
+  cross-cluster Raft without real clouds
 - [terraform/README.md](../terraform/README.md) — provider modules + swap templates
+
+### Component repos
+
+- [`fiducia-node.rs`](https://github.com/fiducia-cloud/fiducia-node.rs) — data-plane Raft member
+- [`fiducia-brain.rs`](https://github.com/fiducia-cloud/fiducia-brain.rs) — control-plane Raft member (placement)
+- [`fiducia-load-balance.rs`](https://github.com/fiducia-cloud/fiducia-load-balance.rs) — edge key-aware router
+- [`fiducia-routing.rs`](https://github.com/fiducia-cloud/fiducia-routing.rs) — shared `key → shard` library (linked into node + LB)
+- [`fiducia-node-sidecar.rs`](https://github.com/fiducia-cloud/fiducia-node-sidecar.rs) — in-pod health/failure-domain reporter
+- [`fiducia-edge`](https://github.com/fiducia-cloud/fiducia-edge) — anycast health-check + steering
