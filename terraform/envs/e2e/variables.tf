@@ -36,3 +36,81 @@ variable "hetzner_ssh_public_key" {
   default     = ""
   description = "SSH public key material (required when enable_hetzner = true)."
 }
+
+# Optional hardening controls. Defaults preserve the disposable e2e behavior;
+# production-like runs must opt in explicitly and provide their own network
+# ranges. Each value is passed through to the corresponding cloud module.
+
+variable "gcp_deletion_protection" {
+  type        = bool
+  default     = false
+  description = "Protect the GKE cluster from deletion."
+}
+variable "gcp_enable_private_cluster" {
+  type        = bool
+  default     = false
+  description = "Use private GKE nodes. Requires suitable VPC egress/NAT."
+}
+variable "gcp_enable_private_endpoint" {
+  type        = bool
+  default     = false
+  description = "Make the GKE control-plane endpoint private-only; requires gcp_enable_private_cluster."
+}
+variable "gcp_master_ipv4_cidr_block" {
+  type        = string
+  default     = "172.16.0.0/28"
+  description = "Private /28 used by the GKE control plane when private-cluster mode is enabled."
+}
+variable "gcp_authorized_api_cidrs" {
+  type        = list(string)
+  default     = []
+  description = "CIDRs allowed to reach the GKE API server. Empty preserves the unrestricted e2e default."
+}
+variable "gcp_enable_network_policy" {
+  type        = bool
+  default     = false
+  description = "Enable GKE Calico NetworkPolicy enforcement."
+}
+
+variable "aws_subnet_ids" {
+  type        = list(string)
+  default     = []
+  description = "Dedicated EKS subnet ids. Empty uses default-VPC subnets for e2e."
+}
+variable "aws_endpoint_public_access" {
+  type        = bool
+  default     = true
+  description = "Expose the EKS API publicly."
+}
+variable "aws_endpoint_private_access" {
+  type        = bool
+  default     = false
+  description = "Expose the EKS API inside its VPC."
+}
+variable "aws_authorized_api_cidrs" {
+  type        = list(string)
+  default     = []
+  description = "CIDRs allowed to reach the public EKS API. Empty preserves the world-open e2e default."
+}
+
+variable "azure_authorized_api_cidrs" {
+  type        = list(string)
+  default     = []
+  description = "IPv4 CIDRs allowed to reach the AKS API server. Empty preserves the unrestricted e2e default."
+}
+variable "azure_enable_network_policy" {
+  type        = bool
+  default     = false
+  description = "Enable Azure NetworkPolicy enforcement for AKS."
+}
+
+variable "hetzner_enable_firewall" {
+  type        = bool
+  default     = false
+  description = "Attach a default-deny public firewall to Hetzner nodes."
+}
+variable "hetzner_firewall_allowed_cidrs" {
+  type        = list(string)
+  default     = []
+  description = "Restricted operator/edge CIDRs allowed to SSH, the k3s API, and NodePorts when the firewall is enabled."
+}

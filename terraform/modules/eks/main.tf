@@ -1,6 +1,11 @@
 # EKS cluster for a fiducia failure domain (AWS).
-# e2e/test-grade baseline: uses the account's DEFAULT VPC subnets to stay small.
-# TODO(prod): dedicated VPC, private subnets, restricted endpoint access.
+# e2e/test-grade baseline: by default uses the account's DEFAULT VPC subnets and a
+# public API endpoint open to 0.0.0.0/0 to stay small and CI-friendly.
+#
+# Prod-hardening is OPT-IN via variables that all DEFAULT to this e2e behavior
+# (see variables.tf): set var.subnet_ids to run in a dedicated/private VPC, and
+# var.authorized_api_cidrs / var.endpoint_private_access to restrict API access.
+# Existing e2e applies that pass none of these are unchanged.
 
 terraform {
   required_version = ">= 1.5"
@@ -13,13 +18,15 @@ terraform {
 }
 
 data "aws_vpc" "default" {
+  count   = length(var.subnet_ids) == 0 ? 1 : 0
   default = true
 }
 
 data "aws_subnets" "default" {
+  count = length(var.subnet_ids) == 0 ? 1 : 0
   filter {
     name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
+    values = [data.aws_vpc.default[0].id]
   }
 }
 
@@ -73,6 +80,15 @@ resource "aws_iam_role_policy_attachment" "node" {
 }
 
 # --- cluster + node group ---------------------------------------------------
+locals {
+  # Dedicated-VPC opt-in: use operator-supplied subnets when provided, else the
+  # default VPC's (e2e behavior).
+  subnet_ids = length(var.subnet_ids) > 0 ? var.subnet_ids : data.aws_subnets.default[0].ids
+  # Authorized-ranges opt-in: an empty list keeps the endpoint open to the world
+  # (EKS default), matching current e2e behavior.
+  public_access_cidrs = length(var.authorized_api_cidrs) > 0 ? var.authorized_api_cidrs : ["0.0.0.0/0"]
+}
+
 resource "aws_eks_cluster" "this" {
   name     = var.cluster_name
   role_arn = aws_iam_role.cluster.arn
@@ -80,17 +96,29 @@ resource "aws_eks_cluster" "this" {
   tags     = var.labels
 
   vpc_config {
-    subnet_ids = data.aws_subnets.default.ids
+    subnet_ids = local.subnet_ids
+    # Defaults below reproduce the e2e-grade public endpoint open to 0.0.0.0/0.
+    # Tighten for prod by opting into private access and/or authorized CIDRs.
+    endpoint_public_access  = var.endpoint_public_access
+    endpoint_private_access = var.endpoint_private_access
+    public_access_cidrs     = local.public_access_cidrs
   }
 
   depends_on = [aws_iam_role_policy_attachment.cluster_policy]
+
+  lifecycle {
+    precondition {
+      condition     = var.endpoint_public_access || var.endpoint_private_access
+      error_message = "At least one EKS API endpoint must remain enabled."
+    }
+  }
 }
 
 resource "aws_eks_node_group" "primary" {
   cluster_name    = aws_eks_cluster.this.name
   node_group_name = "${var.cluster_name}-ng"
   node_role_arn   = aws_iam_role.node.arn
-  subnet_ids      = data.aws_subnets.default.ids
+  subnet_ids      = local.subnet_ids
   instance_types  = [var.instance_type]
   labels          = var.labels
 

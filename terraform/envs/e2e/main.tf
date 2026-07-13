@@ -34,39 +34,53 @@ locals {
 }
 
 module "gcp" {
-  source       = "../../modules/gke"
-  count        = var.enable_gcp ? 1 : 0
-  cluster_name = "fiducia-e2e-gcp"
-  location     = "us-central1"
-  project_id   = var.gcp_project_id
-  node_count   = var.node_count
-  labels       = local.labels
+  source                  = "../../modules/gke"
+  count                   = var.enable_gcp ? 1 : 0
+  cluster_name            = "fiducia-e2e-gcp"
+  location                = "us-central1"
+  project_id              = var.gcp_project_id
+  node_count              = var.node_count
+  labels                  = local.labels
+  deletion_protection     = var.gcp_deletion_protection
+  enable_private_cluster  = var.gcp_enable_private_cluster
+  enable_private_endpoint = var.gcp_enable_private_endpoint
+  master_ipv4_cidr_block  = var.gcp_master_ipv4_cidr_block
+  authorized_api_cidrs    = var.gcp_authorized_api_cidrs
+  enable_network_policy   = var.gcp_enable_network_policy
 }
 
 module "aws" {
-  source       = "../../modules/eks"
-  count        = var.enable_aws ? 1 : 0
-  cluster_name = "fiducia-e2e-aws"
-  location     = "us-east-1"
-  node_count   = var.node_count
-  labels       = local.labels
+  source                  = "../../modules/eks"
+  count                   = var.enable_aws ? 1 : 0
+  cluster_name            = "fiducia-e2e-aws"
+  location                = "us-east-1"
+  node_count              = var.node_count
+  labels                  = local.labels
+  subnet_ids              = var.aws_subnet_ids
+  endpoint_public_access  = var.aws_endpoint_public_access
+  endpoint_private_access = var.aws_endpoint_private_access
+  authorized_api_cidrs    = var.aws_authorized_api_cidrs
 }
 
 module "azure" {
-  source       = "../../modules/aks"
-  count        = var.enable_azure ? 1 : 0
-  cluster_name = "fiducia-e2e-azure"
-  location     = "eastus"
-  node_count   = var.node_count
-  labels       = local.labels
+  source                = "../../modules/aks"
+  count                 = var.enable_azure ? 1 : 0
+  cluster_name          = "fiducia-e2e-azure"
+  location              = "eastus"
+  node_count            = var.node_count
+  labels                = local.labels
+  authorized_api_cidrs  = var.azure_authorized_api_cidrs
+  enable_network_policy = var.azure_enable_network_policy
 }
 
 module "hetzner" {
-  source         = "../../modules/hetzner"
-  count          = var.enable_hetzner ? 1 : 0
-  cluster_name   = "fiducia-e2e-hetzner"
-  location       = "nbg1"
-  node_count     = var.node_count
-  ssh_public_key = var.hetzner_ssh_public_key
-  labels         = local.labels
+  source                 = "../../modules/hetzner"
+  count                  = var.enable_hetzner ? 1 : 0
+  cluster_name           = "fiducia-e2e-hetzner"
+  location               = "nbg1"
+  node_count             = var.node_count
+  ssh_public_key         = var.hetzner_ssh_public_key
+  labels                 = local.labels
+  enable_firewall        = var.hetzner_enable_firewall
+  firewall_allowed_cidrs = var.hetzner_firewall_allowed_cidrs
 }

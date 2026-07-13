@@ -292,12 +292,14 @@ but the intent is:
   are explicit `emptyDir` `/tmp` mounts plus the durable PVC.
 - **Resource requests + limits** on every container, so no workload is
   `BestEffort` and none can starve a node.
-- **NetworkPolicies (default-deny by selection).** `node/networkpolicy.yaml` and
-  `components/brain/networkpolicy.yaml` select their pods with an Ingress policy,
-  which implicitly denies unmatched ingress: the client/control planes (`:8090` /
-  `:8095`) are reachable **only in-namespace**, while the cross-cluster Raft peer
-  ports (`:9090` / `:9095`) stay open (guarded at L7 by the shared secret and at
-  L3 by the mesh/VPN/mTLS).
+- **NetworkPolicies (blanket default-deny + explicit allows).** `base/networkpolicy.yaml`
+  installs a namespace-wide `fiducia-default-deny` (ingress **and** egress) so any
+  flow not explicitly permitted is dropped; the per-component policies then open
+  exactly the legitimate flows. The client/control planes (`:8090` / `:8095`) stay
+  reachable **only in-namespace**, while the cross-cluster Raft peer ports
+  (`:9090` / `:9095`) stay open both directions (guarded at L7 by the shared
+  secret and at L3 by the mesh/VPN/mTLS). See **NetworkPolicy model** below for
+  the full policy set.
 - **Secret management.** No secret values live in the manifests. TLS
   (`fiducia-load-balance-tls`), the trusted-hop / brain-Raft secrets
   (`fiducia-secrets`) and the observability gateway token
@@ -315,6 +317,39 @@ but the intent is:
   only `:443` (TLS terminates at `:8443`); the cleartext `:8088` listener is a
   separate in-cluster `fiducia-load-balance-internal` `ClusterIP` so cloud
   providers never publish port 80.
+
+### NetworkPolicy model (default-deny + explicit allows)
+
+The namespace is **deny-by-default in both directions**; every legitimate flow is
+then re-opened by a narrow policy. NetworkPolicies are additive (a flow is allowed
+if *any* policy permits it), so these compose cleanly:
+
+| Policy (file) | Kind | What it allows |
+|---------------|------|----------------|
+| `fiducia-default-deny` (`base/networkpolicy.yaml`) | Ingress+Egress, all pods, no rules | nothing — the baseline drop |
+| `fiducia-allow-dns-egress` (`base/networkpolicy.yaml`) | Egress, all pods | `:53` UDP/TCP to the `kube-system` CoreDNS/kube-dns pods (kube-dns lives outside the namespace) |
+| `fiducia-allow-namespace-internal` (`base/networkpolicy.yaml`) | Ingress+Egress, all pods | all east-west **within** `fiducia`: LB→node/brain/otel, node↔node & brain↔brain intra-cluster, sidecar→brain, brain→sidecar `:8091`, app→LB `:8088`, every pod→otel `:4317` |
+| `fiducia-allow-kubelet-probes` (`base/networkpolicy.yaml`) | Ingress, all pods | health-only ports `:8091`/`:13133` from any source (see note) |
+| `fiducia-load-balance-edge-ingress` (`base/load-balance/networkpolicy.yaml`) | Ingress, LB | external clients → `:8443` (the public `:443` Service target) |
+| `fiducia-node-ingress` (`base/node/networkpolicy.yaml`) | Ingress, node | in-namespace → all node ports; cross-cluster `:9090` from any source |
+| `fiducia-node-peer-egress` (`base/node/networkpolicy.yaml`) | Egress, node | node → peer nodes `:9090` (cross-cluster) |
+| `fiducia-brain-ingress` (`base/components/brain/networkpolicy.yaml`) | Ingress, brain | in-namespace → all brain ports; cross-cluster `:9095` from any source |
+| `fiducia-brain-peer-egress` (`base/components/brain/networkpolicy.yaml`) | Egress, brain | brain → peer brains `:9095` (cross-cluster); ships only with the brain Component |
+| `fiducia-otel-agent-egress` (`base/observability/networkpolicy.yaml`) | Egress, otel-agent | OTLP gateway `:4318` + k8s API `:443`/`:6443` (k8sattributes) |
+
+**Kubelet probes.** Probes come from the node's kubelet (a host-network source
+outside the pod CIDR). The declared CNI (Cilium; also Calico) failsafe-exempts
+kubelet health traffic, so probes to the sensitive-plane ports (`:8088`/`:8090`/
+`:8095`) keep working under default-deny **without** opening those ports from
+arbitrary sources — which would undo the in-namespace confinement (brain `:8095`
+`/v1` is not yet L7-authenticated). Only the health-*only* ports (`:8091`,
+`:13133`) are opened cluster-wide. On a CNI without a kubelet failsafe, add a
+per-overlay `ipBlock` allow for that cluster's node CIDR on `:8088`/`:8090`/`:8095`.
+
+**Cross-cluster peering** is expressed by port (not hostname/CIDR, which
+NetworkPolicy can't match against the mesh), so the peer policies are identical
+across clusters and live in `base`. The node-only overlays (azure, kind) get the
+node policies but not the brain ones.
 
 ## Tooling: `.cli-flags.toml` & flags-2-env
 
@@ -345,6 +380,18 @@ every overlay):
   node, sidecar, brain and load-balance so auth can't be silently disabled.
 - `fiducia-load-balance` Service reduced to `:443` only; new
   `fiducia-load-balance-internal` `ClusterIP` for the cleartext `:8088` plane.
+- **Namespace default-deny NetworkPolicy** (`base/networkpolicy.yaml`) — ingress
+  *and* egress — plus explicit allows for every legitimate flow (DNS, east-west,
+  LB edge `:8443`, node/brain cross-cluster peering, otel-agent gateway + k8s API
+  egress, kubelet probes). See **NetworkPolicy model** above. Verified to preserve
+  edge `:443` ingress, otel egress, and cross-cluster peering with `kubectl
+  kustomize` on every overlay.
+- **Terraform prod-hardening wired as opt-in variables** (defaults reproduce the
+  e2e baseline exactly — see **terraform prod-hardening** in
+  [`terraform/README.md`](terraform/README.md)): private VPC/subnets +
+  authorized API CIDRs on EKS, `deletion_protection` + private cluster +
+  authorized networks + network-policy on GKE, authorized API ranges +
+  network-policy on AKS, and an `hcloud_firewall` on Hetzner.
 
 Accepted / known risks (reported, deliberately **not** auto-changed):
 
@@ -352,19 +399,13 @@ Accepted / known risks (reported, deliberately **not** auto-changed):
   `/var/log/pods` and `/var/lib/fiducia/otelcol`. Reading other pods' root-owned
   logs and keeping a durable exporter queue needs this; it is otherwise fully
   locked down (no caps, no priv-esc, read-only rootfs, RuntimeDefault seccomp).
-- **No blanket default-deny NetworkPolicy** for the namespace, and none for
-  `load-balance`/`otel-agent`. Adding one risks severing edge ingress on `:443`,
-  otel egress to the gateway, and cross-cluster peering, so it is left as a
-  reviewed follow-up rather than a blind addition.
 - **brain `/v1` control plane is not yet L7-authenticated** (only the node's
-  `/v1` is). It is confined to the namespace by its NetworkPolicy; adding a
-  trusted-hop secret on brain `/v1` is the remaining defense-in-depth step.
-- **Terraform is e2e/test-grade** (each module carries `TODO(prod)`): EKS/GKE/AKS
-  use default/public API endpoints (no authorized-network ranges), GKE has
-  `deletion_protection = false` and no `network_policy`/private cluster, and the
-  Hetzner k3s module has no `hcloud_firewall` (6443 + node ports on public IPs).
-  These are intentional for disposable e2e clusters and must be hardened before
-  any production use.
+  `/v1` is). It is confined to the namespace by the default-deny + brain
+  NetworkPolicy; adding a trusted-hop secret on brain `/v1` is the remaining
+  defense-in-depth step.
+- **Terraform hardening ships defaulted-off.** The variables above reproduce the
+  e2e-grade baseline (public endpoints, default VPC, no firewall) until an
+  operator opts in. Enable them for any production use.
 
 ## Related
 

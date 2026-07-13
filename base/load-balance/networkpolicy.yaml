@@ -1,0 +1,26 @@
+# NetworkPolicy — edge ingress for the load balancer. Under the namespace
+# default-deny (base/networkpolicy.yaml), the LB pod would otherwise accept no
+# external traffic, severing the public coordination-API entrypoint. This opens
+# the LB's TLS listener so the flow
+#   external client -> LoadBalancer Service :443 -> LB pod :8443
+# is preserved. The source is unrestricted on purpose: the LB is the intended
+# public entrypoint and TLS terminates here.
+#
+# The cleartext :8088 plane is NOT opened here: it is served only through the
+# in-cluster `fiducia-load-balance-internal` ClusterIP and is covered by the
+# east-west allow-namespace-internal policy, so it stays off the public surface.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fiducia-load-balance-edge-ingress
+  namespace: fiducia
+spec:
+  podSelector:
+    matchLabels:
+      app: fiducia-load-balance
+  policyTypes: [Ingress]
+  ingress:
+    # Public TLS listener (Service port 443 -> targetPort 8443). Also covers the
+    # cloud LoadBalancer's health checks against the TLS target port.
+    - ports:
+        - { protocol: TCP, port: 8443 }
