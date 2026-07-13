@@ -249,7 +249,7 @@ sequenceDiagram
     participant F1 as follower (cluster B)
     participant F2 as follower (cluster C)
 
-    B-->>LB: /v1/placement — shard→leader map<br/>(async refresh; cache may be stale)
+    B-->>LB: /v1/placement — shard→leader map<br/>(async refresh, cache may be stale)
     C->>E: coordination API request (key [, X-Fiducia-Region])
     E->>LB: route to a HEALTHY cluster's :443
     Note over LB: authenticate (API key→fiducia-auth / JWT→JWKS),<br/>enforce Idempotency-Key, strip raw auth headers
