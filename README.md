@@ -127,7 +127,7 @@ Internal control and replication planes use direct pod/service paths:
 | Caller | Target | Uses `fiducia-load-balance`? | Path |
 |--------|--------|------------------------------|------|
 | external clients / future Cloudflare edge | coordination API | yes | `client -> regional LB :443 -> shard leader node` |
-| in-cluster application pods | coordination API | yes | `app pod -> svc/fiducia-load-balance -> shard leader node` |
+| in-cluster application pods | coordination API | yes | `app pod -> svc/fiducia-load-balance-internal:8088 -> shard leader node` |
 | `fiducia-load-balance` | data-plane nodes | direct after routing | `LB -> fiducia-node-peer/fiducia-node-client :8090` |
 | `fiducia-node` | other `fiducia-node` peers | no | direct Raft RPC from `FIDUCIA_PEERS` to `/raft/{shard}/{append,vote}` |
 | `fiducia-node-sidecar` | its local node | no | `localhost:8090 /v1/status` inside the same pod |
@@ -135,15 +135,24 @@ Internal control and replication planes use direct pod/service paths:
 | `fiducia-brain` | node membership/placement state | no | receives sidecar heartbeats; it does not route through the LB |
 | Kubernetes kubelet | pod health probes | no | direct pod IP HTTP probes on each container port |
 
-TLS terminates at the regional LB on port 443. The LB still keeps a private HTTP
-listener on `PORT` for health probes and private callers. Before deploying the
-base manifests, create the per-cluster secret:
+TLS terminates at the regional LoadBalancer on port 443; that public Service does
+not expose port 80. A separate `fiducia-load-balance-internal` ClusterIP exposes
+the cleartext `:8088` listener only inside the cluster for probes and trusted
+callers. Before deploying the base manifests, create the per-cluster secrets:
 
 ```sh
 kubectl -n fiducia create secret tls fiducia-load-balance-tls \
   --cert=/path/to/tls.crt \
   --key=/path/to/tls.key
+
+kubectl -n fiducia create secret generic fiducia-secrets \
+  --from-literal=internal-secret="$(openssl rand -hex 32)" \
+  --from-literal=brain-raft-secret="$(openssl rand -hex 32)"
 ```
+
+The `fiducia-secrets` references are intentionally required. Missing or renamed
+keys keep workloads unscheduled instead of starting nodes, sidecars, brain, or
+the load balancer with trusted-hop or Raft authentication disabled.
 
 **Bootstrap (the one seed):** a brand-new Raft group still needs a first member
 to count the first vote — bring up **one** member as a single-member group, then
@@ -263,6 +272,96 @@ Or GitOps it: register all the clusters with one ArgoCD and apply
 - **Cross-cluster networking** + real `FIDUCIA_PEERS` / `FIDUCIA_BRAIN_PEERS`.
 - **StorageClass** names per cluster (overlays use `standard-rwo` / `gp3` / `hcloud-volumes` — adjust to yours).
 - Per-cluster **public LB exposure** so the edge can reach each cluster.
+
+## Security posture
+
+Every workload ships a hardened baseline; the manifests are the source of truth,
+but the intent is:
+
+- **Run unprivileged.** node, brain and load-balance set pod-level
+  `runAsNonRoot: true` + `runAsUser/Group: 65532` + `fsGroup: 65532` (Raft state
+  on the per-pod PVC stays writable via `fsGroup`). No `privileged`, no
+  `hostNetwork`/`hostPID`/`hostIPC` anywhere.
+- **Locked-down containers.** Each container sets
+  `allowPrivilegeEscalation: false`, `readOnlyRootFilesystem: true`,
+  `capabilities.drop: ["ALL"]`, and `seccompProfile: RuntimeDefault` (pod-level
+  for the fiducia services, container-level for the otel-agent). Writable paths
+  are explicit `emptyDir` `/tmp` mounts plus the durable PVC.
+- **Resource requests + limits** on every container, so no workload is
+  `BestEffort` and none can starve a node.
+- **NetworkPolicies (default-deny by selection).** `node/networkpolicy.yaml` and
+  `components/brain/networkpolicy.yaml` select their pods with an Ingress policy,
+  which implicitly denies unmatched ingress: the client/control planes (`:8090` /
+  `:8095`) are reachable **only in-namespace**, while the cross-cluster Raft peer
+  ports (`:9090` / `:9095`) stay open (guarded at L7 by the shared secret and at
+  L3 by the mesh/VPN/mTLS).
+- **Secret management.** No secret values live in the manifests. TLS
+  (`fiducia-load-balance-tls`), the trusted-hop / brain-Raft secrets
+  (`fiducia-secrets`) and the observability gateway token
+  (`fiducia-observability`) are all `secretKeyRef`/mounted Secrets provisioned
+  out-of-band (see the `kubectl create secret` commands above). The trusted-hop
+  and brain-Raft references are `optional: false`, so a production pod **fails to
+  schedule** rather than silently starting with authentication disabled. The
+  otel-agent redacts `authorization`/`cookie`/`password`/`secret` and
+  hashes `token`/`api_key` before forwarding telemetry.
+- **Least-privilege RBAC.** The only cluster-scoped grant is the otel-agent
+  `ClusterRole`: `get/list/watch` on `namespaces/nodes/pods` and the `apps`
+  workload kinds (needed by the `k8sattributes` processor). No `cluster-admin`,
+  no wildcard verbs/resources/apiGroups.
+- **Public surface.** The `fiducia-load-balance` `LoadBalancer` Service exposes
+  only `:443` (TLS terminates at `:8443`); the cleartext `:8088` listener is a
+  separate in-cluster `fiducia-load-balance-internal` `ClusterIP` so cloud
+  providers never publish port 80.
+
+## Tooling: `.cli-flags.toml` & flags-2-env
+
+This repo's own CLI flags are declared once in [`.cli-flags.toml`](.cli-flags.toml)
+and turned into environment variables by the pinned
+[`vendor/flags-2-env`](vendor/README.md) submodule via
+[`scripts/with-flags2env.sh`](scripts/with-flags2env.sh):
+
+```sh
+scripts/with-flags2env.sh --check -- node tools/render.mjs
+```
+
+The single declared flag `check` maps to `FIDUCIA_RENDER_CHECK`, the only env var
+the tooling reads (`render.mjs`, "fail if generated files are stale"). The
+[`cli-flags` CI workflow](.github/workflows/cli-flags.yml) runs
+`flags2env audit .cli-flags.toml` (with `submodules: recursive`) to keep the
+declared flags and the tool in sync. Secret-valued flags, if any are added, must
+be marked in their help text; there are none today.
+
+## Hardening applied & accepted risks
+
+Hardening added in this pass (all additive, verified with `kubectl kustomize` on
+every overlay):
+
+- `seccompProfile: RuntimeDefault` added to the otel-agent container (it was the
+  only workload missing it; the fiducia services already set it pod-level).
+- Trusted-hop / brain-Raft Secret references flipped to `optional: false` on
+  node, sidecar, brain and load-balance so auth can't be silently disabled.
+- `fiducia-load-balance` Service reduced to `:443` only; new
+  `fiducia-load-balance-internal` `ClusterIP` for the cleartext `:8088` plane.
+
+Accepted / known risks (reported, deliberately **not** auto-changed):
+
+- **otel-agent runs as root** (`runAsUser: 0`) with `hostPath` mounts of
+  `/var/log/pods` and `/var/lib/fiducia/otelcol`. Reading other pods' root-owned
+  logs and keeping a durable exporter queue needs this; it is otherwise fully
+  locked down (no caps, no priv-esc, read-only rootfs, RuntimeDefault seccomp).
+- **No blanket default-deny NetworkPolicy** for the namespace, and none for
+  `load-balance`/`otel-agent`. Adding one risks severing edge ingress on `:443`,
+  otel egress to the gateway, and cross-cluster peering, so it is left as a
+  reviewed follow-up rather than a blind addition.
+- **brain `/v1` control plane is not yet L7-authenticated** (only the node's
+  `/v1` is). It is confined to the namespace by its NetworkPolicy; adding a
+  trusted-hop secret on brain `/v1` is the remaining defense-in-depth step.
+- **Terraform is e2e/test-grade** (each module carries `TODO(prod)`): EKS/GKE/AKS
+  use default/public API endpoints (no authorized-network ranges), GKE has
+  `deletion_protection = false` and no `network_policy`/private cluster, and the
+  Hetzner k3s module has no `hcloud_firewall` (6443 + node ports on public IPs).
+  These are intentional for disposable e2e clusters and must be hardened before
+  any production use.
 
 ## Related
 

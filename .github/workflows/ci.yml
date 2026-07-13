@@ -69,5 +69,5 @@ jobs:
       # A real run then builds+loads the fiducia-node image and applies kind/overlay
       # (FIDUCIA_LOAD_IMAGES=1 tools/kind-up.sh), then checks out fiducia-e2e and runs
       # `npm test` with FIDUCIA_E2E_BASE_URL=http://localhost:8090.
-       - name: overlay builds
-         run: kubectl kustomize kind/overlay >/dev/null
+      - name: overlay builds
+        run: kubectl kustomize kind/overlay >/dev/null
