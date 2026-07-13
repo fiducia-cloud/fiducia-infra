@@ -245,8 +245,9 @@ pod (its bridge to brain + telemetry).
 The overlays below assume the clusters exist. Two sibling tiers stand them up and
 test the coordination API across them — see [`docs/e2e.md`](docs/e2e.md):
 
-- [`terraform/`](terraform) — **Tier 2**: IaC for the real managed clusters
-  (GKE / EKS / AKS / Hetzner k3s), each behind an `enable_<cloud>` toggle.
+- [`terraform/`](terraform) — **Tier 2**: IaC for the real clusters (Hetzner
+  k3s-on-VMs / Vultr VKE / Civo managed k3s — each provider a drop-in module
+  swap), each behind an `enable_<cloud>` toggle.
 - [`kind/`](kind) + [`tools/kind-up.sh`](tools/kind-up.sh) — **Tier 1**: one local
   kind cluster with four zone-labeled workers simulating the failure domains, for
   free CI conformance + chaos runs.
