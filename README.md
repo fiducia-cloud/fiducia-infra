@@ -358,8 +358,9 @@ per-overlay `ipBlock` allow for that cluster's node CIDR on `:8088`/`:8090`/`:80
 
 **Cross-cluster peering** is expressed by port (not hostname/CIDR, which
 NetworkPolicy can't match against the mesh), so the peer policies are identical
-across clusters and live in `base`. The node-only overlays (azure, kind) get the
-node policies but not the brain ones.
+across clusters and live in `base`. Node-only overlays (the local `kind` cluster,
+or an optional 4th cluster added `brain = false`) get the node policies but not
+the brain ones.
 
 ## Tooling: `.cli-flags.toml` & flags-2-env
 
