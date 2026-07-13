@@ -1,14 +1,38 @@
-# One ArgoCD (a "hub") registers all the clusters and applies each cluster's
-# overlay to it. This ApplicationSet fans out: clusters/<name> -> that cluster.
-# The cluster generator is label-driven, so a new platform (e.g. azure) is picked
-# up automatically once its cluster secret is labeled and clusters/<name> exists.
+# NON-PRODUCTION ONLY. Production is deployed from the reviewed, exact submodule
+# pins in fiducia-monorepo's manual deploy workflow. Pointing production ArgoCD at
+# fiducia-infra/main would bypass that promotion boundary.
+#
+# One non-production ArgoCD hub registers test clusters and applies each cluster's
+# overlay. A cluster is selected only after it is explicitly labeled both as a
+# Fiducia cluster and as nonproduction; an unlabeled or production cluster fails
+# closed and is not generated.
 #
 # Prereqs: `argocd cluster add` each cluster and label its cluster secret with
-# `fiducia.cloud/cluster=true`. The cluster generator supplies `name` + `server`.
+# `fiducia.cloud/cluster=true` and
+# `fiducia.cloud/environment=nonproduction`. The cluster generator supplies
+# `name` + `server`.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: fiducia-nonproduction
+  namespace: argocd
+spec:
+  sourceRepos:
+    - https://github.com/fiducia-cloud/fiducia-infra.git
+  destinations:
+    - namespace: fiducia
+      server: "*"
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+---
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: fiducia
+  name: fiducia-nonproduction
   namespace: argocd
 spec:
   generators:
@@ -16,11 +40,12 @@ spec:
         selector:
           matchLabels:
             fiducia.cloud/cluster: "true"
+            fiducia.cloud/environment: nonproduction
   template:
     metadata:
-      name: "fiducia-{{name}}"
+      name: "fiducia-nonprod-{{name}}"
     spec:
-      project: default
+      project: fiducia-nonproduction
       source:
         repoURL: https://github.com/fiducia-cloud/fiducia-infra.git
         targetRevision: main

@@ -90,8 +90,8 @@ Generated, checked-in outputs (do not hand-edit):
 | `clusters/<name>/patches.yaml` | per-cluster storage class + node replicas |
 | `generated/edge-regions.json` | `FIDUCIA_REGIONS` for [`fiducia-edge`](https://github.com/fiducia-cloud/fiducia-edge) |
 
-So the discovery wiring is: **edit `topology.toml` → `render` → commit → ArgoCD
-applies each overlay**. Nodes/brains read their peers from the generated
+So the discovery wiring is: **edit `topology.toml` → `render` → commit → promote
+the exact infra pin through `fiducia-monorepo`**. Nodes/brains read their peers from the generated
 ConfigMap; the edge reads the region list. One place to declare IPs/DNS.
 
 ## Leadership is elected, not declared
@@ -263,8 +263,11 @@ kubectl --context hetzner apply -k clusters/hetzner
 kubectl --context azure   apply -k clusters/azure
 ```
 
-Or GitOps it: register all the clusters with one ArgoCD and apply
-[`argocd/applicationset.yaml`](argocd/applicationset.yaml).
+For non-production GitOps, register test clusters with ArgoCD and apply
+[`argocd/applicationset.yaml`](argocd/applicationset.yaml). That ApplicationSet
+requires an explicit `fiducia.cloud/environment=nonproduction` cluster label and
+must not be used for production. Production is applied only by the manual,
+protected `fiducia-monorepo` deploy workflow from its exact submodule pins.
 
 ## Prerequisites
 
