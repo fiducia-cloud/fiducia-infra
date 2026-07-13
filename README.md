@@ -221,6 +221,9 @@ clusters/                  per-cluster Kustomize overlays
   hetzner/ vultr/ civo/    kustomization.yaml + GENERATED topology.env & patches.yaml
 generated/edge-regions.json  FIDUCIA_REGIONS for fiducia-edge (generated)
 argocd/                    ApplicationSet fanning out clusters/<name> -> cluster
+kind/                      LOCAL test clusters (no cloud spend)
+  multizone.yaml           Tier 1: one cluster, zone-labeled workers
+  multicluster/            Tier 2: three kind clusters + cross-cluster Raft + WAN faults
 ```
 
 Why these workload types: **node** and **brain** are Raft members → `StatefulSet`
