@@ -82,12 +82,13 @@ resource "hcloud_firewall" "this" {
 
 # Control plane: k3s server, TLS SAN for the public IP so a fetched kubeconfig works.
 resource "hcloud_server" "control_plane" {
-  name        = "${var.cluster_name}-cp"
-  server_type = var.server_type
-  image       = "ubuntu-24.04"
-  location    = var.location
-  ssh_keys    = [hcloud_ssh_key.this.id]
-  labels      = var.labels
+  name         = "${var.cluster_name}-cp"
+  server_type  = var.server_type
+  image        = "ubuntu-24.04"
+  location     = var.location
+  ssh_keys     = [hcloud_ssh_key.this.id]
+  labels       = var.labels
+  firewall_ids = var.enable_firewall ? [hcloud_firewall.this[0].id] : []
 
   user_data = <<-EOF
     #cloud-config
