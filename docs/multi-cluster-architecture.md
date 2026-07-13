@@ -48,7 +48,7 @@ flowchart TB
 
     subgraph VU["🇩🇪 Vultr — fra (Frankfurt)"]
         direction TB
-        v_lb["fiducia-load-balance<br/>:443"]
+        v_lb["fiducia-load-balance<br/>:443 · key-aware router"]
         v_brain["fiducia-brain<br/>member (1 pod)"]
         v_nodes["fiducia-node<br/>5 pods · 5 machines"]
     end
