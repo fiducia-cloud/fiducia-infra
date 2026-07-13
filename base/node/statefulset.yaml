@@ -196,4 +196,4 @@ spec:
         resources:
           requests:
             storage: 10Gi
-        # storageClassName is set per-cluster by the overlay (gcp/aws/hetzner).
+        # storageClassName is set per-cluster by the overlay (hetzner/vultr/civo).
