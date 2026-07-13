@@ -275,7 +275,7 @@ protected `fiducia-monorepo` deploy workflow from its exact submodule pins.
 
 - **Container images** at `ghcr.io/fiducia-cloud/fiducia-{node,brain,load-balance,node-sidecar}`.
 - **Cross-cluster networking** + real `FIDUCIA_PEERS` / `FIDUCIA_BRAIN_PEERS`.
-- **StorageClass** names per cluster (overlays use `standard-rwo` / `gp3` / `hcloud-volumes` — adjust to yours).
+- **StorageClass** names per cluster (overlays use `hcloud-volumes` / `vultr-block-storage-hdd` / `civo-volume` — adjust to yours).
 - Per-cluster **public LB exposure** so the edge can reach each cluster.
 
 ## Security posture
