@@ -14,15 +14,26 @@ that need no cloud spend — lives in [`../kind`](../kind).)
 
 ```
 terraform/
-  modules/
-    gke/       Google  — google_container_cluster + node pool
-    eks/       AWS     — aws_eks_cluster + managed node group (default VPC)
-    aks/       Azure   — azurerm_kubernetes_cluster
+  modules/                 one dir per provider — SAME interface, so a cluster's
+                           cloud is a drop-in swap (see "Swapping a provider")
     hetzner/   Hetzner — hcloud servers + k3s via cloud-init (no managed k8s there)
+    vultr/     Vultr   — vultr_kubernetes (managed VKE)
+    civo/      Civo    — civo_kubernetes_cluster (managed k3s, Cilium CNI)
+    gke/       Google  — google_container_cluster + node pool     ┐ additional
+    eks/       AWS     — aws_eks_cluster + managed node group      │ drop-in swap
+    aks/       Azure   — azurerm_kubernetes_cluster                ┘ targets
   envs/
-    e2e/       instantiates all four (each behind an enable_<cloud> toggle) and
-               emits the kubeconfigs + LB endpoints that feed topology.toml
+    prod/      THE 3-cluster prod fleet — hetzner + vultr + civo (node_count 5),
+               each behind an enable_<cloud> toggle → see envs/prod/README.md
+    e2e/       real-hyperscaler TEST fleet (gke/eks/aks/hetzner, node_count 3) for
+               the fiducia-e2e suite; emits kubeconfigs + LB endpoints
 ```
+
+The **prod** fleet mirrors [`../topology.toml`](../topology.toml)
+(hetzner/vultr/civo); the **e2e** fleet exists to exercise the same manifests on
+managed hyperscalers. Because every module shares one interface, swapping a prod
+cluster to another cloud (DigitalOcean/Scaleway/Akamai/…) is a `source =` change,
+not a rewrite — see **Swapping a provider** below.
 
 Every module honors the **same variable/output contract** so the env can treat
 them uniformly:
