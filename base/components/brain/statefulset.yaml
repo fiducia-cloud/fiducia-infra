@@ -60,21 +60,20 @@ spec:
             - name: FIDUCIA_BRAIN_PEER_PORT
               value: "9095"
             # Shared secret peer brains present (bearer) on /raft/*; the brain
-            # enables Raft auth only when this is set. `optional: true` until the
-            # `fiducia-secrets` Secret is provisioned (same Secret as the node/LB
+            # enables Raft auth only when this is set. The Secret is required
+            # (same Secret as the node/LB
             # trusted-hop secret; a distinct key keeps the brain-Raft secret
             # separable from the data-plane one).
             - name: FIDUCIA_BRAIN_RAFT_SECRET
               valueFrom:
-                secretKeyRef: { name: fiducia-secrets, key: brain-raft-secret, optional: true }
+                secretKeyRef: { name: fiducia-secrets, key: brain-raft-secret, optional: false }
             # Trusted-hop secret for the /v1 control plane: when set, the brain
             # requires it on /v1 (node sidecar heartbeats, LB/admin reads, and the
             # brain's own follower→leader forwarding all attach it). Same Secret
-            # key as the node/LB data-plane secret. `optional: true` ⇒ guard stays
-            # OFF until provisioned.
+            # key as the node/LB data-plane secret. It is required in production.
             - name: FIDUCIA_INTERNAL_SECRET
               valueFrom:
-                secretKeyRef: { name: fiducia-secrets, key: internal-secret, optional: true }
+                secretKeyRef: { name: fiducia-secrets, key: internal-secret, optional: false }
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://fiducia-otel-agent.fiducia.svc.cluster.local:4317"
             - name: OTEL_SERVICE_NAMESPACE
