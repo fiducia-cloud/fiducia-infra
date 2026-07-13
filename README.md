@@ -260,10 +260,9 @@ test the coordination API across them — see [`docs/e2e.md`](docs/e2e.md):
 Render/apply one cluster:
 
 ```bash
-kubectl --context gcp     apply -k clusters/gcp
-kubectl --context aws     apply -k clusters/aws
 kubectl --context hetzner apply -k clusters/hetzner
-kubectl --context azure   apply -k clusters/azure
+kubectl --context vultr   apply -k clusters/vultr
+kubectl --context civo    apply -k clusters/civo
 ```
 
 For non-production GitOps, register test clusters with ArgoCD and apply
