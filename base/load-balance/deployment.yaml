@@ -65,11 +65,11 @@ spec:
               value: "http://fiducia-brain.fiducia.svc.cluster.local:8095"
             # Trusted-hop secret the LB attaches to every node request so the node
             # trusts the identity headers it injects. MUST match the value the node
-            # StatefulSet reads from the same Secret. `optional: true` until the
-            # `fiducia-secrets` Secret exists (until then the node guard is off too).
+            # StatefulSet reads from the same Secret. This reference is required:
+            # production must fail to schedule rather than silently disable auth.
             - name: FIDUCIA_INTERNAL_SECRET
               valueFrom:
-                secretKeyRef: { name: fiducia-secrets, key: internal-secret, optional: true }
+                secretKeyRef: { name: fiducia-secrets, key: internal-secret, optional: false }
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://fiducia-otel-agent.fiducia.svc.cluster.local:4317"
             - name: OTEL_SERVICE_NAMESPACE

@@ -187,11 +187,17 @@ spec:
           imagePullPolicy: IfNotPresent
           args: ["--config=/conf/collector.yaml"]
           securityContext:
+            # Runs as root only to read other pods' logs under the /var/log/pods
+            # hostPath (root-owned); it still drops all caps, forbids privilege
+            # escalation, keeps a read-only rootfs, and pins the default seccomp
+            # profile so the syscall surface stays restricted.
             runAsUser: 0
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
           ports:
             - { containerPort: 4317, name: otlp-grpc }
             - { containerPort: 4318, name: otlp-http }

@@ -127,7 +127,7 @@ Internal control and replication planes use direct pod/service paths:
 | Caller | Target | Uses `fiducia-load-balance`? | Path |
 |--------|--------|------------------------------|------|
 | external clients / future Cloudflare edge | coordination API | yes | `client -> regional LB :443 -> shard leader node` |
-| in-cluster application pods | coordination API | yes | `app pod -> svc/fiducia-load-balance -> shard leader node` |
+| in-cluster application pods | coordination API | yes | `app pod -> svc/fiducia-load-balance-internal:8088 -> shard leader node` |
 | `fiducia-load-balance` | data-plane nodes | direct after routing | `LB -> fiducia-node-peer/fiducia-node-client :8090` |
 | `fiducia-node` | other `fiducia-node` peers | no | direct Raft RPC from `FIDUCIA_PEERS` to `/raft/{shard}/{append,vote}` |
 | `fiducia-node-sidecar` | its local node | no | `localhost:8090 /v1/status` inside the same pod |
@@ -135,15 +135,24 @@ Internal control and replication planes use direct pod/service paths:
 | `fiducia-brain` | node membership/placement state | no | receives sidecar heartbeats; it does not route through the LB |
 | Kubernetes kubelet | pod health probes | no | direct pod IP HTTP probes on each container port |
 
-TLS terminates at the regional LB on port 443. The LB still keeps a private HTTP
-listener on `PORT` for health probes and private callers. Before deploying the
-base manifests, create the per-cluster secret:
+TLS terminates at the regional LoadBalancer on port 443; that public Service does
+not expose port 80. A separate `fiducia-load-balance-internal` ClusterIP exposes
+the cleartext `:8088` listener only inside the cluster for probes and trusted
+callers. Before deploying the base manifests, create the per-cluster secrets:
 
 ```sh
 kubectl -n fiducia create secret tls fiducia-load-balance-tls \
   --cert=/path/to/tls.crt \
   --key=/path/to/tls.key
+
+kubectl -n fiducia create secret generic fiducia-secrets \
+  --from-literal=internal-secret="$(openssl rand -hex 32)" \
+  --from-literal=brain-raft-secret="$(openssl rand -hex 32)"
 ```
+
+The `fiducia-secrets` references are intentionally required. Missing or renamed
+keys keep workloads unscheduled instead of starting nodes, sidecars, brain, or
+the load balancer with trusted-hop or Raft authentication disabled.
 
 **Bootstrap (the one seed):** a brand-new Raft group still needs a first member
 to count the first vote — bring up **one** member as a single-member group, then

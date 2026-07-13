@@ -11,5 +11,18 @@ spec:
   selector:
     app: fiducia-load-balance
   ports:
-    - { name: http, port: 80, targetPort: 8088 }
     - { name: https, port: 443, targetPort: 8443 }
+---
+# Private cleartext listener for in-cluster callers and health tooling. Keeping it
+# on a separate ClusterIP prevents cloud providers from publishing port 80.
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-load-balance-internal
+  namespace: fiducia
+spec:
+  type: ClusterIP
+  selector:
+    app: fiducia-load-balance
+  ports:
+    - { name: http, port: 8088, targetPort: 8088 }

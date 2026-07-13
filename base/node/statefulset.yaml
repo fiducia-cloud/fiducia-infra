@@ -85,14 +85,14 @@ spec:
               value: "/var/lib/fiducia"
             # Trusted-hop secret: when present, the node requires it on /v1 (from
             # the LB) and /raft (from peer nodes), so a direct caller can't forge
-            # the LB-injected x-fiducia-org-id. `optional: true` keeps the guard
-            # OFF (and pods schedulable) until the `fiducia-secrets` Secret is
-            # provisioned with the same value the LB uses. Provision out-of-band:
+            # the LB-injected x-fiducia-org-id. The Secret is required so a
+            # production pod cannot start with the guard silently disabled.
+            # Provision out-of-band:
             #   kubectl -n fiducia create secret generic fiducia-secrets \
             #     --from-literal=internal-secret=$(openssl rand -hex 32)
             - name: FIDUCIA_INTERNAL_SECRET
               valueFrom:
-                secretKeyRef: { name: fiducia-secrets, key: internal-secret, optional: true }
+                secretKeyRef: { name: fiducia-secrets, key: internal-secret, optional: false }
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://fiducia-otel-agent.fiducia.svc.cluster.local:4317"
             - name: OTEL_SERVICE_NAMESPACE
@@ -149,11 +149,10 @@ spec:
               valueFrom: { configMapKeyRef: { name: fiducia-cluster, key: FIDUCIA_CLUSTER } }
             # Trusted-hop secret: the sidecar scrapes the local node's guarded
             # /v1/status and POSTs to the brain's guarded /v1; it must present this
-            # on both. Same Secret key as the node container. `optional: true` ⇒
-            # the guards (and this) stay off until the Secret is provisioned.
+            # on both. Same required Secret key as the node container.
             - name: FIDUCIA_INTERNAL_SECRET
               valueFrom:
-                secretKeyRef: { name: fiducia-secrets, key: internal-secret, optional: true }
+                secretKeyRef: { name: fiducia-secrets, key: internal-secret, optional: false }
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://fiducia-otel-agent.fiducia.svc.cluster.local:4317"
             - name: OTEL_SERVICE_NAMESPACE
