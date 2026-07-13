@@ -10,7 +10,7 @@ spec:
     - metadata:
         name: data
       spec:
-        storageClassName: hcloud-volumes
+        storageClassName: vultr-block-storage-hdd
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -22,4 +22,4 @@ spec:
     - metadata:
         name: data
       spec:
-        storageClassName: hcloud-volumes
+        storageClassName: vultr-block-storage-hdd

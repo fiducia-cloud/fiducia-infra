@@ -1,18 +1,14 @@
 [
   {
-    "name": "gcp",
-    "url": "https://gcp.lb.fiducia.cloud"
-  },
-  {
-    "name": "aws",
-    "url": "https://aws.lb.fiducia.cloud"
-  },
-  {
     "name": "hetzner",
     "url": "https://hetzner.lb.fiducia.cloud"
   },
   {
-    "name": "azure",
-    "url": "https://azure.lb.fiducia.cloud"
+    "name": "vultr",
+    "url": "https://vultr.lb.fiducia.cloud"
+  },
+  {
+    "name": "civo",
+    "url": "https://civo.lb.fiducia.cloud"
   }
 ]
