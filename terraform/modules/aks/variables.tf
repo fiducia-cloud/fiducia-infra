@@ -31,3 +31,17 @@ variable "labels" {
   default     = {}
   description = "Tags applied to the resource group + cluster."
 }
+
+# --- prod-hardening (opt-in; defaults reproduce the e2e-grade baseline) ------
+
+variable "authorized_api_cidrs" {
+  type        = list(string)
+  default     = []
+  description = "CIDRs allowed to reach the AKS API server (api_server_access_profile.authorized_ip_ranges). Empty (default) leaves the endpoint open (e2e). Set to operator/admin CIDRs to harden."
+}
+
+variable "enable_network_policy" {
+  type        = bool
+  default     = false
+  description = "Enable Azure network-policy enforcement (network_plugin=azure, network_policy=azure). Default false so e2e uses the AKS default profile; true to enforce the fiducia NetworkPolicies at the dataplane."
+}
