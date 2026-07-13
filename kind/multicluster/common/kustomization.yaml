@@ -2,24 +2,49 @@
 # (../hetzner, ../vultr, ../civo) layers its own fiducia-cluster ConfigMap
 # (topology.env, with cross-cluster peers) on top of this.
 #
-# Deliberately a RAFT-FOCUSED SLICE of ../../../base: just the node + brain Raft
-# members (one of each per cluster) + the NodePort services that expose their peer
-# ports across the `kind` Docker network. The edge LB and otel-agent are omitted —
-# they are not part of the cross-cluster Raft path this tier exists to test, and
-# leaving them out keeps three local clusters light. (The default-deny
-# NetworkPolicy is also omitted: kindnet does not enforce NetworkPolicy anyway, and
-# omitting it keeps the NodePort peer/API paths open. Policy enforcement is a
-# separate concern — see tools/networkpolicy.test.mjs and the Cilium tier.)
+# It reuses the SAME ../../../base as the real clusters/* overlays (so the
+# emulation exercises the production manifests), then trims to a RAFT-FOCUSED
+# slice: the edge LB and the otel-agent DaemonSet are $patch:delete-d. They are
+# not part of the cross-cluster Raft path this tier tests, and dropping them keeps
+# three local clusters light and avoids the LB's TLS secret. node + brain (one
+# Raft member each per cluster) remain.
+#
+# NOTE: kindnet (Kind's default CNI) does NOT enforce NetworkPolicy, so the base
+# default-deny is inert here and the NodePort peer/API paths stay open — exactly
+# what this tier needs. Policy enforcement is a separate concern (the Cilium tier +
+# tools/networkpolicy.test.mjs).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: fiducia
 resources:
-  - ../../../base/namespace.yaml
-  - ../../../base/node/statefulset.yaml
-  - ../../../base/node/service.yaml
-  - ../../../base/node/pdb.yaml
+  - ../../../base
   - nodeport.yaml
 components:
   - ../../../base/components/brain   # 1 brain Raft member per cluster (3 total)
 patches:
   - path: patches.yaml
+  # --- trim to the Raft slice: drop the edge LB + otel-agent DaemonSet ----------
+  - target: { kind: Deployment, name: fiducia-load-balance }
+    patch: |-
+      $patch: delete
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata: { name: fiducia-load-balance, namespace: fiducia }
+  - target: { kind: Service, name: fiducia-load-balance }
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata: { name: fiducia-load-balance, namespace: fiducia }
+  - target: { kind: Service, name: fiducia-load-balance-internal }
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata: { name: fiducia-load-balance-internal, namespace: fiducia }
+  - target: { kind: DaemonSet, name: fiducia-otel-agent }
+    patch: |-
+      $patch: delete
+      apiVersion: apps/v1
+      kind: DaemonSet
+      metadata: { name: fiducia-otel-agent, namespace: fiducia }
