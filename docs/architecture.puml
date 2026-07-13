@@ -149,7 +149,9 @@ cin1 <--> hzn1 : shard Raft :9090
 note as N
   RF = 3, one replica per cluster, over Cilium Cluster Mesh.
   Any ONE cluster down => every shard + the brain keep 2/3 => still serving.
-  Total: 3 brain pods + 15 node pods across >= 15 machines.
+  Each cluster also runs fiducia-load-balance (stateless Deployment, ~2 pods).
+  Total: 3 brain + 15 node + ~6 LB pods across >= 15 machines.
+  fiducia-routing is a LIBRARY compiled into the node + LB images -> 0 pods.
 end note
 N .. vu
 @enduml
