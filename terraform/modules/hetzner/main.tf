@@ -105,12 +105,13 @@ resource "hcloud_server" "control_plane" {
 # Agents join the control plane over the private network.
 resource "hcloud_server" "agent" {
   count       = var.node_count
-  name        = "${var.cluster_name}-agent-${count.index}"
-  server_type = var.server_type
-  image       = "ubuntu-24.04"
-  location    = var.location
-  ssh_keys    = [hcloud_ssh_key.this.id]
-  labels      = var.labels
+  name         = "${var.cluster_name}-agent-${count.index}"
+  server_type  = var.server_type
+  image        = "ubuntu-24.04"
+  location     = var.location
+  ssh_keys     = [hcloud_ssh_key.this.id]
+  labels       = var.labels
+  firewall_ids = var.enable_firewall ? [hcloud_firewall.this[0].id] : []
 
   user_data = <<-EOF
     #cloud-config
