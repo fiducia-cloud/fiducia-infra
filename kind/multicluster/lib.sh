@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Shared config + helpers for the local 3-cluster emulation. SOURCED by the other
 # scripts (up/down/netem/partition/test) — not executed directly.
+# shellcheck disable=SC2034  # vars here are consumed by the scripts that source this
 set -euo pipefail
 
 # The three emulated clouds — mirror ../../topology.toml (hetzner/vultr/civo).
