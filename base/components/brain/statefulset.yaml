@@ -1,5 +1,5 @@
 # fiducia-brain: the control plane. Runs ONE member per cluster; the three
-# members (one each in gcp/aws/3rd) form a single Raft group, so the control
+# members (one each in hetzner/vultr/civo) form a single Raft group, so the control
 # plane itself survives losing any one cluster (2/3 quorum). StatefulSet for
 # stable identity + durable placement-map storage.
 apiVersion: apps/v1
