@@ -100,9 +100,9 @@ ConfigMap; the edge reads the region list. One place to declare IPs/DNS.
 `topology.toml` declares **membership** (which peers exist + how to reach them) —
 never **leadership**. There is no "master node" to point k8s or this config at:
 
-- **Kubernetes control plane** — each cluster has its own (GKE/EKS-managed, or
-  kubeadm/k3s on Hetzner). fiducia neither declares nor cares about it; k8s just
-  schedules our pods. Nothing in this repo touches it.
+- **Kubernetes control plane** — each cluster has its own (Vultr VKE / Civo
+  managed k3s, or k3s-on-raw-VMs on Hetzner). fiducia neither declares nor cares
+  about it; k8s just schedules our pods. Nothing in this repo touches it.
 - **fiducia leadership** — sharded multi-Raft: every shard's replicas elect their
   own leader, and the brain members elect a brain leader. Leadership is **chosen
   by Raft at runtime**, spreads across nodes/clusters, and **moves automatically
