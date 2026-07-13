@@ -8,17 +8,19 @@ cloud spend**. This is Tier 1 of the test infrastructure; the real managed clust
 
 One kind cluster ([`multizone.yaml`](multizone.yaml)) with a control-plane + **four
 worker nodes, each labeled a distinct failure domain**
-(`topology.kubernetes.io/zone` = `gcp` / `aws` / `hetzner` / `azure`). The fiducia
+(`topology.kubernetes.io/zone` = `hetzner` / `vultr` / `civo` / `digitalocean` —
+mirroring the prod trio plus the documented node-only 4th domain). The fiducia
 base manifests already carry `topologySpreadConstraints`, so the four
 `fiducia-node` replicas land **one per zone** — reproducing the fleet's
 "one replica per cluster" invariant locally.
 
 ```
         kind cluster "fiducia"  (localhost:8090 -> NodePort 30090)
-   ┌──────────────┬──────────────┬──────────────┬──────────────┐
-   │ zone=gcp     │ zone=aws     │ zone=hetzner │ zone=azure   │
-   │ node-0       │ node-1       │ node-2       │ node-3       │   one Raft group
-   └──────────────┴──────────────┴──────────────┴──────────────┘
+        4 workers, topology.kubernetes.io/zone =
+   ┌────────────────┬────────────────┬────────────────┬────────────────┐
+   │ hetzner        │ vultr          │ civo           │ digitalocean   │
+   │ node-0         │ node-1         │ node-2         │ node-3         │   one Raft group
+   └────────────────┴────────────────┴────────────────┴────────────────┘
    "kill a cluster" == cordon+drain one zone's node -> 3/4 remain -> quorum holds
 ```
 
