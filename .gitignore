@@ -11,3 +11,19 @@ secrets/
 
 # Scratch / git worktrees (tmp/worktrees/*)
 tmp/
+
+# --- hardened baseline (auto) ---
+Thumbs.db
+*.swp
+*~
+.direnv/
+node_modules/
+dist/
+.next/
+.astro/
+.cache/
+coverage/
+*.tsbuildinfo
+pkg/
+pkg-node/
+*-debug.log*

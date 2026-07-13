@@ -278,6 +278,10 @@ protected `fiducia-monorepo` deploy workflow from its exact submodule pins.
 
 ## Security posture
 
+CI fails on dependency advisories and installs the renderer's locked dependency
+graph with lifecycle scripts disabled in the validation image. Dependabot
+tracks npm, GitHub Actions, and Docker base-image updates weekly.
+
 Every workload ships a hardened baseline; the manifests are the source of truth,
 but the intent is:
 
@@ -285,6 +289,10 @@ but the intent is:
   `runAsNonRoot: true` + `runAsUser/Group: 65532` + `fsGroup: 65532` (Raft state
   on the per-pod PVC stays writable via `fsGroup`). No `privileged`, no
   `hostNetwork`/`hostPID`/`hostIPC` anywhere.
+- **Reproducible renderer image.** The manifest renderer has no third-party
+  runtime dependency, installs from the committed npm lockfile, verifies tests
+  and generated output during the image build, and runs its final check as the
+  unprivileged `node` user.
 - **Locked-down containers.** Each container sets
   `allowPrivilegeEscalation: false`, `readOnlyRootFilesystem: true`,
   `capabilities.drop: ["ALL"]`, and `seccompProfile: RuntimeDefault` (pod-level

@@ -11,8 +11,19 @@
 # and moves on failure; never hardcode a "master". See README ("Leadership is
 # elected, not declared").
 #
-# Quorum rule: with replication_factor = 3 and one replica per cluster, you need
+# Quorum rule: with replication_factor = 3 and one replica per cluster you need
 # at least 3 clusters; losing any one keeps a 2/3 majority. See README.
+#
+# ── Provider is a swap, not a rewrite ────────────────────────────────────────
+# A cluster's cloud is JUST the `platform` field here + a matching terraform
+# module (terraform/modules/<platform>). To move a cluster from Vultr to, say,
+# DigitalOcean: (1) change `platform = "digitalocean"`, (2) point that cluster's
+# terraform stanza at terraform/modules/digitalocean (same module interface —
+# see terraform/README.md), (3) re-provision, (4) update this cluster's
+# *_endpoint / kubectl context, (5) `node tools/render.mjs`. Nothing in base/ or
+# the app code changes — the platform only decides where the VMs live and the
+# storage_class name. Drop-in module targets: hetzner, vultr, civo,
+# digitalocean, scaleway, akamai (LKE), plus the hyperscalers (gke/eks/aks).
 # ─────────────────────────────────────────────────────────────────────────────
 
 cluster_id = "fiducia-prod"
@@ -20,76 +31,84 @@ shard_count = 256
 replication_factor = 3
 
 # How the clusters are wired together at L3/L7. One of:
-#   clustermesh   — Cilium Cluster Mesh (recommended; see tools/clustermesh.sh)
-#   wireguard     — VPN / VPC peering between clusters
-#   public-mtls   — public per-cluster endpoints with mTLS
+#   clustermesh   — Cilium Cluster Mesh (recommended; see tools/clustermesh.sh).
+#                   Pod-to-pod routable across clouds → lowest-latency Raft.
+#   wireguard     — encrypted VPN mesh between clusters (see docs) when the
+#                   clouds can't peer natively.
+#   public-mtls   — public per-cluster endpoints with mTLS (highest latency).
 connectivity = "clustermesh"
 
 # Raft timing, sized for a CROSS-CLOUD group. The node's built-in defaults are
-# LAN values (heartbeat 50ms, election 150–300ms) — below a single transatlantic
-# round trip, so on this gcp(us)+aws(us)+hetzner(eu) topology they would cause
+# LAN values (heartbeat 50ms, election 150–300ms) — below a single inter-cloud
+# round trip, so on an EU-spread hetzner+vultr+civo topology they would cause
 # continuous spurious elections and leadership flapping. These render into the
 # fiducia-cluster ConfigMap as FIDUCIA_RAFT_* and are read by RaftTiming::from_env.
 # Rule of thumb: heartbeat >= inter-cloud RTT; election_min >= ~10x RTT; a wide
-# jitter spreads campaigns to avoid split votes. US<->EU RTT is ~90–100ms.
+# jitter spreads campaigns to avoid split votes. Keeping the three clusters in
+# nearby EU regions (see below) holds inter-cloud RTT to ~10–30ms; these values
+# leave generous headroom. If you spread across continents, raise them (US<->EU
+# RTT is ~90–100ms → heartbeat 150, election_min 1000).
 [raft]
 tick_ms = 50
-heartbeat_ms = 150
-election_min_ms = 1000
-election_jitter_ms = 1000
+heartbeat_ms = 100
+election_min_ms = 600
+election_jitter_ms = 600
 
 # One [[cluster]] block per Kubernetes cluster. The *_endpoint values are how the
-# OTHER clusters reach this one — replace the placeholders with real DNS/IPs
-# (LoadBalancer addresses, mesh global-service names, or VPN addresses).
-
-[[cluster]]
-name = "gcp"
-platform = "gcp"
-region = "us-central1"
-storage_class = "standard-rwo"
-node_replicas = 3
-brain_endpoint = "brain.gcp.fiducia.cloud:9095"
-node_peer_endpoint = "node.gcp.fiducia.cloud:9090"
-lb_endpoint = "https://gcp.lb.fiducia.cloud"
-
-[[cluster]]
-name = "aws"
-platform = "aws"
-region = "us-east-1"
-storage_class = "gp3"
-node_replicas = 3
-brain_endpoint = "brain.aws.fiducia.cloud:9095"
-node_peer_endpoint = "node.aws.fiducia.cloud:9090"
-lb_endpoint = "https://aws.lb.fiducia.cloud"
+# OTHER clusters reach this one — with clustermesh they become mesh global-service
+# DNS (e.g. fiducia-node.fiducia.svc.clusterset.local:9090); otherwise real
+# DNS/IPs (LoadBalancer addresses or VPN addresses).
+#
+# node_replicas = 5 with one pod per machine (enforced by a required host
+# anti-affinity in base/node) ⇒ each cluster needs >= 5 worker machines. The
+# single brain member per cluster MAY share a machine with a node (it has no
+# node anti-affinity), so 5 machines/cluster is the floor, not 6.
 
 [[cluster]]
 name = "hetzner"
 platform = "hetzner"
-region = "eu-central"
+region = "eu-central"                 # Nuremberg / Falkenstein
 storage_class = "hcloud-volumes"
-node_replicas = 3
+node_replicas = 5
 brain_endpoint = "brain.hetzner.fiducia.cloud:9095"
 node_peer_endpoint = "node.hetzner.fiducia.cloud:9090"
 lb_endpoint = "https://hetzner.lb.fiducia.cloud"
 
-# A 4th platform. With RF=3 each shard's replicas still spread one-per-cluster
-# across THREE distinct failure domains; a 4th cluster adds a spare domain (the
-# brain may place a shard's 3 replicas on any 3 of the 4 platforms) plus extra
-# capacity — it does NOT change the "survive losing 1 cluster" guarantee.
-#
-# brain = false → azure is a NODE-ONLY cluster. The brain Raft group MUST stay an
-# odd size for clean quorum math; the design pins it at 3 (gcp/aws/hetzner). If
-# azure also ran a brain the group would be 4 (even) — same fault tolerance as 3
-# but worse quorum math. So azure runs data-plane nodes only; its sidecars still
-# reach all three brains. render.mjs enforces an odd, ≥ replication_factor brain
-# group and deletes the brain workload from node-only overlays.
 [[cluster]]
-name = "azure"
-platform = "azure"
-region = "eastus"
-storage_class = "managed-csi"
-node_replicas = 3
-brain = false
-brain_endpoint = "brain.azure.fiducia.cloud:9095"
-node_peer_endpoint = "node.azure.fiducia.cloud:9090"
-lb_endpoint = "https://azure.lb.fiducia.cloud"
+name = "vultr"
+platform = "vultr"
+region = "fra"                        # Frankfurt (near hetzner for low RTT)
+storage_class = "vultr-block-storage-hdd"
+node_replicas = 5
+brain_endpoint = "brain.vultr.fiducia.cloud:9095"
+node_peer_endpoint = "node.vultr.fiducia.cloud:9090"
+lb_endpoint = "https://vultr.lb.fiducia.cloud"
+
+[[cluster]]
+name = "civo"
+platform = "civo"
+region = "lon1"                       # London (Civo's EU region)
+storage_class = "civo-volume"
+node_replicas = 5
+brain_endpoint = "brain.civo.fiducia.cloud:9095"
+node_peer_endpoint = "node.civo.fiducia.cloud:9090"
+lb_endpoint = "https://civo.lb.fiducia.cloud"
+
+# ── Scaling out (optional) ───────────────────────────────────────────────────
+# A 4th cluster adds a spare failure domain + capacity WITHOUT changing the
+# "survive losing 1 cluster" guarantee. Add it NODE-ONLY (`brain = false`): the
+# brain Raft group must stay an ODD size for clean quorum math, and the design
+# pins it at 3 (hetzner/vultr/civo). A node-only cluster's sidecars still reach
+# all three brains. render.mjs enforces an odd, >= replication_factor brain group.
+# Example (uncomment + provision to use):
+#
+# [[cluster]]
+# name = "digitalocean"
+# platform = "digitalocean"
+# region = "fra1"
+# storage_class = "do-block-storage"
+# node_replicas = 5
+# brain = false
+# brain_endpoint = "brain.digitalocean.fiducia.cloud:9095"
+# node_peer_endpoint = "node.digitalocean.fiducia.cloud:9090"
+# lb_endpoint = "https://digitalocean.lb.fiducia.cloud"
