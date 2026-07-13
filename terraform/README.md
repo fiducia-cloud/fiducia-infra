@@ -67,6 +67,43 @@ them uniformly:
 - Remote state: `envs/e2e/backend.tf.example` shows an S3/GCS backend with locking.
   Do not commit real state; the default local state is for throwaway runs only.
 
+## Provisioning the prod fleet
+
+The production 3-cluster fleet (hetzner + vultr + civo) lives in
+[`envs/prod`](envs/prod) and has its own runbook — see
+[`envs/prod/README.md`](envs/prod/README.md). In short:
+
+```sh
+export HCLOUD_TOKEN=…  VULTR_API_KEY=…  CIVO_TOKEN=…
+cd terraform/envs/prod
+terraform init && terraform apply \
+  -var 'hetzner_ssh_public_key=ssh-ed25519 AAAA…' \
+  -var 'hetzner_firewall_allowed_cidrs=["203.0.113.0/24"]'
+```
+
+Then register the three kubeconfigs, run
+[`../../tools/clustermesh.sh`](../tools/clustermesh.sh) to stitch them into a
+Cilium Cluster Mesh, set `topology.toml`'s `*_endpoint`s to the mesh global-service
+DNS, `node ../../tools/render.mjs`, and let ArgoCD sync the overlays. Full picture:
+[`../docs/multi-cluster-architecture.md`](../docs/multi-cluster-architecture.md).
+
+## Swapping a provider
+
+Every module honors the **same variable/output contract** (above), so a cluster's
+cloud is a `source =` change, not a rewrite. To move a prod cluster (say
+vultr → digitalocean):
+
+1. add `modules/digitalocean` implementing the contract (copy the shape of
+   `modules/vultr`; drop-in targets: digitalocean, scaleway, akamai/LKE, or the
+   `gke`/`eks`/`aks` modules already here);
+2. in `envs/prod/main.tf`, point `module "vultr"`'s `source` at it and set its
+   `region`;
+3. update that cluster's `platform` + `region` in [`../topology.toml`](../topology.toml);
+4. `terraform apply`, then re-point its `*_endpoint` and `node ../../tools/render.mjs`.
+
+Nothing in [`../base`](../base) or the app code changes — the platform only decides
+where the VMs live and the `storage_class` name.
+
 ## Provisioning the e2e fleet
 
 ```sh
@@ -79,9 +116,9 @@ terraform apply -var enable_gcp=true -var enable_aws=true -var enable_azure=true
 terraform output endpoints    # the FIDUCIA_E2E_ENDPOINTS list for fiducia-e2e
 ```
 
-Toggle any subset with the `enable_*` vars — e.g. bring up only GCP+AWS+Hetzner to
-mirror the original 3-cluster prod baseline, or add `enable_azure=true` for the
-4th failure domain.
+Toggle any subset with the `enable_*` vars — e.g. bring up only GCP+AWS+Hetzner as
+a real-hyperscaler test fleet, or add `enable_azure=true` for a 4th failure domain.
+(The real prod trio is hetzner/vultr/civo in `envs/prod`, above.)
 
 ## Prod-hardening (opt-in)
 
