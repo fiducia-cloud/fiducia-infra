@@ -380,6 +380,18 @@ every overlay):
   node, sidecar, brain and load-balance so auth can't be silently disabled.
 - `fiducia-load-balance` Service reduced to `:443` only; new
   `fiducia-load-balance-internal` `ClusterIP` for the cleartext `:8088` plane.
+- **Namespace default-deny NetworkPolicy** (`base/networkpolicy.yaml`) — ingress
+  *and* egress — plus explicit allows for every legitimate flow (DNS, east-west,
+  LB edge `:8443`, node/brain cross-cluster peering, otel-agent gateway + k8s API
+  egress, kubelet probes). See **NetworkPolicy model** above. Verified to preserve
+  edge `:443` ingress, otel egress, and cross-cluster peering with `kubectl
+  kustomize` on every overlay.
+- **Terraform prod-hardening wired as opt-in variables** (defaults reproduce the
+  e2e baseline exactly — see **terraform prod-hardening** in
+  [`terraform/README.md`](terraform/README.md)): private VPC/subnets +
+  authorized API CIDRs on EKS, `deletion_protection` + private cluster +
+  authorized networks + network-policy on GKE, authorized API ranges +
+  network-policy on AKS, and an `hcloud_firewall` on Hetzner.
 
 Accepted / known risks (reported, deliberately **not** auto-changed):
 
@@ -387,19 +399,13 @@ Accepted / known risks (reported, deliberately **not** auto-changed):
   `/var/log/pods` and `/var/lib/fiducia/otelcol`. Reading other pods' root-owned
   logs and keeping a durable exporter queue needs this; it is otherwise fully
   locked down (no caps, no priv-esc, read-only rootfs, RuntimeDefault seccomp).
-- **No blanket default-deny NetworkPolicy** for the namespace, and none for
-  `load-balance`/`otel-agent`. Adding one risks severing edge ingress on `:443`,
-  otel egress to the gateway, and cross-cluster peering, so it is left as a
-  reviewed follow-up rather than a blind addition.
 - **brain `/v1` control plane is not yet L7-authenticated** (only the node's
-  `/v1` is). It is confined to the namespace by its NetworkPolicy; adding a
-  trusted-hop secret on brain `/v1` is the remaining defense-in-depth step.
-- **Terraform is e2e/test-grade** (each module carries `TODO(prod)`): EKS/GKE/AKS
-  use default/public API endpoints (no authorized-network ranges), GKE has
-  `deletion_protection = false` and no `network_policy`/private cluster, and the
-  Hetzner k3s module has no `hcloud_firewall` (6443 + node ports on public IPs).
-  These are intentional for disposable e2e clusters and must be hardened before
-  any production use.
+  `/v1` is). It is confined to the namespace by the default-deny + brain
+  NetworkPolicy; adding a trusted-hop secret on brain `/v1` is the remaining
+  defense-in-depth step.
+- **Terraform hardening ships defaulted-off.** The variables above reproduce the
+  e2e-grade baseline (public endpoints, default VPC, no firewall) until an
+  operator opts in. Enable them for any production use.
 
 ## Related
 
