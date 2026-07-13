@@ -128,6 +128,12 @@ operator opts in. The `envs/e2e` env threads each one through as a
 `<cloud>_<name>` variable that also defaults to the e2e behavior, so you can
 tighten a fleet cluster without editing modules:
 
+> **In `envs/prod`** the hetzner firewall is the relevant knob and defaults **on**
+> (`hetzner_enable_firewall = true`), so you must pass `hetzner_firewall_allowed_cidrs`
+> (world-open is rejected). Vultr VKE and Civo are managed control planes, so their
+> API-server hardening is provider-side, not a module input. The rows below are the
+> full catalog across every module (prod trio + hyperscaler swap targets).
+
 | Module | Variable (module → `envs/e2e`) | Default (e2e) | Set for prod |
 |--------|--------------------------------|---------------|--------------|
 | `eks` | `subnet_ids` → `aws_subnet_ids` | `[]` → account **default VPC** subnets | dedicated/private VPC subnet ids |
