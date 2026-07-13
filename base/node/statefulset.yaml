@@ -27,9 +27,25 @@ spec:
       labels:
         app: fiducia-node
     spec:
-      # Spread node pods across zones WITHIN a cluster. Cross-CLUSTER spread of a
-      # shard's replicas is enforced by the brain (failure domain = cluster), not
-      # by k8s scheduling.
+      # ── One node pod per machine (required) ──────────────────────────────────
+      # Each node pod is a Raft member holding shard replicas; two of them on the
+      # same VM would make that VM a correlated failure domain (lose it, lose two
+      # of a shard's local replicas) and would waste the "5 machines" spread. So a
+      # REQUIRED host anti-affinity pins at most one fiducia-node per machine —
+      # node_replicas=5 therefore lands on 5 distinct machines. The single brain
+      # member per cluster is NOT in this set, so it may share a machine with a
+      # node (the deliberate "brain co-located with a node" case). To deliberately
+      # pack >1 node per machine, relax this to preferredDuringScheduling.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app: fiducia-node
+      # Then spread those per-machine pods across zones WITHIN a cluster (best
+      # effort). Cross-CLUSTER spread of a shard's replicas is enforced by the
+      # brain (failure domain = cluster), not by k8s scheduling.
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: topology.kubernetes.io/zone
