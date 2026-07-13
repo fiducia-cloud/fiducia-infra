@@ -41,7 +41,7 @@ Fiducia is already a quorum system internally (Raft). The trick here is to make
 
 ### The mechanism that enforces it
 
-Each cluster's overlay sets `FIDUCIA_CLUSTER` (gcp/aws/hetzner). The node's
+Each cluster's overlay sets `FIDUCIA_CLUSTER` (hetzner/vultr/civo). The node's
 sidecar reports that as its **failure domain** (`FIDUCIA_REGION`) to the brain,
 and the brain spreads each shard's 3 replicas across **distinct** failure domains
 — i.e. one per cluster. That single label is what turns "3 replicas somewhere"
