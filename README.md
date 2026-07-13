@@ -228,16 +228,17 @@ Why these workload types: **node** and **brain** are Raft members → `StatefulS
 stateless cache → `Deployment`. The **sidecar** is a second container in the node
 pod (its bridge to brain + telemetry).
 
-> **A 4th platform (Azure) is now in [`topology.toml`](topology.toml).** RF stays 3,
-> so each shard's replicas still spread one-per-cluster across three distinct
-> failure domains; the 4th cluster adds a spare domain + capacity and does **not**
-> change the "survive losing 1 cluster" guarantee. The kustomize model is N-cluster
-> already — `render.mjs` fans out to every `[[cluster]]` block.
+> **Want a 4th platform?** The kustomize model is N-cluster already — `render.mjs`
+> fans out to every `[[cluster]]` block, so a 4th cluster adds a spare failure
+> domain + capacity and does **not** change the "survive losing 1 cluster"
+> guarantee (RF stays 3; each shard's replicas still spread one-per-cluster across
+> three distinct failure domains).
 >
-> Azure is added **node-only** (`brain = false`): the brain Raft group must stay an
-> **odd** size, so it's pinned at 3 (gcp/aws/hetzner). Brain-member clusters include
-> the [`base/components/brain`](base/components/brain) Component; node-only clusters
-> omit it. `render.mjs` enforces an odd, ≥ RF brain group.
+> Add it **node-only** (`brain = false`): the brain Raft group must stay an **odd**
+> size, so it's pinned at 3 (hetzner/vultr/civo). A commented `digitalocean` example
+> is in [`topology.toml`](topology.toml). Brain-member clusters include the
+> [`base/components/brain`](base/components/brain) Component; node-only clusters omit
+> it. `render.mjs` enforces an odd, ≥ RF brain group.
 
 ## Provisioning & testing
 
