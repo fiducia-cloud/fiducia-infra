@@ -106,11 +106,14 @@ cross-cluster traffic never collides.
 ./down.sh                     # delete all three clusters
 ```
 
-Watch it live from another shell:
+Watch it live from another shell (the node guards `/v1` with the trusted-hop
+header, so pass the dev secret up.sh installed):
 
 ```sh
-watch -n1 'for p in 8090 8091 8092; do
-  echo "== :$p =="; curl -s localhost:$p/v1/status | jq "{cluster:.node_id, leads:(.leading_shards|length), quorum:([.shards[]|select(.role==\"leader\")|.has_quorum]|all)}"; done'
+H='x-fiducia-internal-auth: emulation-internal-secret-do-not-use-in-prod'
+watch -n1 "for p in 8090 8091 8092; do echo \"== :\$p ==\"; \
+  curl -s -H '$H' localhost:\$p/v1/status | \
+  jq '{cluster:.node_id, leads:(.leading_shards|length), quorum:([.shards[]|select(.role==\"leader\")|.has_quorum]|all)}'; done"
 ```
 
 ---
