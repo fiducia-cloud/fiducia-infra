@@ -58,7 +58,7 @@ package "GitOps pipeline (declarative)" {
   component "ArgoCD ApplicationSet\n(cluster generator)" as argo
   topo --> render : node tools/render.mjs
   render --> generated
-  generated --> argo --> node : sync overlay
+  generated --> argo --> fnode : sync overlay
   generated ..> edge : FIDUCIA_REGIONS
 }
 
