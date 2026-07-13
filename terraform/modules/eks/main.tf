@@ -109,7 +109,7 @@ resource "aws_eks_node_group" "primary" {
   cluster_name    = aws_eks_cluster.this.name
   node_group_name = "${var.cluster_name}-ng"
   node_role_arn   = aws_iam_role.node.arn
-  subnet_ids      = data.aws_subnets.default.ids
+  subnet_ids      = local.subnet_ids
   instance_types  = [var.instance_type]
   labels          = var.labels
 
