@@ -47,10 +47,10 @@ The fiducia-e2e `chaos/` suite proves the 2-of-N quorum invariant. Against kind,
 "losing a cluster" is draining one zone's node:
 
 ```sh
-kubectl cordon <node-for-zone-aws>
-kubectl drain  <node-for-zone-aws> --ignore-daemonsets --delete-emptydir-data
+kubectl cordon <node-for-zone-vultr>
+kubectl drain  <node-for-zone-vultr> --ignore-daemonsets --delete-emptydir-data
 # assert: existing locks still observable, a NEW lock still commits on 3/4
-kubectl uncordon <node-for-zone-aws>            # heal
+kubectl uncordon <node-for-zone-vultr>            # heal
 ```
 
 ## Fidelity limits (so the model is honest)
