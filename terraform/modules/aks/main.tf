@@ -1,5 +1,10 @@
 # AKS cluster for a fiducia failure domain (Azure).
 # e2e/test-grade baseline. AKS is a single resource + a resource group.
+#
+# Prod-hardening is OPT-IN via variables that all DEFAULT to this e2e behavior
+# (see variables.tf): var.authorized_api_cidrs restricts the API server, and
+# var.enable_network_policy turns on dataplane network-policy enforcement.
+# Existing e2e applies that pass none of these are unchanged.
 
 terraform {
   required_version = ">= 1.5"
