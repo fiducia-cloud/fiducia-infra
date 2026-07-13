@@ -44,10 +44,11 @@ them uniformly:
 
 ## Cost & safety
 
-- These modules are **e2e/test-grade baselines**, not hardened prod. They favor
-  the smallest footprint that runs fiducia (RF=3 → ≥3 schedulable nodes ideal).
-  Review before any long-lived use: private endpoints, network policy, node
-  auto-repair/upgrade, and remote state locking are called out inline as TODO.
+- These modules are **e2e/test-grade baselines** by default, not hardened prod.
+  They favor the smallest footprint that runs fiducia (RF=3 → ≥3 schedulable
+  nodes ideal). Prod-hardening is now **wired as opt-in variables** that default
+  to the e2e behavior — see **Prod-hardening (opt-in)** below. Node
+  auto-repair/upgrade and remote state locking remain review items.
 - **`terraform apply` here spends real money and creates real infrastructure.**
   It is never run in CI. CI validates with `terraform fmt -check` + `terraform
   validate` only (see the infra CI workflow). Real-cloud e2e is an operator-run,
