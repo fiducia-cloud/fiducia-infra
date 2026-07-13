@@ -1,0 +1,25 @@
+# Shared local overlay for the 3-cluster emulation. Each per-cloud overlay
+# (../hetzner, ../vultr, ../civo) layers its own fiducia-cluster ConfigMap
+# (topology.env, with cross-cluster peers) on top of this.
+#
+# Deliberately a RAFT-FOCUSED SLICE of ../../../base: just the node + brain Raft
+# members (one of each per cluster) + the NodePort services that expose their peer
+# ports across the `kind` Docker network. The edge LB and otel-agent are omitted —
+# they are not part of the cross-cluster Raft path this tier exists to test, and
+# leaving them out keeps three local clusters light. (The default-deny
+# NetworkPolicy is also omitted: kindnet does not enforce NetworkPolicy anyway, and
+# omitting it keeps the NodePort peer/API paths open. Policy enforcement is a
+# separate concern — see tools/networkpolicy.test.mjs and the Cilium tier.)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: fiducia
+resources:
+  - ../../../base/namespace.yaml
+  - ../../../base/node/statefulset.yaml
+  - ../../../base/node/service.yaml
+  - ../../../base/node/pdb.yaml
+  - nodeport.yaml
+components:
+  - ../../../base/components/brain   # 1 brain Raft member per cluster (3 total)
+patches:
+  - path: patches.yaml
