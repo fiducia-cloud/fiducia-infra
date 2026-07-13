@@ -318,6 +318,39 @@ but the intent is:
   separate in-cluster `fiducia-load-balance-internal` `ClusterIP` so cloud
   providers never publish port 80.
 
+### NetworkPolicy model (default-deny + explicit allows)
+
+The namespace is **deny-by-default in both directions**; every legitimate flow is
+then re-opened by a narrow policy. NetworkPolicies are additive (a flow is allowed
+if *any* policy permits it), so these compose cleanly:
+
+| Policy (file) | Kind | What it allows |
+|---------------|------|----------------|
+| `fiducia-default-deny` (`base/networkpolicy.yaml`) | Ingress+Egress, all pods, no rules | nothing — the baseline drop |
+| `fiducia-allow-dns-egress` (`base/networkpolicy.yaml`) | Egress, all pods | `:53` UDP/TCP to anywhere (kube-dns lives outside the namespace) |
+| `fiducia-allow-namespace-internal` (`base/networkpolicy.yaml`) | Ingress+Egress, all pods | all east-west **within** `fiducia`: LB→node/brain/otel, node↔node & brain↔brain intra-cluster, sidecar→brain, brain→sidecar `:8091`, app→LB `:8088`, every pod→otel `:4317` |
+| `fiducia-allow-kubelet-probes` (`base/networkpolicy.yaml`) | Ingress, all pods | health-only ports `:8091`/`:13133` from any source (see note) |
+| `fiducia-load-balance-edge-ingress` (`base/load-balance/networkpolicy.yaml`) | Ingress, LB | external clients → `:8443` (the public `:443` Service target) |
+| `fiducia-node-ingress` (`base/node/networkpolicy.yaml`) | Ingress, node | in-namespace → all node ports; cross-cluster `:9090` from any source |
+| `fiducia-node-peer-egress` (`base/node/networkpolicy.yaml`) | Egress, node | node → peer nodes `:9090` (cross-cluster) |
+| `fiducia-brain-ingress` (`base/components/brain/networkpolicy.yaml`) | Ingress, brain | in-namespace → all brain ports; cross-cluster `:9095` from any source |
+| `fiducia-brain-peer-egress` (`base/components/brain/networkpolicy.yaml`) | Egress, brain | brain → peer brains `:9095` (cross-cluster); ships only with the brain Component |
+| `fiducia-otel-agent-egress` (`base/observability/networkpolicy.yaml`) | Egress, otel-agent | OTLP gateway `:4318` + k8s API `:443`/`:6443` (k8sattributes) |
+
+**Kubelet probes.** Probes come from the node's kubelet (a host-network source
+outside the pod CIDR). The declared CNI (Cilium; also Calico) failsafe-exempts
+kubelet health traffic, so probes to the sensitive-plane ports (`:8088`/`:8090`/
+`:8095`) keep working under default-deny **without** opening those ports from
+arbitrary sources — which would undo the in-namespace confinement (brain `:8095`
+`/v1` is not yet L7-authenticated). Only the health-*only* ports (`:8091`,
+`:13133`) are opened cluster-wide. On a CNI without a kubelet failsafe, add a
+per-overlay `ipBlock` allow for that cluster's node CIDR on `:8088`/`:8090`/`:8095`.
+
+**Cross-cluster peering** is expressed by port (not hostname/CIDR, which
+NetworkPolicy can't match against the mesh), so the peer policies are identical
+across clusters and live in `base`. The node-only overlays (azure, kind) get the
+node policies but not the brain ones.
+
 ## Tooling: `.cli-flags.toml` & flags-2-env
 
 This repo's own CLI flags are declared once in [`.cli-flags.toml`](.cli-flags.toml)
