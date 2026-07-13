@@ -53,3 +53,26 @@ spec:
     #     FIDUCIA_BRAIN_RAFT_SECRET; the network layer is the mesh/VPN/mTLS.
     - ports:
         - { protocol: TCP, port: 9095 }
+---
+# Egress counterpart to rule (2): under the namespace default-deny
+# (base/networkpolicy.yaml) the brain must be allowed to DIAL its peer brains, or
+# the cross-cluster brain-Raft group (FIDUCIA_BRAIN_PEERS =
+# brain.<cluster>.fiducia.cloud:9095) is severed. Peers resolve to routable
+# addresses OUTSIDE this namespace (the mesh / VPN / mTLS transport), so the
+# destination is unrestricted and scoped to the declared brain peer port only.
+# This policy ships only with the brain Component, so node-only clusters (no brain
+# pod) never get it. Intra-namespace and DNS egress are covered by the base
+# allow-namespace-internal / allow-dns-egress policies.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fiducia-brain-peer-egress
+  namespace: fiducia
+spec:
+  podSelector:
+    matchLabels:
+      app: fiducia-brain
+  policyTypes: [Egress]
+  egress:
+    - ports:
+        - { protocol: TCP, port: 9095 }

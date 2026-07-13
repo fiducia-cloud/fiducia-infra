@@ -5,6 +5,8 @@ overlays under `clusters/` (and `kind/overlay/`) add the cluster-specific Config
 storage class, and replica counts on top.
 
 - `namespace.yaml` — the `fiducia` namespace.
+- `networkpolicy.yaml` — namespace-wide ingress/egress default-deny plus scoped
+  CoreDNS, same-namespace service traffic, and health-probe allowances.
 - `node/` — the `fiducia-node` data plane (StatefulSet + sidecar) and its services.
 - `load-balance/` — the stateless per-cluster router (Deployment + LoadBalancer).
 - `observability/` — the per-cluster OpenTelemetry agent.
