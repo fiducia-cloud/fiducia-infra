@@ -48,6 +48,38 @@ resource "hcloud_network_subnet" "this" {
   ip_range     = "10.10.1.0/24"
 }
 
+# OPT-IN public firewall. count=0 by default → e2e servers keep unfiltered public
+# IPs. When enabled, an hcloud_firewall default-denies inbound and allows only the
+# ports below from var.firewall_allowed_cidrs; it is attached to the servers via
+# their firewall_ids.
+resource "hcloud_firewall" "this" {
+  count  = var.enable_firewall ? 1 : 0
+  name   = "${var.cluster_name}-fw"
+  labels = var.labels
+
+  rule {
+    direction   = "in"
+    protocol    = "tcp"
+    port        = "22"
+    source_ips  = var.firewall_allowed_cidrs
+    description = "SSH (kubeconfig fetch + management)"
+  }
+  rule {
+    direction   = "in"
+    protocol    = "tcp"
+    port        = "6443"
+    source_ips  = var.firewall_allowed_cidrs
+    description = "k3s API server"
+  }
+  rule {
+    direction   = "in"
+    protocol    = "tcp"
+    port        = "30000-32767"
+    source_ips  = var.firewall_allowed_cidrs
+    description = "Kubernetes NodePort range"
+  }
+}
+
 # Control plane: k3s server, TLS SAN for the public IP so a fetched kubeconfig works.
 resource "hcloud_server" "control_plane" {
   name        = "${var.cluster_name}-cp"
