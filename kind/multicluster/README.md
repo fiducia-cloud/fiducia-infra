@@ -120,7 +120,8 @@ watch -n1 "for p in 8090 8091 8092; do echo \"== :\$p ==\"; \
 
 ## What `test/run.sh` asserts
 
-**Core** (auth-exempt `GET /v1/status` on each cluster):
+**Core** (`GET /v1/status` on each cluster — org-exempt, but still trusted-hop
+authenticated, so the test sends the internal-auth header up.sh installed):
 
 - every cluster is reachable and reports the configured `shard_count`;
 - **every hosted shard knows its leader** (`leader_id` non-empty) — the cross-
