@@ -25,12 +25,47 @@ resource "google_container_cluster" "this" {
 
   remove_default_node_pool = true
   initial_node_count       = 1
-  deletion_protection      = false # e2e clusters are disposable; TODO: true for prod
+  # e2e clusters are disposable so this defaults false; set var.deletion_protection
+  # = true to guard prod clusters from `terraform destroy`.
+  deletion_protection = var.deletion_protection
 
   min_master_version = var.k8s_version
   resource_labels    = var.labels
 
-  # TODO(prod): private_cluster_config + master_authorized_networks; network_policy.
+  # Prod-hardening, all opt-in and defaulted off so e2e behavior is unchanged:
+  #  - private_cluster_config      → private nodes / endpoint (var.enable_private_cluster)
+  #  - master_authorized_networks  → restrict API access     (var.authorized_api_cidrs)
+  #  - network_policy              → intra-cluster L3/L4 enforcement (var.enable_network_policy)
+  dynamic "private_cluster_config" {
+    for_each = var.enable_private_cluster ? [1] : []
+    content {
+      enable_private_nodes    = true
+      enable_private_endpoint = var.enable_private_endpoint
+      master_ipv4_cidr_block  = var.master_ipv4_cidr_block
+    }
+  }
+
+  dynamic "master_authorized_networks_config" {
+    for_each = length(var.authorized_api_cidrs) > 0 ? [1] : []
+    content {
+      dynamic "cidr_blocks" {
+        for_each = var.authorized_api_cidrs
+        content {
+          cidr_block   = cidr_blocks.value
+          display_name = "authorized-${cidr_blocks.key}"
+        }
+      }
+    }
+  }
+
+  dynamic "network_policy" {
+    for_each = var.enable_network_policy ? [1] : []
+    content {
+      enabled  = true
+      provider = "CALICO"
+    }
+  }
+
   release_channel {
     channel = "REGULAR"
   }
