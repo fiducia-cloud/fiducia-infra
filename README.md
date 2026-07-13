@@ -292,12 +292,14 @@ but the intent is:
   are explicit `emptyDir` `/tmp` mounts plus the durable PVC.
 - **Resource requests + limits** on every container, so no workload is
   `BestEffort` and none can starve a node.
-- **NetworkPolicies (default-deny by selection).** `node/networkpolicy.yaml` and
-  `components/brain/networkpolicy.yaml` select their pods with an Ingress policy,
-  which implicitly denies unmatched ingress: the client/control planes (`:8090` /
-  `:8095`) are reachable **only in-namespace**, while the cross-cluster Raft peer
-  ports (`:9090` / `:9095`) stay open (guarded at L7 by the shared secret and at
-  L3 by the mesh/VPN/mTLS).
+- **NetworkPolicies (blanket default-deny + explicit allows).** `base/networkpolicy.yaml`
+  installs a namespace-wide `fiducia-default-deny` (ingress **and** egress) so any
+  flow not explicitly permitted is dropped; the per-component policies then open
+  exactly the legitimate flows. The client/control planes (`:8090` / `:8095`) stay
+  reachable **only in-namespace**, while the cross-cluster Raft peer ports
+  (`:9090` / `:9095`) stay open both directions (guarded at L7 by the shared
+  secret and at L3 by the mesh/VPN/mTLS). See **NetworkPolicy model** below for
+  the full policy set.
 - **Secret management.** No secret values live in the manifests. TLS
   (`fiducia-load-balance-tls`), the trusted-hop / brain-Raft secrets
   (`fiducia-secrets`) and the observability gateway token
