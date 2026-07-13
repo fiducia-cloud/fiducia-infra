@@ -2,16 +2,24 @@
 # (../hetzner, ../vultr, ../civo) layers its own fiducia-cluster ConfigMap
 # (topology.env, with cross-cluster peers) on top of this.
 #
-# It reuses the SAME ../../../base as the real clusters/* overlays (so the
-# emulation exercises the production manifests), then trims to a RAFT-FOCUSED
-# slice: the edge LB and the otel-agent DaemonSet are $patch:delete-d. They are
-# not part of the cross-cluster Raft path this tier tests, and dropping them keeps
-# three local clusters light and avoids the LB's TLS secret. node + brain (one
-# Raft member each per cluster) remain.
+# It reuses the SAME ../../../base as the real clusters/* overlays — the real
+# fiducia-node + fiducia-brain + fiducia-load-balance manifests — so the emulation
+# exercises the production stack end-to-end: client → LB (key→shard via
+# fiducia-routing, scope checks, trusted-hop) → shard-leader node → cross-cluster
+# Raft. Trimmed for local:
+#   * otel-agent DaemonSet deleted (no telemetry gateway locally; OTLP exports
+#     from the services fail soft).
+#   * the PUBLIC LoadBalancer Service deleted (kind has no cloud LB; the LB is
+#     reached via NodePort 30088 → host ports 8093-8095 instead).
+#   * LB runs PLAINTEXT on :8088 (TLS env + cert volume removed — kind-local only;
+#     prod terminates TLS at the LB on :8443).
+#   * the node sidecar advertises hostIP:30080 (the node-API NodePort) instead of
+#     its pod IP, so the address the brain hands to LBs is routable ACROSS
+#     clusters (pod IPs are not, without a mesh).
 #
 # NOTE: kindnet (Kind's default CNI) does NOT enforce NetworkPolicy, so the base
-# default-deny is inert here and the NodePort peer/API paths stay open — exactly
-# what this tier needs. Policy enforcement is a separate concern (the Cilium tier +
+# default-deny is inert here and the NodePort paths stay open — exactly what this
+# tier needs. Policy enforcement is a separate concern (the Cilium tier +
 # tools/networkpolicy.test.mjs).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -23,28 +31,51 @@ components:
   - ../../../base/components/brain   # 1 brain Raft member per cluster (3 total)
 patches:
   - path: patches.yaml
-  # --- trim to the Raft slice: drop the edge LB + otel-agent DaemonSet ----------
-  - target: { kind: Deployment, name: fiducia-load-balance }
-    patch: |-
-      $patch: delete
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata: { name: fiducia-load-balance, namespace: fiducia }
+  # --- no cloud LoadBalancer in kind: drop only the PUBLIC LB Service -----------
   - target: { kind: Service, name: fiducia-load-balance }
     patch: |-
       $patch: delete
       apiVersion: v1
       kind: Service
       metadata: { name: fiducia-load-balance, namespace: fiducia }
-  - target: { kind: Service, name: fiducia-load-balance-internal }
-    patch: |-
-      $patch: delete
-      apiVersion: v1
-      kind: Service
-      metadata: { name: fiducia-load-balance-internal, namespace: fiducia }
+  # --- no telemetry gateway locally: drop the otel-agent DaemonSet --------------
   - target: { kind: DaemonSet, name: fiducia-otel-agent }
     patch: |-
       $patch: delete
       apiVersion: apps/v1
       kind: DaemonSet
       metadata: { name: fiducia-otel-agent, namespace: fiducia }
+  # --- sidecar advertises a CROSS-CLUSTER-routable node address -----------------
+  # Base sets FIDUCIA_NODE_ADDRESS=http://$(POD_IP):8090; pod IPs are not routable
+  # between kind clusters. Advertise the kind-node (container) IP + the node-API
+  # NodePort instead — that address works from every cluster, so the brain's
+  # membership lets any cluster's LB forward to a remote shard leader.
+  # (JSON6902 with pinned indices: sidecar = containers/1; FIDUCIA_NODE_ADDRESS =
+  # env/6 in base — the HOST_IP insert at 3 shifts it to 7. If base env order
+  # changes, kustomize build output will show the drift immediately.)
+  - target: { kind: StatefulSet, name: fiducia-node }
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/1/env/3
+        value:
+          name: HOST_IP
+          valueFrom: { fieldRef: { fieldPath: status.hostIP } }
+      - op: replace
+        path: /spec/template/spec/containers/1/env/7
+        value:
+          name: FIDUCIA_NODE_ADDRESS
+          value: "http://$(HOST_IP):30080"
+  # --- LB: plaintext for the local tier ------------------------------------------
+  # Remove the TLS env pair (set ⇒ TLS mode ⇒ :8088 refuses to proxy) and the
+  # non-optional cert Secret volume (would block scheduling). Env indices in base:
+  # FIDUCIA_TLS_CERT_PATH=5, FIDUCIA_TLS_KEY_PATH=6; volumes/volumeMounts: tls=1.
+  - target: { kind: Deployment, name: fiducia-load-balance }
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/env/6
+      - op: remove
+        path: /spec/template/spec/containers/0/env/5
+      - op: remove
+        path: /spec/template/spec/containers/0/volumeMounts/1
+      - op: remove
+        path: /spec/template/spec/volumes/1
