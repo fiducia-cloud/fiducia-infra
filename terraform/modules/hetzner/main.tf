@@ -104,7 +104,7 @@ resource "hcloud_server" "control_plane" {
 
 # Agents join the control plane over the private network.
 resource "hcloud_server" "agent" {
-  count       = var.node_count
+  count        = var.node_count
   name         = "${var.cluster_name}-agent-${count.index}"
   server_type  = var.server_type
   image        = "ubuntu-24.04"
@@ -116,7 +116,7 @@ resource "hcloud_server" "agent" {
   user_data = <<-EOF
     #cloud-config
     runcmd:
-      - curl -sfL https://get.k3s.io | K3S_URL="https://${hcloud_server.control_plane.network[0].ip}:6443" K3S_TOKEN="${random_password.k3s_token.result}" sh -
+      - curl -sfL https://get.k3s.io | K3S_URL="https://${one(hcloud_server.control_plane.network).ip}:6443" K3S_TOKEN="${random_password.k3s_token.result}" sh -
   EOF
 
   network {
