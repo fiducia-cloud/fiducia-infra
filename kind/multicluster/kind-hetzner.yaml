@@ -1,0 +1,27 @@
+# Kind config for the emulated "hetzner" cloud (Tier 2 local multi-cluster).
+# ONE single-node cluster standing in for a real Hetzner cluster. Distinct Pod/
+# Service CIDRs per cloud so the three clusters never collide when their pods
+# reach each other across the shared `kind` Docker network (see README).
+#
+#   hetzner : pods 10.10.0.0/16  services 10.11.0.0/16  API -> host 127.0.0.1:8090
+#   vultr   : pods 10.20.0.0/16  services 10.21.0.0/16  API -> host 127.0.0.1:8091
+#   civo    : pods 10.30.0.0/16  services 10.31.0.0/16  API -> host 127.0.0.1:8092
+#
+# Default CNI is kindnet (does NOT enforce NetworkPolicy — fine for Raft/WAN
+# testing; see README "Fidelity limits" and the Cilium tier for policy tests).
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+networking:
+  podSubnet: "10.10.0.0/16"
+  serviceSubnet: "10.11.0.0/16"
+nodes:
+  - role: control-plane
+    # Expose this cluster's coordination API (NodePort 30080 -> fiducia-node :8090)
+    # on a distinct host port so all three clusters are reachable from the host at
+    # once. The cross-cluster Raft peer ports (30090/30095) need NO host mapping —
+    # peers reach them container-to-container over the `kind` network by IP.
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 8090
+        listenAddress: "127.0.0.1"
+        protocol: TCP
