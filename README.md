@@ -2,8 +2,8 @@
 
 Kubernetes deployment config for [fiducia.cloud](https://fiducia.cloud) across
 **three clusters on three platforms** (Hetzner, Vultr, and Civo — each a drop-in
-[swap](#8-scaling-out--swapping-a-provider) for DigitalOcean/Scaleway/Akamai/…),
-with one goal:
+[swap](docs/multi-cluster-architecture.md#8-scaling-out--swapping-a-provider) for
+DigitalOcean/Scaleway/Akamai/…), with one goal:
 
 > **As long as 2 of the 3 clusters are alive, fiducia keeps working.**
 
