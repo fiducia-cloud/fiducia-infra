@@ -11,10 +11,13 @@ kind: Kustomization
 namespace: fiducia
 resources:
   - namespace.yaml
+  - networkpolicy.yaml                  # namespace default-deny + DNS/east-west/probe allows
   - observability/otel-agent.yaml
+  - observability/networkpolicy.yaml    # otel-agent egress (gateway + k8s API)
   - node/statefulset.yaml
   - node/service.yaml
   - node/networkpolicy.yaml
   - node/pdb.yaml
   - load-balance/deployment.yaml
   - load-balance/service.yaml
+  - load-balance/networkpolicy.yaml     # LB edge (:8443) ingress

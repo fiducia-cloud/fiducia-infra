@@ -8,4 +8,5 @@ brain (heartbeat + failure-domain metadata) and telemetry.
 - `statefulset.yaml` — the node + sidecar workload.
 - `service.yaml` — headless service for stable per-pod peer DNS.
 - `pdb.yaml` — PodDisruptionBudget keeping shard quorum during voluntary disruptions.
-- `networkpolicy.yaml` — L3/L4 boundary behind the trusted-hop secret.
+- `networkpolicy.yaml` — L3/L4 boundary behind the trusted-hop secret, including
+  explicit cross-cluster Raft `:9090` ingress and egress.

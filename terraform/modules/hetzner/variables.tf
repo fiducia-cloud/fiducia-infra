@@ -37,3 +37,22 @@ variable "labels" {
   default     = {}
   description = "Labels applied to the servers."
 }
+
+# --- prod-hardening (opt-in; defaults reproduce the e2e-grade baseline) ------
+
+variable "enable_firewall" {
+  type        = bool
+  default     = false
+  description = "Attach an hcloud_firewall to the servers. Default false so e2e servers keep unfiltered public IPs (k3s :6443 + NodePorts reachable publicly). When true, inbound is default-denied except SSH/:6443/NodePorts from var.firewall_allowed_cidrs."
+}
+
+variable "firewall_allowed_cidrs" {
+  type        = list(string)
+  default     = []
+  description = "Source CIDRs permitted to SSH / :6443 / NodePorts when var.enable_firewall is true. Must be explicit and restricted; world-open CIDRs are rejected. Include operator/admin and trusted edge/mesh ranges as required."
+
+  validation {
+    condition     = alltrue([for cidr in var.firewall_allowed_cidrs : can(cidrhost(cidr, 0))])
+    error_message = "firewall_allowed_cidrs must contain valid IPv4 or IPv6 CIDRs."
+  }
+}
