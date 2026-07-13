@@ -243,14 +243,19 @@ block overrides them and renders into the `fiducia-cluster` ConfigMap as
 sequenceDiagram
     participant C as Client
     participant E as fiducia-edge
-    participant LB as regional LB (nearest live cluster)
+    participant LB as fiducia-load-balance<br/>(key-aware router)
+    participant B as fiducia-brain
     participant L as shard leader node
-    participant F1 as shard follower<br/>(cluster B)
-    participant F2 as shard follower<br/>(cluster C)
+    participant F1 as follower (cluster B)
+    participant F2 as follower (cluster C)
 
-    C->>E: coordination API request
+    B-->>LB: /v1/placement — shard→leader map<br/>(async refresh; cache may be stale)
+    C->>E: coordination API request (key [, X-Fiducia-Region])
     E->>LB: route to a HEALTHY cluster's :443
-    LB->>L: forward to this shard's leader (NotLeader redirect if stale)
+    Note over LB: authenticate (API key→fiducia-auth / JWT→JWKS),<br/>enforce Idempotency-Key, strip raw auth headers
+    Note over LB: key → shard via fiducia-routing<br/>(fnv1a(key) % shard_count) → look up leader in cache
+    LB->>L: forward to the shard leader (:8090)
+    Note over LB,L: backstop: a follower answers NotLeader (307 + hint)<br/>→ LB refreshes cache, retries the named leader
     Note over L,F2: Raft replicate over the Cluster Mesh (:9090)
     L->>F1: AppendEntries
     L->>F2: AppendEntries
@@ -264,6 +269,17 @@ sequenceDiagram
 honest cost of surviving a whole-cloud outage; the brain places shard leaders to
 minimize it. Reads served by a leader under `check_quorum` are linearizable; a
 partitioned ex-leader refuses them rather than answering stale.
+
+**Why the LB and the node agree on the shard.** Both link the same
+[`fiducia-routing`](https://github.com/fiducia-cloud/fiducia-routing.rs) crate, so
+`key → shard = fnv1a(key) % shard_count` is byte-identical on the routing side and
+the storage side. If they computed it even slightly differently the LB could
+forward a key to a shard the node stores elsewhere — a silent split brain.
+Centralizing the hash in one compiled-in library makes that impossible;
+`shard_count` is fixed for the cluster's life (owned by the brain's
+`ClusterConfig`), which keeps `key → shard` stable as the node count scales. The
+LB holds **no consensus state** — just the placement cache — so each cluster runs
+several LB replicas behind its cloud LoadBalancer.
 
 ### 6.2 Failover when a whole cluster dies
 
