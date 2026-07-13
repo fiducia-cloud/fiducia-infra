@@ -10,5 +10,6 @@ which is why it's a component clusters opt into rather than part of `base/`.
 
 - `statefulset.yaml` — the brain workload (stable identity + durable placement-map storage).
 - `service.yaml` — headless service for HTTP (:8095) + Raft peer (:9095) addressing.
-- `networkpolicy.yaml` — restricts the control plane to in-namespace callers.
+- `networkpolicy.yaml` — restricts the control plane to in-namespace callers and
+  permits only the cross-cluster brain-Raft peer port for external ingress/egress.
 - `kustomization.yaml` — the Component definition.

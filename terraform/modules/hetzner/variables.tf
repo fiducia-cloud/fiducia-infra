@@ -48,6 +48,11 @@ variable "enable_firewall" {
 
 variable "firewall_allowed_cidrs" {
   type        = list(string)
-  default     = ["0.0.0.0/0", "::/0"]
-  description = "Source CIDRs permitted to SSH / :6443 / NodePorts when var.enable_firewall is true. Defaults to open (the firewall still default-denies every OTHER port); narrow this to operator/mesh CIDRs for real prod hardening."
+  default     = []
+  description = "Source CIDRs permitted to SSH / :6443 / NodePorts when var.enable_firewall is true. Must be explicit and restricted; world-open CIDRs are rejected. Include operator/admin and trusted edge/mesh ranges as required."
+
+  validation {
+    condition     = alltrue([for cidr in var.firewall_allowed_cidrs : can(cidrhost(cidr, 0))])
+    error_message = "firewall_allowed_cidrs must contain valid IPv4 or IPv6 CIDRs."
+  }
 }

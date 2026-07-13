@@ -78,6 +78,17 @@ resource "hcloud_firewall" "this" {
     source_ips  = var.firewall_allowed_cidrs
     description = "Kubernetes NodePort range"
   }
+
+  lifecycle {
+    precondition {
+      condition = (
+        length(var.firewall_allowed_cidrs) > 0 &&
+        !contains(var.firewall_allowed_cidrs, "0.0.0.0/0") &&
+        !contains(var.firewall_allowed_cidrs, "::/0")
+      )
+      error_message = "enable_firewall requires explicit restricted firewall_allowed_cidrs; world-open CIDRs are rejected."
+    }
+  }
 }
 
 # Control plane: k3s server, TLS SAN for the public IP so a fetched kubeconfig works.
