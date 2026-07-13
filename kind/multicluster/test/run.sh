@@ -15,6 +15,12 @@ require_tools curl jq
 
 SCENARIOS=0; [[ "${1:-}" == "--scenarios" ]] && SCENARIOS=1
 
+# The node guards ALL of /v1 (including the org-exempt /v1/status) with the
+# internal-auth trusted-hop header — up.sh sets FIDUCIA_INTERNAL_SECRET, so the
+# guard enforces. Send it on every call; add the org header only for tenant
+# endpoints (KV etc.), never for /v1/status (which is org-exempt).
+IA=(-H "x-fiducia-internal-auth: $DEV_INTERNAL_SECRET")
+
 PASS=0; FAIL=0; SKIP=0
 pass(){ ok "$1"; PASS=$((PASS+1)); }
 fail(){ warn "FAIL: $1"; FAIL=$((FAIL+1)); }
