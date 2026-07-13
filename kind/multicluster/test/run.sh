@@ -52,7 +52,7 @@ eq "leadership spread covers all $SHARD_COUNT shards (one leader each, across cl
 # ── DATA PATH (best-effort) ─────────────────────────────────────────────────────
 log "── Data path (best-effort): cross-cluster KV write/read ──"
 KEY="emu/probe"; VAL="cross-cluster-ok"
-auth=(-H "x-fiducia-internal-auth: $DEV_INTERNAL_SECRET" -H "x-fiducia-org-id: $DEV_ORG")
+auth=("${IA[@]}" -H "x-fiducia-org-id: $DEV_ORG")   # tenant endpoints need org too
 leader=""
 for c in "${CLUSTERS[@]}"; do   # a write only succeeds on the shard's leader cluster
   code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -X PUT "$(api_url "$c")/v1/kv?key=$KEY" \
