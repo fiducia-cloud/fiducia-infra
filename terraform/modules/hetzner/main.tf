@@ -2,7 +2,14 @@
 # Hetzner Cloud has no managed Kubernetes in the core provider, so this brings up
 # hcloud servers and installs k3s via cloud-init: one control-plane + N agents.
 # e2e/test-grade baseline. For production, prefer kube-hetzner or Hetzner's
-# managed offering; harden firewall + private network below.
+# managed offering.
+#
+# Firewall hardening is OPT-IN via var.enable_firewall (default false → the
+# servers' public IPs are unfiltered, matching current e2e behavior, so the k3s
+# API :6443 and NodePorts are reachable publicly). When enabled, an
+# hcloud_firewall is attached that default-denies inbound and only permits SSH,
+# :6443 and the NodePort range from var.firewall_allowed_cidrs. Agent join stays
+# on the private network, which hcloud firewalls do not filter.
 
 terraform {
   required_version = ">= 1.5"
