@@ -40,5 +40,21 @@ resource "azurerm_kubernetes_cluster" "this" {
     type = "SystemAssigned"
   }
 
-  # TODO(prod): api_server_access_profile authorized ranges; azure network policy.
+  # Prod-hardening, opt-in and defaulted off so e2e behavior is unchanged:
+  #  - api_server_access_profile → restrict API access (var.authorized_api_cidrs)
+  #  - network_profile           → Azure network-policy enforcement (var.enable_network_policy)
+  dynamic "api_server_access_profile" {
+    for_each = length(var.authorized_api_cidrs) > 0 ? [1] : []
+    content {
+      authorized_ip_ranges = var.authorized_api_cidrs
+    }
+  }
+
+  dynamic "network_profile" {
+    for_each = var.enable_network_policy ? [1] : []
+    content {
+      network_plugin = "azure"
+      network_policy = "azure"
+    }
+  }
 }
