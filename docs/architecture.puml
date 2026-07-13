@@ -54,7 +54,7 @@ end note
 package "GitOps pipeline (declarative)" {
   artifact "topology.toml\n(single source of truth)" as topo
   component "tools/render.mjs\n(validate + fan out)" as render
-  artifact "clusters/<name>/topology.env\n+ patches.yaml\n+ edge-regions.json" as generated
+  artifact "clusters/NAME/topology.env\n+ patches.yaml\n+ edge-regions.json" as generated
   component "ArgoCD ApplicationSet\n(cluster generator)" as argo
   topo --> render : node tools/render.mjs
   render --> generated
