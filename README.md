@@ -245,15 +245,19 @@ pod (its bridge to brain + telemetry).
 
 ## Provisioning & testing
 
-The overlays below assume the clusters exist. Two sibling tiers stand them up and
-test the coordination API across them — see [`docs/e2e.md`](docs/e2e.md):
+The overlays below assume the clusters exist. A ladder of tiers stands them up and
+tests the coordination API across them — see [`docs/e2e.md`](docs/e2e.md):
 
-- [`terraform/`](terraform) — **Tier 2**: IaC for the real clusters (Hetzner
-  k3s-on-VMs / Vultr VKE / Civo managed k3s — each provider a drop-in module
-  swap), each behind an `enable_<cloud>` toggle.
 - [`kind/`](kind) + [`tools/kind-up.sh`](tools/kind-up.sh) — **Tier 1**: one local
   kind cluster with four zone-labeled workers simulating the failure domains, for
   free CI conformance + chaos runs.
+- [`kind/multicluster/`](kind/multicluster) — **Tier 2**: *three separate* local
+  kind clusters (hetzner/vultr/civo) wired into cross-cluster Raft groups over a
+  shared Docker network, with WAN latency + partition injection — test cross-cluster
+  consensus + failover locally, no cloud spend. (Tier 3 = add a cross-cluster CNI.)
+- [`terraform/`](terraform) — **Tier 4**: IaC for the real clusters (Hetzner
+  k3s-on-VMs / Vultr VKE / Civo managed k3s — each provider a drop-in module
+  swap), each behind an `enable_<cloud>` toggle.
 - [`fiducia-e2e`](https://github.com/fiducia-cloud/fiducia-e2e) — the shared
   Node `--test` suite (per-primitive conformance + multi-cluster fault injection)
   that runs against either tier.
