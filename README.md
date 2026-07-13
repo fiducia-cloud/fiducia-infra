@@ -285,6 +285,10 @@ but the intent is:
   `runAsNonRoot: true` + `runAsUser/Group: 65532` + `fsGroup: 65532` (Raft state
   on the per-pod PVC stays writable via `fsGroup`). No `privileged`, no
   `hostNetwork`/`hostPID`/`hostIPC` anywhere.
+- **Reproducible renderer image.** The manifest renderer has no third-party
+  runtime dependency, installs from the committed npm lockfile, verifies tests
+  and generated output during the image build, and runs its final check as the
+  unprivileged `node` user.
 - **Locked-down containers.** Each container sets
   `allowPrivilegeEscalation: false`, `readOnlyRootFilesystem: true`,
   `capabilities.drop: ["ALL"]`, and `seccompProfile: RuntimeDefault` (pod-level
