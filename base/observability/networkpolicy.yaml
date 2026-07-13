@@ -1,0 +1,35 @@
+# NetworkPolicy — egress for the otel-agent DaemonSet. Under the namespace
+# default-deny (base/networkpolicy.yaml) the collector must be allowed the two
+# egress flows it makes OUTSIDE the namespace, or telemetry export and pod
+# enrichment break:
+#
+#   (a) forward batched OTLP to the central gateway
+#       (OBSERVABILITY_GATEWAY_OTLP_ENDPOINT = https://otel-gateway.fiducia.cloud:4318)
+#   (b) call the Kubernetes API server for the k8sattributes processor
+#       (auth_type: serviceAccount → get/list/watch pods/nodes/namespaces)
+#
+# The gateway and API server live outside this namespace (and the API server's
+# ClusterIP is in the `default` namespace), so a namespaceSelector can't express
+# them — we scope by destination PORT instead and leave the address open (the
+# gateway token + kube RBAC are the real authz). DNS egress is covered by the
+# base allow-dns-egress policy; RECEIVING OTLP (:4317/:4318) and metrics/health
+# ingress are covered by allow-namespace-internal + allow-kubelet-probes.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fiducia-otel-agent-egress
+  namespace: fiducia
+spec:
+  podSelector:
+    matchLabels:
+      app: fiducia-otel-agent
+  policyTypes: [Egress]
+  egress:
+    # (a) OTLP/HTTP to the central observability gateway.
+    - ports:
+        - { protocol: TCP, port: 4318 }
+    # (b) Kubernetes API server (k8sattributes enrichment). 443 = in-cluster
+    #     `kubernetes.default` ClusterIP; 6443 = k3s / kubeadm apiserver port.
+    - ports:
+        - { protocol: TCP, port: 443 }
+        - { protocol: TCP, port: 6443 }
