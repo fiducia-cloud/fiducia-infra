@@ -166,15 +166,18 @@ autonumber
 
 actor Client
 participant "fiducia-edge" as Edge
-participant "regional LB\n(nearest live cluster)" as LB
+participant "fiducia-load-balance\n(key-aware router)" as LB
+participant "fiducia-brain" as Brain
 participant "shard leader\n(cluster A)" as Leader
 participant "follower\n(cluster B)" as F1
 participant "follower\n(cluster C)" as F2
 
-Client -> Edge : coordination API request
+Brain --> LB : /v1/placement (shard->leader map; async, cached)
+Client -> Edge : coordination API request (key)
 Edge -> LB : route to a HEALTHY cluster (:443)
-LB -> Leader : forward to this shard's leader
-note right of LB : NotLeader redirect if the\ncached leader is stale
+note right of LB : authenticate (API key / JWT), idempotency;\nkey -> shard via fiducia-routing (fnv1a % shard_count)
+LB -> Leader : forward to the shard leader (:8090)
+note right of LB : backstop: follower NotLeader (307 + hint)\n=> refresh cache, retry named leader
 
 group Raft replicate over Cluster Mesh (:9090)
   Leader -> F1 : AppendEntries
