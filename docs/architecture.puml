@@ -23,11 +23,14 @@ actor "Client" as client
 component "fiducia-edge\n(anycast / Cloudflare)" as edge
 
 package "one Kubernetes cluster (hetzner | vultr | civo)" {
-  component "fiducia-load-balance\n(Deployment, stateless)" as lb
+  component "fiducia-load-balance\n(Deployment, stateless)\nkey-aware router + auth/idempotency" as lb
   component "fiducia-node\n(StatefulSet, 5 pods)" as fnode
   component "fiducia-node-sidecar\n(container in node pod)" as sidecar
   component "fiducia-brain\n(StatefulSet, 1 pod)" as brain
 }
+
+' Shared library — compiled INTO the lb + node images, not a deployed pod.
+component "fiducia-routing\n(library — linked in, 0 pods)" as routing <<library>>
 
 interface "shard Raft\n:9090" as raft9090
 interface "brain Raft\n:9095" as raft9095
@@ -36,12 +39,23 @@ interface "brain API\n:8095" as api8095
 
 client --> edge : coordination API
 edge --> lb : steer to a HEALTHY cluster (:443)
-lb --> data8090 : to this shard's leader
+lb --> data8090 : key -> shard -> leader
 data8090 - fnode
+brain --> lb : /v1/placement\n(shard->leader cache seed)
+lb ..> routing : key -> shard
+fnode ..> routing : key -> shard
 fnode --> raft9090 : cross-cluster replicate\n(RF 3, one replica/cluster)
 sidecar --> api8095 : heartbeat + failure domain\n(FIDUCIA_REGION)
 api8095 - brain
 brain --> raft9095 : cross-cluster placement Raft\n(3 members, one/cluster)
+
+note right of routing
+  The FROZEN key->shard hash (fnv1a % shard_count).
+  lb and node link the SAME crate, so the router and
+  the storage layer can never disagree on where a key
+  lives. Compiled in like fiducia-interfaces -> nothing
+  to deploy.
+end note
 
 note bottom of fnode
   Required podAntiAffinity on kubernetes.io/hostname
