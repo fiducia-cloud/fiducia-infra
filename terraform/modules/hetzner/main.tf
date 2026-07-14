@@ -149,7 +149,7 @@ resource "hcloud_server" "agent" {
   user_data = <<-EOF
     #cloud-config
     runcmd:
-      - curl -sfL https://get.k3s.io | K3S_URL="https://${one(hcloud_server.control_plane.network).ip}:6443" K3S_TOKEN="${random_password.k3s_token.result}" sh -
+      - curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="${var.k8s_version}" K3S_URL="https://${one(hcloud_server.control_plane.network).ip}:6443" K3S_TOKEN="${random_password.k3s_agent_token.result}" sh -
   EOF
 
   network {
