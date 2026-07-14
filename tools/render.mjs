@@ -27,17 +27,24 @@ export function parseToml(text) {
   const rootObj = {};
   const arrays = {};
   let cur = rootObj;
+  // Keys that would land on Object.prototype (or the constructor) instead of the
+  // data object — writing them is prototype pollution, so reject outright.
+  const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+  const checkKey = (k, raw) => {
+    if (FORBIDDEN_KEYS.has(k)) fail(`forbidden key name: ${raw}`);
+    return k;
+  };
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line.startsWith("#")) continue;
     let m;
     if ((m = line.match(/^\[\[(\w+)\]\]$/))) {
-      const k = m[1];
+      const k = checkKey(m[1], raw);
       (arrays[k] ||= []).push((cur = {}));
     } else if ((m = line.match(/^\[(\w+)\]$/))) {
-      cur = rootObj[m[1]] ||= {};
+      cur = rootObj[checkKey(m[1], raw)] ||= {};
     } else if ((m = line.match(/^([A-Za-z0-9_]+)\s*=\s*(.+)$/))) {
-      cur[m[1]] = parseVal(m[2].trim(), raw);
+      cur[checkKey(m[1], raw)] = parseVal(m[2].trim(), raw);
     } else {
       fail(`cannot parse TOML line: ${raw}`);
     }

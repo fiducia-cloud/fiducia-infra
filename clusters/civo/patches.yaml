@@ -10,6 +10,10 @@ spec:
     - metadata:
         name: data
       spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 10Gi
         storageClassName: civo-volume
 ---
 apiVersion: apps/v1
@@ -22,4 +26,8 @@ spec:
     - metadata:
         name: data
       spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 2Gi
         storageClassName: civo-volume
