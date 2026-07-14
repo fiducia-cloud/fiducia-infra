@@ -109,7 +109,9 @@ done
 # Fail-closed authz through the REAL LB: anonymous + insufficient scope.
 code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -X PUT "$(lb_url hetzner)/v1/kv?key=emu/deny" \
   -H 'content-type: application/json' -d '{"value":"x"}' 2>/dev/null || echo 000)
-eq "LB rejects ANONYMOUS kv write (fail closed)" "$code" "401"
+# Anonymous (no edge-auth) ⇒ identity=None ⇒ scoped route fails closed with 403
+# insufficient_scope (the LB never forwards a credential-less mutation to a node).
+eq "LB rejects ANONYMOUS kv write (fail closed, 403)" "$code" "403"
 code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -X PUT "$(lb_url hetzner)/v1/kv?key=emu/deny" \
   -H "x-fiducia-edge-auth: $DEV_INTERNAL_SECRET" -H "x-fiducia-org-id: $DEV_ORG" -H "x-fiducia-scopes: kv:read" \
   -H 'content-type: application/json' -d '{"value":"x"}' 2>/dev/null || echo 000)
