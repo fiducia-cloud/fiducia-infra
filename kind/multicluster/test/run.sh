@@ -75,6 +75,59 @@ else
   else skip "only the leader served the read ($served/3) — reads may be leader-only in this build"; fi
 fi
 
+# ── REAL LB ROUTING PATH ────────────────────────────────────────────────────────
+# The production entrypoint: client → fiducia-load-balance → shard leader. The LB
+# authenticates via the trusted-edge hop (x-fiducia-edge-auth == the internal
+# secret, plus forwarded identity headers), enforces per-route scopes, computes
+# key → shard via the compiled-in fiducia-routing crate, resolves the shard's
+# leader from brain placement / NotLeader hints, and forwards with the
+# trusted-hop secret + injected org. Leaders are spread across all 3 clusters, so
+# some of these writes MUST be forwarded cross-cluster (sidecars advertise
+# hostIP:30080, which is routable between the kind clusters).
+log "── Real LB routing path (client → LB → shard leader, cross-cluster) ──"
+edge=(-H "x-fiducia-edge-auth: $DEV_INTERNAL_SECRET" -H "x-fiducia-org-id: $DEV_ORG" -H "x-fiducia-scopes: admin:write admin:read kv:write kv:read")
+for c in "${CLUSTERS[@]}"; do
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$(lb_url "$c")/healthz" 2>/dev/null || echo 000)
+  eq "$c LB /healthz (public, no auth)" "$code" "200"
+done
+
+# Fail-closed authz through the REAL LB: anonymous + insufficient scope.
+code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -X PUT "$(lb_url hetzner)/v1/kv?key=emu/deny" \
+  -H 'content-type: application/json' -d '{"value":"x"}' 2>/dev/null || echo 000)
+eq "LB rejects ANONYMOUS kv write (fail closed)" "$code" "401"
+code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -X PUT "$(lb_url hetzner)/v1/kv?key=emu/deny" \
+  -H "x-fiducia-edge-auth: $DEV_INTERNAL_SECRET" -H "x-fiducia-org-id: $DEV_ORG" -H "x-fiducia-scopes: kv:read" \
+  -H 'content-type: application/json' -d '{"value":"x"}' 2>/dev/null || echo 000)
+eq "LB rejects kv:read-only scope for a write (403)" "$code" "403"
+
+# Data path: N keys via EACH cluster's LB. Keys hash to different shards whose
+# leaders live in different clusters → exercises local AND cross-cluster forwards
+# + NotLeader refresh. Then read every key back through a DIFFERENT cluster's LB.
+wrote=0; read_ok=0; total=0
+for i in 1 2 3 4 5 6; do
+  for c in "${CLUSTERS[@]}"; do
+    total=$((total+1))
+    key="emu/lb/$c/$i"; val="v-$c-$i"
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 -X PUT "$(lb_url "$c")/v1/kv?key=$key" \
+      "${edge[@]}" -H 'content-type: application/json' -d "{\"value\":\"$val\"}" 2>/dev/null || echo 000)
+    [[ "$code" == 2* ]] && wrote=$((wrote+1))
+    # read back via the NEXT cluster's LB (cross-entrypoint linearizable read)
+    case "$c" in hetzner) rc=vultr;; vultr) rc=civo;; civo) rc=hetzner;; esac
+    got=$(curl -fsS --max-time 8 "$(lb_url "$rc")/v1/kv?key=$key" "${edge[@]}" 2>/dev/null | jq -r '.entry.value // empty' 2>/dev/null)
+    [[ "$got" == "$val" ]] && read_ok=$((read_ok+1))
+  done
+done
+eq "LB writes committed ($total keys via all 3 LBs)" "$wrote" "$total"
+eq "cross-LB reads returned the written values"      "$read_ok" "$total"
+
+# Leadership is spread → at least one of those writes was forwarded to a REMOTE
+# cluster's leader. Verify from status: every cluster leads ≥1 of the 16 shards,
+# so 18 writes through 3 LBs cannot all have been leader-local.
+snapshot
+spread_ok=1
+for c in "${CLUSTERS[@]}"; do [[ "$(j "$c" '.leading_shards|length // 0')" -ge 1 ]] || spread_ok=0; done
+eq "leaders spread across all 3 clusters (⇒ cross-cluster forwards exercised)" "$spread_ok" "1"
+
 # ── SCENARIOS ───────────────────────────────────────────────────────────────────
 if [[ "$SCENARIOS" == 1 ]]; then
   log "── Scenario: EU WAN latency (~20ms RTT) — prod Raft timing must stay stable ──"

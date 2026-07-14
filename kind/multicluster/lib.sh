@@ -16,9 +16,7 @@ SHARD_COUNT=16              # keep small so status is readable + startup is fast
 NP_API=30080                # -> fiducia-node  :8090  (coordination API)
 NP_NODE_PEER=30090          # -> fiducia-node  :9090  (cross-cluster Raft)
 NP_BRAIN_PEER=30095         # -> fiducia-brain :9095  (cross-cluster Raft)
-
-# Host ports the kind-*.yaml configs map the coordination API to (one per cluster).
-declare -A API_HOST_PORT=( [hetzner]=8090 [vultr]=8091 [civo]=8092 )
+NP_LB=30088                 # -> fiducia-load-balance :8088 (local public entrypoint)
 
 # Fixed DEV secrets — this is a THROWAWAY local env; never reuse these anywhere.
 # The SAME value in all three clusters so brain Raft peers + the trusted-hop agree.
@@ -31,7 +29,24 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 kind_name()    { echo "${KIND_PREFIX}-$1"; }
 kube_ctx()     { echo "kind-${KIND_PREFIX}-$1"; }        # context kind creates
 cp_container() { echo "${KIND_PREFIX}-$1-control-plane"; }
-api_url()      { echo "http://127.0.0.1:${API_HOST_PORT[$1]}"; }
+api_host_port() {
+  case "$1" in
+    hetzner) echo 8090 ;;
+    vultr)   echo 8091 ;;
+    civo)    echo 8092 ;;
+    *) die "unknown emulated cluster: $1" ;;
+  esac
+}
+lb_host_port() {
+  case "$1" in
+    hetzner) echo 8093 ;;
+    vultr)   echo 8094 ;;
+    civo)    echo 8095 ;;
+    *) die "unknown emulated cluster: $1" ;;
+  esac
+}
+api_url() { echo "http://127.0.0.1:$(api_host_port "$1")"; }
+lb_url()  { echo "http://127.0.0.1:$(lb_host_port "$1")"; }
 
 # Control-plane container IP on the shared `kind` Docker network — how OTHER
 # clusters' pods reach this cluster's NodePorts.

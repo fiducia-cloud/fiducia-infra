@@ -3,9 +3,9 @@
 # Service CIDRs per cloud so the three clusters never collide when their pods
 # reach each other across the shared `kind` Docker network (see README).
 #
-#   hetzner : pods 10.10.0.0/16  services 10.11.0.0/16  API -> host 127.0.0.1:8090
-#   vultr   : pods 10.20.0.0/16  services 10.21.0.0/16  API -> host 127.0.0.1:8091
-#   civo    : pods 10.30.0.0/16  services 10.31.0.0/16  API -> host 127.0.0.1:8092
+#   hetzner : pods 10.10.0.0/16  services 10.11.0.0/16  API -> :8090, LB -> :8093
+#   vultr   : pods 10.20.0.0/16  services 10.21.0.0/16  API -> :8091, LB -> :8094
+#   civo    : pods 10.30.0.0/16  services 10.31.0.0/16  API -> :8092, LB -> :8095
 #
 # Default CNI is kindnet (does NOT enforce NetworkPolicy — fine for Raft/WAN
 # testing; see README "Fidelity limits" and the Cilium tier for policy tests).
@@ -23,5 +23,10 @@ nodes:
     extraPortMappings:
       - containerPort: 30080
         hostPort: 8090
+        listenAddress: "127.0.0.1"
+        protocol: TCP
+      # Local equivalent of this cluster's public load balancer.
+      - containerPort: 30088
+        hostPort: 8093
         listenAddress: "127.0.0.1"
         protocol: TCP
