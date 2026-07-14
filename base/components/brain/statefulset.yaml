@@ -45,7 +45,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: brain
-          image: ghcr.io/fiducia-cloud/fiducia-brain:v0.1.0
+          image: ghcr.io/fiducia-cloud/fiducia-brain:v0.1.0   # tag pin — prod must pin by digest (base/README.md "Image pinning")
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
