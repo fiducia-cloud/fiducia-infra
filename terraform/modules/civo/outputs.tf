@@ -9,8 +9,12 @@ output "endpoint" {
 }
 
 output "ca_certificate" {
-  value       = civo_kubernetes_cluster.this.ca_certificate
-  description = "Cluster CA certificate."
+  # civo_kubernetes_cluster exports no CA attribute — the CA is embedded in the
+  # returned kubeconfig. Extract it so this module honors the shared interface
+  # (name/endpoint/ca_certificate/kubeconfig). try() keeps plan working before the
+  # cluster (and its kubeconfig) exists.
+  value       = try(yamldecode(civo_kubernetes_cluster.this.kubeconfig).clusters[0].cluster["certificate-authority-data"], null)
+  description = "Cluster CA certificate (base64, extracted from the Civo kubeconfig)."
   sensitive   = true
 }
 
