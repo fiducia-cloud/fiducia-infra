@@ -22,8 +22,12 @@ spec:
       labels:
         app: fiducia-brain
     spec:
-      # The brain does not call the Kubernetes API — don't mount a SA token.
-      automountServiceAccountToken: false
+      # NOTE: unlike node/sidecar/load-balance, the brain DOES use the Kubernetes
+      # API — KubeOracle (src/oracle.rs) reads the in-cluster SA token to poll pod
+      # status for confirmed-gone liveness. So the SA token stays mounted here.
+      # Follow-up hardening: give the brain a DEDICATED ServiceAccount with minimal
+      # RBAC (get/list/watch pods) instead of the default SA, then it can keep the
+      # token while dropping ambient default-SA identity.
       # Hardened baseline: unprivileged, no added capabilities, no privilege
       # escalation. Listens on a high port (8095). rootfs read-only + writable /tmp;
       # durable state lives only on the mounted PVC (fsGroup makes it writable).
