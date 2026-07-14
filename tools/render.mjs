@@ -71,6 +71,13 @@ export function validateTopology(t) {
   for (const k of ["cluster_id", "shard_count", "replication_factor", "connectivity"]) {
     if (t[k] === undefined) fail(`topology.toml missing top-level ${k}`);
   }
+  // Bounds: these are string-typed if the TOML author quoted them, which would make
+  // the quorum guards below compare/sum via JS coercion (a string RF silently
+  // passes `clusters.length < "3"`; a string node_replicas string-concatenates into
+  // FIDUCIA_TARGET_NODES). Require real positive integers.
+  for (const k of ["shard_count", "replication_factor"]) {
+    if (!Number.isInteger(t[k]) || t[k] < 1) fail(`topology.toml ${k} must be a positive integer, got ${JSON.stringify(t[k])}`);
+  }
   const clusters = t.cluster || [];
   if (!Array.isArray(clusters) || clusters.length === 0) fail("topology.toml has no [[cluster]] blocks");
   if (clusters.length < t.replication_factor) {
