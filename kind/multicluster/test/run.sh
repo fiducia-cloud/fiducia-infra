@@ -179,7 +179,11 @@ if [[ "$SCENARIOS" == 1 ]]; then
   "$HERE/netem.sh" clear >/dev/null
 
   log "── Scenario: isolate civo — the other two keep 2/3 quorum ──"
-  "$HERE/partition.sh" isolate civo >/dev/null; sleep 6; snapshot
+  # Isolating the (possibly leader-heavy) civo forces re-election on the survivors
+  # AND civo's check_quorum step-down; both take several election timeouts
+  # (election_min 600ms + jitter). Give it room, then poll to the survivors' target.
+  "$HERE/partition.sh" isolate civo >/dev/null
+  for _ in $(seq 1 10); do sleep 3; snapshot; [[ "$(count_shards_covered hetzner vultr)" == "$SHARD_COUNT" ]] && break; done
   eq "survivors (hetzner+vultr) still cover all $SHARD_COUNT shards" "$(count_shards_covered hetzner vultr)" "$SHARD_COUNT"
   eq "hetzner keeps quorum on its leader shards" "$(no_orphan_quorum_leader hetzner)" "0"
   eq "vultr keeps quorum on its leader shards"   "$(no_orphan_quorum_leader vultr)" "0"
