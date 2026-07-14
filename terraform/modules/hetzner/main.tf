@@ -25,8 +25,13 @@ terraform {
   }
 }
 
-# Shared secret so agents can join the control-plane's k3s.
+# Server (cluster-admin-equivalent) join token AND a SEPARATE agent token, so a
+# compromised worker cannot recover the server token and join as a control-plane.
 resource "random_password" "k3s_token" {
+  length  = 48
+  special = false
+}
+resource "random_password" "k3s_agent_token" {
   length  = 48
   special = false
 }
@@ -34,6 +39,13 @@ resource "random_password" "k3s_token" {
 resource "hcloud_ssh_key" "this" {
   name       = "${var.cluster_name}-key"
   public_key = var.ssh_public_key
+
+  lifecycle {
+    precondition {
+      condition     = length(trimspace(var.ssh_public_key)) > 0
+      error_message = "ssh_public_key must be non-empty (needed to fetch the kubeconfig and manage the cluster)."
+    }
+  }
 }
 
 resource "hcloud_network" "this" {
