@@ -99,22 +99,23 @@ export function validateTopology(t) {
   }
   const seen = new Set();
   const required = ["name", "storage_class", "node_replicas", "brain_endpoint", "node_peer_endpoint", "lb_endpoint"];
-  // A cluster name becomes an output DIRECTORY (clusters/<name>/…) and a k8s label,
-  // so it must be DNS-1123-safe. Without this, `name = "../../etc/x"` escapes the
-  // repo on `render` (arbitrary file write) / reads an arbitrary path on --check.
-  const NAME_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
+  // Without the name check, `name = "../../etc/x"` escapes the repo on `render`
+  // (arbitrary file write) / reads an arbitrary path on --check. See safeName.
   // Peer endpoints are dialed as host:port (mesh DNS or IP); lb_endpoint is a URL.
-  const HOSTPORT_RE = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?:\d{1,5}$/i;
+  const HOSTPORT_RE = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?:(\d{1,5})$/i;
   for (const c of clusters) {
     for (const k of required) if (c[k] === undefined) fail(`cluster ${c.name || "?"} missing ${k}`);
-    if (!NAME_RE.test(String(c.name))) {
-      fail(`cluster name ${JSON.stringify(c.name)} must be DNS-1123 (lowercase alphanumeric + hyphens) — it becomes a directory + k8s label`);
+    if (!safeName(c.name)) {
+      fail(`cluster name ${JSON.stringify(c.name)} must be DNS-1123 (lowercase alphanumeric + hyphens, <= 63 chars) — it becomes a directory + k8s label`);
     }
-    if (!Number.isInteger(c.node_replicas) || c.node_replicas < 1) {
-      fail(`cluster ${c.name} node_replicas must be a positive integer, got ${JSON.stringify(c.node_replicas)}`);
+    if (!Number.isInteger(c.node_replicas) || c.node_replicas < 1 || c.node_replicas > 1000) {
+      fail(`cluster ${c.name} node_replicas must be a positive integer <= 1000, got ${JSON.stringify(c.node_replicas)}`);
     }
     for (const ep of ["brain_endpoint", "node_peer_endpoint"]) {
-      if (!HOSTPORT_RE.test(String(c[ep]))) fail(`cluster ${c.name} ${ep} must be host:port, got ${JSON.stringify(c[ep])}`);
+      const hp = HOSTPORT_RE.exec(String(c[ep]));
+      if (!hp) fail(`cluster ${c.name} ${ep} must be host:port, got ${JSON.stringify(c[ep])}`);
+      const port = parseInt(hp[2], 10);
+      if (port < 1 || port > 65535) fail(`cluster ${c.name} ${ep} port must be in 1..65535, got ${port}`);
     }
     if (!/^https?:\/\/[^\s]+$/.test(String(c.lb_endpoint))) {
       fail(`cluster ${c.name} lb_endpoint must be an http(s) URL, got ${JSON.stringify(c.lb_endpoint)}`);
