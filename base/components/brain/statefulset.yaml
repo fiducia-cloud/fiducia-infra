@@ -108,6 +108,9 @@ spec:
           # "survive losing 1 cluster" guarantee for data shards.
           envFrom:
             - configMapRef: { name: fiducia-cluster }
+          # Gate liveness until the brain member has restored its replicated log
+          # from the PVC and can serve /healthz (see the node's startupProbe note).
+          startupProbe:   { httpGet: { path: /healthz, port: 8095 }, periodSeconds: 2, failureThreshold: 60 }
           readinessProbe: { httpGet: { path: /readyz, port: 8095 }, initialDelaySeconds: 5, periodSeconds: 10 }
           livenessProbe:  { httpGet: { path: /healthz, port: 8095 }, periodSeconds: 15 }
           resources:
