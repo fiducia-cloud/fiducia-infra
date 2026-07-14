@@ -24,10 +24,15 @@ spec:
     spec:
       # NOTE: unlike node/sidecar/load-balance, the brain DOES use the Kubernetes
       # API — KubeOracle (src/oracle.rs) reads the in-cluster SA token to poll pod
-      # status for confirmed-gone liveness. So the SA token stays mounted here.
-      # Follow-up hardening: give the brain a DEDICATED ServiceAccount with minimal
-      # RBAC (get/list/watch pods) instead of the default SA, then it can keep the
-      # token while dropping ambient default-SA identity.
+      # status for confirmed-gone liveness. So the SA token stays mounted here, on
+      # a DEDICATED ServiceAccount whose RBAC is exactly the oracle's one call
+      # (list app=fiducia-node pods in this namespace — rbac.yaml), not the
+      # namespace default SA. automount `true` is the k8s default but is pinned
+      # so a blanket automount=false sweep cannot silently disable the oracle:
+      # KubeOracle::spawn() fails soft to timeouts-only failure detection, which
+      # forfeits the WAN-blip-vs-dead-node distinction it exists to provide.
+      serviceAccountName: fiducia-brain
+      automountServiceAccountToken: true
       # Hardened baseline: unprivileged, no added capabilities, no privilege
       # escalation. Listens on a high port (8095). rootfs read-only + writable /tmp;
       # durable state lives only on the mounted PVC (fsGroup makes it writable).
