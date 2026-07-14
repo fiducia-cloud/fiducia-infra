@@ -17,6 +17,9 @@
 set -euo pipefail
 
 CLUSTER="fiducia"
+# Every kubectl call MUST pin this context — the cluster-reuse path must never
+# inherit the ambient kubeconfig context (which could be a real cluster).
+CTX="kind-${CLUSTER}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NODE_IMAGE="${FIDUCIA_NODE_IMAGE:-ghcr.io/fiducia-cloud/fiducia-node:v0.1.0}"
 SIDECAR_IMAGE="${FIDUCIA_SIDECAR_IMAGE:-ghcr.io/fiducia-cloud/fiducia-node-sidecar:v0.1.0}"

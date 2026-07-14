@@ -66,7 +66,7 @@ case "$cmd" in
     ok "all partitions healed — expect re-election + follower catch-up"
     ;;
   show)
-    for c in "${CLUSTERS[@]}"; do echo "== $c =="; docker exec "$(cp_container "$c")" sh -c "iptables -S $CHAIN 2>/dev/null || echo '(no $CHAIN chain)'"; done
+    for c in "${CLUSTERS[@]}"; do echo "== $c =="; docker exec "$(cp_container "$c")" sh -c "iptables -t raw -S $CHAIN 2>/dev/null || echo '(no $CHAIN chain)'"; done
     ;;
   *) die "usage: partition.sh {isolate <cluster>|directed <from> <to>|split-brain|heal|show}" ;;
 esac
