@@ -25,6 +25,13 @@ spec:
   clusterResourceWhitelist:
     - group: ""
       kind: Namespace
+    # The rendered base includes the otel-agent's cluster-scoped RBAC (needed by the
+    # k8sattributes processor). Without these two, ArgoCD refuses them and the
+    # Application sits OutOfSync/Degraded with otel enrichment broken.
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
   namespaceResourceWhitelist:
     - group: "*"
       kind: "*"
