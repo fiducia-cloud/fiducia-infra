@@ -195,6 +195,11 @@ spec:
               value: "prod"
             - name: FIDUCIA_LOG_FORMAT
               value: "json"
+          # /healthz on :8091 — the sidecar's default PORT (build_router in
+          # fiducia-node-sidecar main.rs; the manifest sets no PORT so 8091 holds).
+          # The startup gate keeps the 15s liveness from killing a sidecar still
+          # wiring up its exporter/heartbeat on first boot: up to 30×2s = 60s.
+          startupProbe:   { httpGet: { path: /healthz, port: 8091 }, periodSeconds: 2, failureThreshold: 30 }
           readinessProbe: { httpGet: { path: /healthz, port: 8091 }, periodSeconds: 10 }
           # The sidecar owns the node's heartbeat to the brain. If it deadlocks,
           # readiness alone won't restart it and the brain will mark an otherwise-
