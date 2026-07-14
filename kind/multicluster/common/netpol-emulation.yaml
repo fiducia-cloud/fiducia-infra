@@ -1,0 +1,49 @@
+# Emulation-only NetworkPolicy additions. Modern kind (v0.32+) ENFORCES
+# NetworkPolicy via kindnet, so the base default-deny is LIVE here — a fidelity
+# upgrade over older kind (the emulation now exercises the real policy posture).
+#
+# Two flows exist only in this tier and need explicit allows (policies are
+# additive, so these open exactly the emulation paths while default-deny stays):
+#
+#  1. Cross-cluster peers are addressed via NodePorts (<node-ip>:30090/:30095)
+#     instead of the flat-mesh :9090/:9095 that base/node/networkpolicy.yaml and
+#     the brain policy allow. Port-based egress matches the DESTINATION port, so
+#     node→30090 / brain→30095 / LB→30080 (the sidecar-advertised node address)
+#     are otherwise dropped. ⚠ The same class of breakage applies to any real
+#     deployment that addresses peers on non-9090/9095 ports (e.g. public-mtls
+#     behind a port-mapping LB) — see README "Fidelity limits".
+#
+#  2. The host test harness reaches the node API (:8090) and the LB (:8088)
+#     through NodePorts; base locks both to in-namespace callers.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fiducia-emu-external-ingress
+  namespace: fiducia
+  labels: { fiducia.cloud/emulation: "true" }
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    # host test harness → node API; host/edge tests → LB plaintext; NodePort
+    # traffic arrives SNATed from the kind-node IP, so allow by ipBlock.
+    - from: [{ ipBlock: { cidr: 0.0.0.0/0 } }]
+      ports:
+        - { protocol: TCP, port: 8090 }   # fiducia-node coordination API
+        - { protocol: TCP, port: 8088 }   # fiducia-load-balance plaintext
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fiducia-emu-nodeport-peer-egress
+  namespace: fiducia
+  labels: { fiducia.cloud/emulation: "true" }
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to: [{ ipBlock: { cidr: 0.0.0.0/0 } }]
+      ports:
+        - { protocol: TCP, port: 30090 }  # node → remote node peers
+        - { protocol: TCP, port: 30095 }  # brain → remote brain peers
+        - { protocol: TCP, port: 30080 }  # LB → sidecar-advertised node addresses
