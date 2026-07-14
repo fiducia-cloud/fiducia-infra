@@ -42,7 +42,9 @@ resource "civo_kubernetes_cluster" "this" {
 # production cluster and, unlike hetzner/the hyperscalers, civo had no CIDR knob.
 # Rules are declared INLINE (the civo provider has no separate firewall_rule
 # resource), sourced from var.allowed_cidrs, and world-open is rejected below
-# (mirrors the hetzner firewall contract).
+# (mirrors the hetzner firewall contract). Unmatched traffic is dropped, so with
+# no default rules egress needs explicit allows or image pulls / provider APIs /
+# mesh peers break.
 resource "civo_firewall" "this" {
   name                 = "${var.cluster_name}-fw"
   region               = var.region
