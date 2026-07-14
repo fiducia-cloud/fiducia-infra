@@ -11,3 +11,5 @@ configMapGenerator:
       - topology.env
 generatorOptions:
   disableNameSuffixHash: true
+patches:
+  - path: sidecar-identity.yaml

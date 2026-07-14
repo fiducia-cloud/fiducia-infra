@@ -11,3 +11,9 @@ configMapGenerator:
       - topology.env
 generatorOptions:
   disableNameSuffixHash: true
+patches:
+  # This local emulator deliberately runs one StatefulSet replica per cluster.
+  # Avoid depending on Downward-API expansion in the sidecar: its identity is
+  # consumed by brain membership and must be globally unique across all three
+  # clusters before the first heartbeat.
+  - path: sidecar-identity.yaml

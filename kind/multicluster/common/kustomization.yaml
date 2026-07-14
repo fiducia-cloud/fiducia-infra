@@ -52,7 +52,7 @@ patches:
   # NodePort instead — that address works from every cluster, so the brain's
   # membership lets any cluster's LB forward to a remote shard leader.
   # (JSON6902 with pinned indices: sidecar = containers/1; FIDUCIA_NODE_ADDRESS =
-  # env/6 in base — the HOST_IP insert at 3 shifts it to 7. If base env order
+  # env/7 in base — the HOST_IP insert at 3 shifts it to 8. If base env order
   # changes, kustomize build output will show the drift immediately.)
   - target: { kind: StatefulSet, name: fiducia-node }
     patch: |-
@@ -62,7 +62,7 @@ patches:
           name: HOST_IP
           valueFrom: { fieldRef: { fieldPath: status.hostIP } }
       - op: replace
-        path: /spec/template/spec/containers/1/env/7
+        path: /spec/template/spec/containers/1/env/8
         value:
           name: FIDUCIA_NODE_ADDRESS
           value: "http://$(HOST_IP):30080"

@@ -32,7 +32,9 @@ ge(){ { [[ "$2" =~ ^[0-9]+$ ]] && (( $2 >= $3 )); } && pass "$1 [$2>=$3]" || fai
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 snapshot(){ local c; for c in "${CLUSTERS[@]}"; do
-  curl -fsS --max-time 5 "${IA[@]}" "$(api_url "$c")/v1/status" >"$TMP/$c.json" 2>/dev/null || echo '{}' >"$TMP/$c.json"
+  # The node wraps NodeStatus under `.consensus`; unwrap so filters read .shards etc.
+  curl -fsS --max-time 5 "${IA[@]}" "$(api_url "$c")/v1/status" 2>/dev/null \
+    | jq '.consensus // .' >"$TMP/$c.json" 2>/dev/null || echo '{}' >"$TMP/$c.json"
 done; }
 j(){ jq -r "$2" "$TMP/$1.json" 2>/dev/null; }                        # j <cluster> <jq-filter>
 count_shards_covered(){ local c; for c in "$@"; do jq -r '.leading_shards[]?' "$TMP/$c.json" 2>/dev/null; done | sort -nu | wc -l | tr -d ' '; }
