@@ -30,5 +30,17 @@ variable "cni" {
 variable "labels" {
   type        = map(string)
   default     = {}
-  description = "Reserved for parity with other modules (Civo tags are set on the pool)."
+  description = "Labels applied to the worker pool + as space-joined k:v tags on the cluster."
+}
+
+variable "k8s_version" {
+  type        = string
+  default     = "1.30.5-k3s1"
+  description = "Pinned Civo Kubernetes (k3s) version. Pin it so a re-apply/replace cannot silently jump minors. `civo kubernetes versions` lists available values."
+}
+
+variable "allowed_cidrs" {
+  type        = list(string)
+  default     = []
+  description = "REQUIRED. Source CIDRs permitted to reach the k8s API (6443) + NodePorts. World-open (0.0.0.0/0 / ::/0) is rejected. Include operator + trusted mesh/edge ranges."
 }
