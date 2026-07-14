@@ -28,15 +28,7 @@ variable "node_count" {
 variable "hetzner_ssh_public_key" {
   type        = string
   default     = ""
-  description = "SSH public key material (required when enable_hetzner = true)."
-
-  validation {
-    # enable_hetzner defaults true, so a bare `apply` would otherwise send an empty
-    # public_key into hcloud_ssh_key and fail opaquely at provider time (with no way
-    # to fetch a kubeconfig afterwards).
-    condition     = !var.enable_hetzner || length(trimspace(var.hetzner_ssh_public_key)) > 0
-    error_message = "hetzner_ssh_public_key must be set when enable_hetzner = true."
-  }
+  description = "SSH public key material (required when enable_hetzner = true; enforced by a precondition in modules/hetzner so it fails clearly instead of sending an empty key to the provider)."
 }
 
 variable "civo_allowed_cidrs" {
