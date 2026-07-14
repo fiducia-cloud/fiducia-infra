@@ -40,6 +40,29 @@ j(){ jq -r "$2" "$TMP/$1.json" 2>/dev/null; }                        # j <cluste
 count_shards_covered(){ local c; for c in "$@"; do jq -r '.leading_shards[]?' "$TMP/$c.json" 2>/dev/null; done | sort -nu | wc -l | tr -d ' '; }
 no_orphan_quorum_leader(){ j "$1" '[.shards[]?|select(.role=="leader" and .has_quorum==false)]|length // 0'; }
 
+# ── CONVERGENCE ─────────────────────────────────────────────────────────────────
+# up.sh only waits for pod readiness; Raft still needs a few seconds after a
+# rollout to elect leaders for all shards. Poll until every shard is led with
+# quorum (or the timeout passes — then run the assertions anyway so the failure
+# output shows the real state).
+wait_converged(){
+  local timeout="${FIDUCIA_CONVERGE_TIMEOUT:-90}" deadline=$((SECONDS+${FIDUCIA_CONVERGE_TIMEOUT:-90}))
+  local covered=0 orphans c
+  while (( SECONDS < deadline )); do
+    snapshot
+    covered="$(count_shards_covered "${CLUSTERS[@]}")"; orphans=0
+    for c in "${CLUSTERS[@]}"; do [[ "$(no_orphan_quorum_leader "$c")" == "0" ]] || orphans=1; done
+    if [[ "$covered" == "$SHARD_COUNT" && "$orphans" == 0 ]]; then
+      ok "converged: all $SHARD_COUNT shards led with quorum"; return 0
+    fi
+    sleep 3
+  done
+  warn "not converged after ${timeout}s (covered=$covered/$SHARD_COUNT) — asserting anyway"
+}
+
+log "── Waiting for Raft convergence ──"
+wait_converged
+
 # ── CORE ──────────────────────────────────────────────────────────────────────
 log "── Core: cross-cluster Raft health ──"
 snapshot
