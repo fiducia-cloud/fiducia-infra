@@ -29,6 +29,20 @@ variable "hetzner_ssh_public_key" {
   type        = string
   default     = ""
   description = "SSH public key material (required when enable_hetzner = true)."
+
+  validation {
+    # enable_hetzner defaults true, so a bare `apply` would otherwise send an empty
+    # public_key into hcloud_ssh_key and fail opaquely at provider time (with no way
+    # to fetch a kubeconfig afterwards).
+    condition     = !var.enable_hetzner || length(trimspace(var.hetzner_ssh_public_key)) > 0
+    error_message = "hetzner_ssh_public_key must be set when enable_hetzner = true."
+  }
+}
+
+variable "civo_allowed_cidrs" {
+  type        = list(string)
+  default     = []
+  description = "Source CIDRs permitted to reach the Civo k8s API + NodePorts (required when enable_civo = true; world-open is rejected by the module). Operator + trusted mesh/edge ranges."
 }
 
 variable "hetzner_enable_firewall" {
