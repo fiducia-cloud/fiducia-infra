@@ -127,11 +127,11 @@ for i in 1 2 3 4 5 6; do
     key="emu/lb/$c/$i"; val="v-$c-$i"
     code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 -X PUT "$(lb_url "$c")/v1/kv?key=$key" \
       "${edge[@]}" -H 'content-type: application/json' -d "{\"value\":\"$val\"}" 2>/dev/null || echo 000)
-    [[ "$code" == 2* ]] && wrote=$((wrote+1))
+    [[ "$code" == 2* ]] && wrote=$((wrote+1)) || true
     # read back via the NEXT cluster's LB (cross-entrypoint linearizable read)
     case "$c" in hetzner) rc=vultr;; vultr) rc=civo;; civo) rc=hetzner;; esac
-    got=$(curl -fsS --max-time 8 "$(lb_url "$rc")/v1/kv?key=$key" "${edge[@]}" 2>/dev/null | jq -r '.entry.value // empty' 2>/dev/null)
-    [[ "$got" == "$val" ]] && read_ok=$((read_ok+1))
+    got=$(curl -fsS --max-time 8 "$(lb_url "$rc")/v1/kv?key=$key" "${edge[@]}" 2>/dev/null | jq -r '.entry.value // empty' 2>/dev/null || echo '')
+    [[ "$got" == "$val" ]] && read_ok=$((read_ok+1)) || true
   done
 done
 eq "LB writes committed ($total keys via all 3 LBs)" "$wrote" "$total"
