@@ -24,6 +24,8 @@ permissions:
 
 jobs:
   audit:
+    # Builds and runs submodule code — never for PRs from forks.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
