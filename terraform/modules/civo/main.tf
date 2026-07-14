@@ -66,6 +66,21 @@ resource "civo_firewall" "this" {
     action     = "allow"
   }
 
+  egress_rule {
+    label      = "egress-tcp"
+    protocol   = "tcp"
+    port_range = "1-65535"
+    cidr       = ["0.0.0.0/0"]
+    action     = "allow"
+  }
+  egress_rule {
+    label      = "egress-udp"
+    protocol   = "udp"
+    port_range = "1-65535"
+    cidr       = ["0.0.0.0/0"]
+    action     = "allow"
+  }
+
   lifecycle {
     precondition {
       condition = (
