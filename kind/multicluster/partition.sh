@@ -20,10 +20,14 @@ require_tools docker
 CHAIN=FIDUCIA_EMU
 
 ensure_chain() { # <container>
+  # Hook INPUT, OUTPUT *and* FORWARD. Pod↔pod cross-cluster Raft and NodePort-DNAT'd
+  # traffic (the actual peer path) traverse FORWARD, not INPUT/OUTPUT — hooking only
+  # the latter leaves the partition leaky (a remote peer can still reach the pod).
   docker exec "$1" sh -c "
     iptables -N $CHAIN 2>/dev/null || true
-    iptables -C INPUT  -j $CHAIN 2>/dev/null || iptables -I INPUT  -j $CHAIN
-    iptables -C OUTPUT -j $CHAIN 2>/dev/null || iptables -I OUTPUT -j $CHAIN
+    for hook in INPUT OUTPUT FORWARD; do
+      iptables -C \$hook -j $CHAIN 2>/dev/null || iptables -I \$hook -j $CHAIN
+    done
   "
 }
 drop_both()     { docker exec "$1" sh -c "iptables -A $CHAIN -s $2 -j DROP; iptables -A $CHAIN -d $2 -j DROP"; }  # <ctr> <peer-ip>
