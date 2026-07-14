@@ -47,6 +47,7 @@ for c in "${CLUSTERS[@]}"; do
   ok "$c control-plane @ $ip"
 done
 for c in "${CLUSTERS[@]}"; do
+  self_ip="$(cp_ip "$c")"     # this cluster's OWN control-plane IP (its node id/addr)
   node_peers=(); brain_peers=()
   for o in "${CLUSTERS[@]}"; do
     [[ "$o" == "$c" ]] && continue
@@ -59,15 +60,22 @@ for c in "${CLUSTERS[@]}"; do
   done
   np="$(IFS=,; echo "${node_peers[*]}")"
   bp="$(IFS=,; echo "${brain_peers[*]}")"
+  # This cluster's addressable node id/advertised address: http://<own-ip>:<node-API
+  # NodePort>. Used as FIDUCIA_NODE_ID (Raft member id + the URL a NotLeader hint
+  # carries so the LB can route to the leader) AND FIDUCIA_NODE_ADDRESS (what the
+  # sidecar advertises to the brain). Must be cross-cluster routable — hence the
+  # host IP + NodePort, not the pod IP.
+  self_addr="http://${self_ip}:${NP_API}"
   env_file="$HERE/$c/topology.env"
   # Portable in-place sed (works on BSD/macOS + GNU) with no backup artefact:
-  # rewrite only the peer lines.
+  # rewrite only the generated lines.
+  sed_expr="s#^FIDUCIA_PEERS=.*#FIDUCIA_PEERS=${np}#; s#^FIDUCIA_BRAIN_PEERS=.*#FIDUCIA_BRAIN_PEERS=${bp}#; s#^FIDUCIA_SELF_ADDR=.*#FIDUCIA_SELF_ADDR=${self_addr}#"
   if sed --version >/dev/null 2>&1; then
-    sed -i -E "s#^FIDUCIA_PEERS=.*#FIDUCIA_PEERS=${np}#; s#^FIDUCIA_BRAIN_PEERS=.*#FIDUCIA_BRAIN_PEERS=${bp}#" "$env_file"
+    sed -i -E "$sed_expr" "$env_file"
   else
-    sed -i '' -E "s#^FIDUCIA_PEERS=.*#FIDUCIA_PEERS=${np}#; s#^FIDUCIA_BRAIN_PEERS=.*#FIDUCIA_BRAIN_PEERS=${bp}#" "$env_file"
+    sed -i '' -E "$sed_expr" "$env_file"
   fi
-  ok "$c peers -> $np"
+  ok "$c self=$self_addr peers -> $np"
 done
 
 # 4. dev secrets + deploy the overlay into each cluster ----------------------------
