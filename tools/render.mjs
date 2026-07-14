@@ -166,6 +166,9 @@ export function render(t) {
 
   const brainClusters = clusters.filter((o) => o.brain);
   for (const c of clusters) {
+    // c.name becomes a path component below; re-assert even for callers that
+    // bypassed validateTopology.
+    if (!safeName(c.name)) fail(`unsafe cluster name for output path: ${JSON.stringify(c.name)}`);
     const others = clusters.filter((o) => o.name !== c.name);
     const peers = others.map((o) => o.node_peer_endpoint).join(",");
     // Brain members list their OTHER brain peers (their Raft peer set); node-only
