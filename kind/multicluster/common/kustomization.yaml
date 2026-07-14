@@ -88,3 +88,26 @@ patches:
         path: /spec/template/spec/containers/0/volumeMounts/1
       - op: remove
         path: /spec/template/spec/volumes/1
+  # --- brain: member id must be its cross-cluster-dialable peer-plane URL --------
+  # A brain member's id doubles as the address other members dial it at: it is
+  # the leader_id gossiped in brain-Raft messages, and a follower forwards /v1
+  # writes (sidecar heartbeats, drain, scale) and /v1/nodes reads to
+  # {leader_id}/forward/v1/... on the peer plane. With the base's name-style id
+  # (fiducia-brain-0.<cloud>) every forward blackholes — only the leader's own
+  # cluster ever registers its node, so remote LBs see an empty fleet and 502
+  # cross-cluster requests. Advertise the kind-node IP + brain-peer NodePort,
+  # routable from every cluster (same trick as the node sidecar above).
+  # (JSON6902 with pinned indices: brain = containers/0; the HOST_IP insert at
+  # env/3 shifts FIDUCIA_BRAIN_ID from 4 to 5.)
+  - target: { kind: StatefulSet, name: fiducia-brain }
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/3
+        value:
+          name: HOST_IP
+          valueFrom: { fieldRef: { fieldPath: status.hostIP } }
+      - op: replace
+        path: /spec/template/spec/containers/0/env/5
+        value:
+          name: FIDUCIA_BRAIN_ID
+          value: "http://$(HOST_IP):30095"
