@@ -1,0 +1,37 @@
+# Identity + least-privilege RBAC for the brain's KubeOracle (fiducia-brain
+# src/oracle.rs). The oracle makes exactly one call shape —
+# GET /api/v1/namespaces/{ns}/pods?labelSelector=app%3Dfiducia-node — so the Role
+# grants `list pods` in this namespace and nothing else. The brain never mutates
+# k8s (k8s schedules pods; the brain places shards), and without this binding the
+# default SA's polls 403 into an empty cache, degrading the failure detector to
+# timeouts-only. Ships only with the brain Component, so node-only clusters carry
+# no extra RBAC.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fiducia-brain
+  namespace: fiducia
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fiducia-brain-oracle
+  namespace: fiducia
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fiducia-brain-oracle
+  namespace: fiducia
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: fiducia-brain-oracle
+subjects:
+  - kind: ServiceAccount
+    name: fiducia-brain
+    namespace: fiducia
