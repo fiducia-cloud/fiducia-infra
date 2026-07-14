@@ -27,6 +27,7 @@ namespace: fiducia
 resources:
   - ../../../base
   - nodeport.yaml
+  - netpol-emulation.yaml
 components:
   - ../../../base/components/brain   # 1 brain Raft member per cluster (3 total)
 patches:
