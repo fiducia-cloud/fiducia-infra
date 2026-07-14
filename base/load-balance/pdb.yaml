@@ -1,0 +1,15 @@
+# Keep at least one load-balancer replica during voluntary disruption (node drain,
+# rollout). The LB is this cluster's public entrypoint; without a PDB a single
+# `kubectl drain` can evict BOTH replicas at once (rollout maxUnavailable only
+# covers rolling updates, not drains). Pair with the hostname anti-affinity on the
+# Deployment so the two replicas aren't co-scheduled in the first place.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: fiducia-load-balance
+  namespace: fiducia
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: fiducia-load-balance
