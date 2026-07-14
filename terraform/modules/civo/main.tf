@@ -40,13 +40,29 @@ resource "civo_kubernetes_cluster" "this" {
 # Firewall for the cluster. create_default_rules=true would open the k8s API
 # (6443), 80/443 and the whole NodePort range to 0.0.0.0/0 — unacceptable on a
 # production cluster and, unlike hetzner/the hyperscalers, civo had no CIDR knob.
-# We create the rules explicitly, sourced from var.allowed_cidrs, and reject
-# world-open (mirrors the hetzner firewall contract).
+# Rules are declared INLINE (the civo provider has no separate firewall_rule
+# resource), sourced from var.allowed_cidrs, and world-open is rejected below
+# (mirrors the hetzner firewall contract).
 resource "civo_firewall" "this" {
   name                 = "${var.cluster_name}-fw"
   region               = var.region
   network_id           = civo_network.this.id
   create_default_rules = false
+
+  ingress_rule {
+    label      = "k8s-api"
+    protocol   = "tcp"
+    port_range = "6443"
+    cidr       = var.allowed_cidrs
+    action     = "allow"
+  }
+  ingress_rule {
+    label      = "nodeports"
+    protocol   = "tcp"
+    port_range = "30000-32767" # LB + cross-cluster mesh reachability
+    cidr       = var.allowed_cidrs
+    action     = "allow"
+  }
 
   lifecycle {
     precondition {
@@ -58,26 +74,4 @@ resource "civo_firewall" "this" {
       error_message = "civo module requires explicit restricted allowed_cidrs; world-open (0.0.0.0/0 / ::/0) is rejected."
     }
   }
-}
-
-# Kubernetes API server.
-resource "civo_firewall_rule" "api" {
-  firewall_id = civo_firewall.this.id
-  protocol    = "tcp"
-  start_port  = "6443"
-  end_port    = "6443"
-  cidr        = var.allowed_cidrs
-  direction   = "ingress"
-  label       = "k8s-api"
-}
-
-# NodePort range (kept for the LB / cross-cluster mesh reachability).
-resource "civo_firewall_rule" "nodeports" {
-  firewall_id = civo_firewall.this.id
-  protocol    = "tcp"
-  start_port  = "30000"
-  end_port    = "32767"
-  cidr        = var.allowed_cidrs
-  direction   = "ingress"
-  label       = "nodeports"
 }
