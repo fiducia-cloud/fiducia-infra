@@ -113,10 +113,20 @@ resource "hcloud_server" "control_plane" {
   labels       = var.labels
   firewall_ids = var.enable_firewall ? [hcloud_firewall.this[0].id] : []
 
+  # k3s install, PINNED to var.k8s_version (INSTALL_K3S_VERSION) so control-plane
+  # and agents can't drift to whatever "latest" get.k3s.io resolves to at each boot,
+  # and re-provisioning is reproducible. The public IP for the serving-cert SAN
+  # comes from Hetzner's metadata service (169.254.169.254), not a third-party
+  # `curl ifconfig.me` whose failure would silently produce a cert the kubeconfig
+  # can't verify. Agents get a SEPARATE token (--agent-token).
+  # NOTE: this installs the default flannel CNI. The prod topology's Cluster Mesh
+  # needs Cilium — add `--flannel-backend=none --disable-network-policy` here and a
+  # Cilium install step before using this cluster as a mesh member (see README).
   user_data = <<-EOF
     #cloud-config
     runcmd:
-      - curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --disable traefik --tls-san $(curl -s ifconfig.me) --token ${random_password.k3s_token.result}" sh -
+      - PUBIP=$(curl -sf http://169.254.169.254/hetzner/v1/metadata/public-ipv4)
+      - curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="${var.k8s_version}" INSTALL_K3S_EXEC="server --disable traefik --tls-san $PUBIP --token ${random_password.k3s_token.result} --agent-token ${random_password.k3s_agent_token.result}" sh -
   EOF
 
   network {
