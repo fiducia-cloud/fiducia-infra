@@ -167,7 +167,9 @@ eq "cross-LB reads returned the written values"      "$read_ok" "$total"
 # NOT all on one cluster (brain rebalanced), some writes were also forwarded
 # cross-cluster from the LB; report the current placement.
 snapshot
-led=$(for c in "${CLUSTERS[@]}"; do [[ "$(j "$c" '.leading_shards|length // 0')" -ge 1 ]] && echo x; done | wc -l | tr -d ' ')
+# `|| true` keeps a false [[ ]] on the LAST iteration from failing the loop —
+# under pipefail that would fail the whole substitution and set -e kills the run.
+led=$(for c in "${CLUSTERS[@]}"; do [[ "$(j "$c" '.leading_shards|length // 0')" -ge 1 ]] && echo x || true; done | wc -l | tr -d ' ')
 printf '  \033[1;90m--\033[0m INFO cross-LB reads all resolved (%s/%s); shard leaders currently on %s/3 clusters\n' "$read_ok" "$total" "$led"
 
 # ── SCENARIOS ───────────────────────────────────────────────────────────────────
