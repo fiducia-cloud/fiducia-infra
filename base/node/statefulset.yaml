@@ -27,6 +27,10 @@ spec:
       labels:
         app: fiducia-node
     spec:
+      # Neither the node nor its sidecar calls the Kubernetes API, so don't mount a
+      # ServiceAccount token — one less credential on the cross-cluster-reachable
+      # node pod (CIS 5.1.6; defense-in-depth behind the egress NetworkPolicy).
+      automountServiceAccountToken: false
       # ── One node pod per machine (required) ──────────────────────────────────
       # Each node pod is a Raft member holding shard replicas; two of them on the
       # same VM would make that VM a correlated failure domain (lose it, lose two
