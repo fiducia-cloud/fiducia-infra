@@ -84,9 +84,13 @@ export function validateTopology(t) {
   // Bounds: these are string-typed if the TOML author quoted them, which would make
   // the quorum guards below compare/sum via JS coercion (a string RF silently
   // passes `clusters.length < "3"`; a string node_replicas string-concatenates into
-  // FIDUCIA_TARGET_NODES). Require real positive integers.
-  for (const k of ["shard_count", "replication_factor"]) {
-    if (!Number.isInteger(t[k]) || t[k] < 1) fail(`topology.toml ${k} must be a positive integer, got ${JSON.stringify(t[k])}`);
+  // FIDUCIA_TARGET_NODES). Require real positive integers. Upper bounds are typo
+  // rails, not tuning: shard_count past 2^16 or RF past 7 is never a real deployment.
+  const TOP_BOUNDS = { shard_count: 65536, replication_factor: 7 };
+  for (const [k, max] of Object.entries(TOP_BOUNDS)) {
+    if (!Number.isInteger(t[k]) || t[k] < 1 || t[k] > max) {
+      fail(`topology.toml ${k} must be a positive integer <= ${max}, got ${JSON.stringify(t[k])}`);
+    }
   }
   const clusters = t.cluster || [];
   if (!Array.isArray(clusters) || clusters.length === 0) fail("topology.toml has no [[cluster]] blocks");
