@@ -19,20 +19,25 @@ require_tools docker
 
 CHAIN=FIDUCIA_EMU
 
+# Drops live in the RAW table, jumped from PREROUTING + OUTPUT. raw runs BEFORE
+# conntrack and BEFORE kube-proxy's NodePort DNAT, so a DROP there is unconditional
+# — it isn't bypassed by an ESTABLISHED-conntrack ACCEPT and it matches the peer's
+# real IP before DNAT rewrites the destination. (The filter INPUT/OUTPUT/FORWARD
+# hooks are all too late/partial for kind's NodePort + pod-forwarded peer path.)
+#   - raw PREROUTING sees traffic ARRIVING on any iface: inbound from a peer (match
+#     -s peer) AND a local pod's packet heading to a peer (match -d peer).
+#   - raw OUTPUT sees host-generated traffic to a peer (match -d peer).
 ensure_chain() { # <container>
-  # Hook INPUT, OUTPUT *and* FORWARD. Pod↔pod cross-cluster Raft and NodePort-DNAT'd
-  # traffic (the actual peer path) traverse FORWARD, not INPUT/OUTPUT — hooking only
-  # the latter leaves the partition leaky (a remote peer can still reach the pod).
   docker exec "$1" sh -c "
-    iptables -N $CHAIN 2>/dev/null || true
-    for hook in INPUT OUTPUT FORWARD; do
-      iptables -C \$hook -j $CHAIN 2>/dev/null || iptables -I \$hook -j $CHAIN
+    iptables -t raw -N $CHAIN 2>/dev/null || true
+    for hook in PREROUTING OUTPUT; do
+      iptables -t raw -C \$hook -j $CHAIN 2>/dev/null || iptables -t raw -I \$hook -j $CHAIN
     done
   "
 }
-drop_both()     { docker exec "$1" sh -c "iptables -A $CHAIN -s $2 -j DROP; iptables -A $CHAIN -d $2 -j DROP"; }  # <ctr> <peer-ip>
-drop_out_only() { docker exec "$1" sh -c "iptables -A $CHAIN -d $2 -j DROP"; }                                    # <ctr> <peer-ip>
-heal_one()      { docker exec "$1" sh -c "iptables -F $CHAIN 2>/dev/null || true"; }
+drop_both()     { docker exec "$1" sh -c "iptables -t raw -A $CHAIN -s $2 -j DROP; iptables -t raw -A $CHAIN -d $2 -j DROP"; }  # <ctr> <peer-ip>
+drop_out_only() { docker exec "$1" sh -c "iptables -t raw -A $CHAIN -d $2 -j DROP"; }                                          # <ctr> <peer-ip>
+heal_one()      { docker exec "$1" sh -c "iptables -t raw -F $CHAIN 2>/dev/null || true"; }
 
 cmd="${1:-}"; shift || true
 case "$cmd" in
