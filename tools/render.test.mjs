@@ -63,6 +63,38 @@ test("validateTopology rejects unsupported connectivity modes", () => {
   );
 });
 
+test("validateTopology rejects a path-traversal / non-DNS cluster name", () => {
+  const t = loadTopology();
+  for (const bad of ["../../etc/x", "Hetzner", "a_b", "-lead", "trail-"]) {
+    const bent = { ...t, cluster: t.cluster.map((c, i) => (i === 0 ? { ...c, name: bad } : c)) };
+    assert.throws(() => validateTopology(bent), /DNS-1123/, `name ${JSON.stringify(bad)} must be rejected`);
+  }
+});
+
+test("validateTopology rejects string/negative numerics (no coercion past the quorum guards)", () => {
+  const t = loadTopology();
+  assert.throws(() => validateTopology({ ...t, replication_factor: "3" }), /replication_factor must be a positive integer/);
+  assert.throws(() => validateTopology({ ...t, shard_count: 0 }), /shard_count must be a positive integer/);
+  const badReplicas = { ...t, cluster: t.cluster.map((c, i) => (i === 0 ? { ...c, node_replicas: "5" } : c)) };
+  assert.throws(() => validateTopology(badReplicas), /node_replicas must be a positive integer/);
+});
+
+test("validateTopology rejects malformed endpoints", () => {
+  const t = loadTopology();
+  const badPeer = { ...t, cluster: t.cluster.map((c, i) => (i === 0 ? { ...c, node_peer_endpoint: "no-port" } : c)) };
+  assert.throws(() => validateTopology(badPeer), /node_peer_endpoint must be host:port/);
+  const badLb = { ...t, cluster: t.cluster.map((c, i) => (i === 0 ? { ...c, lb_endpoint: "ftp://x" } : c)) };
+  assert.throws(() => validateTopology(badLb), /lb_endpoint must be an http\(s\) URL/);
+});
+
+test("parseToml rejects prototype-pollution keys", () => {
+  assert.throws(() => parseToml("[__proto__]\nx = 1"), /forbidden key name/);
+  assert.throws(() => parseToml("[[__proto__]]\nname = \"a\""), /forbidden key name/);
+  assert.throws(() => parseToml("constructor = 1"), /forbidden key name/);
+  // and it did not actually pollute Object.prototype
+  assert.equal({}.x, undefined);
+});
+
 test("render computes cross-cluster peers (each excludes itself)", () => {
   const files = render(loadTopology());
   const hetzner = files["clusters/hetzner/topology.env"];
