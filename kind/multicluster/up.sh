@@ -60,12 +60,14 @@ for c in "${CLUSTERS[@]}"; do
   done
   np="$(IFS=,; echo "${node_peers[*]}")"
   bp="$(IFS=,; echo "${brain_peers[*]}")"
-  # This cluster's addressable node id/advertised address: http://<own-ip>:<node-API
-  # NodePort>. Used as FIDUCIA_NODE_ID (Raft member id + the URL a NotLeader hint
-  # carries so the LB can route to the leader) AND FIDUCIA_NODE_ADDRESS (what the
-  # sidecar advertises to the brain). Must be cross-cluster routable — hence the
-  # host IP + NodePort, not the pod IP.
-  self_addr="http://${self_ip}:${NP_API}"
+  # This cluster's addressable node id/advertised address as <own-ip>:<node-API
+  # NodePort> — host:port with NO scheme. Used as FIDUCIA_NODE_ID (Raft member id +
+  # the leader hint a NotLeader carries; the LB normalizes host:port → http URL when
+  # resolving it) AND FIDUCIA_NODE_ADDRESS (what the sidecar advertises to the
+  # brain). It MUST stay path-safe: the sidecar heartbeats to
+  # /v1/nodes/<node-id>/heartbeat, so a scheme ("http://…") injects slashes and 404s.
+  # Must be cross-cluster routable — hence the host IP + NodePort, not the pod IP.
+  self_addr="${self_ip}:${NP_API}"
   env_file="$HERE/$c/topology.env"
   # Portable in-place sed (works on BSD/macOS + GNU) with no backup artefact:
   # rewrite only the generated lines.
