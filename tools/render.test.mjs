@@ -66,10 +66,16 @@ test("validateTopology rejects unsupported connectivity modes", () => {
 
 test("validateTopology rejects a path-traversal / non-DNS cluster name", () => {
   const t = loadTopology();
-  for (const bad of ["../../etc/x", "Hetzner", "a_b", "-lead", "trail-"]) {
+  for (const bad of ["../../etc/x", "Hetzner", "a_b", "-lead", "trail-", "a".repeat(64), 123]) {
     const bent = { ...t, cluster: t.cluster.map((c, i) => (i === 0 ? { ...c, name: bad } : c)) };
     assert.throws(() => validateTopology(bent), /DNS-1123/, `name ${JSON.stringify(bad)} must be rejected`);
   }
+});
+
+test("render itself refuses a traversal name (defense in depth for direct callers)", () => {
+  const t = loadTopology();
+  const bent = { ...t, cluster: t.cluster.map((c, i) => (i === 0 ? { ...c, name: "../../pwn" } : c)) };
+  assert.throws(() => render(bent), /unsafe cluster name/);
 });
 
 test("validateTopology rejects string/negative numerics (no coercion past the quorum guards)", () => {
@@ -80,12 +86,28 @@ test("validateTopology rejects string/negative numerics (no coercion past the qu
   assert.throws(() => validateTopology(badReplicas), /node_replicas must be a positive integer/);
 });
 
+test("validateTopology rejects out-of-bounds numerics (typo rails)", () => {
+  const t = loadTopology();
+  assert.throws(() => validateTopology({ ...t, shard_count: 65537 }), /shard_count must be a positive integer <= 65536/);
+  assert.throws(() => validateTopology({ ...t, replication_factor: 9 }), /replication_factor must be a positive integer <= 7/);
+  const bent = { ...t, cluster: t.cluster.map((c, i) => (i === 0 ? { ...c, node_replicas: 1001 } : c)) };
+  assert.throws(() => validateTopology(bent), /node_replicas must be a positive integer <= 1000/);
+});
+
 test("validateTopology rejects malformed endpoints", () => {
   const t = loadTopology();
   const badPeer = { ...t, cluster: t.cluster.map((c, i) => (i === 0 ? { ...c, node_peer_endpoint: "no-port" } : c)) };
   assert.throws(() => validateTopology(badPeer), /node_peer_endpoint must be host:port/);
   const badLb = { ...t, cluster: t.cluster.map((c, i) => (i === 0 ? { ...c, lb_endpoint: "ftp://x" } : c)) };
   assert.throws(() => validateTopology(badLb), /lb_endpoint must be an http\(s\) URL/);
+});
+
+test("validateTopology rejects out-of-range endpoint ports", () => {
+  const t = loadTopology();
+  for (const bad of ["node.x.example:0", "node.x.example:65536", "node.x.example:99999"]) {
+    const bent = { ...t, cluster: t.cluster.map((c, i) => (i === 0 ? { ...c, brain_endpoint: bad } : c)) };
+    assert.throws(() => validateTopology(bent), /port must be in 1\.\.65535/, `endpoint ${bad} must be rejected`);
+  }
 });
 
 test("parseToml rejects prototype-pollution keys", () => {
