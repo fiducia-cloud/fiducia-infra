@@ -5,3 +5,12 @@ metadata:
   name: fiducia
   labels:
     app.kubernetes.io/part-of: fiducia
+    # Pod Security Admission. enforce=privileged (not restricted) ONLY because the
+    # otel-agent DaemonSet is co-located here and needs root + hostPath (baseline-
+    # forbidden). audit+warn=restricted still surface any pod that isn't restricted
+    # (node/brain/load-balance all satisfy restricted), so a future/mis-rendered
+    # non-hardened pod is flagged. Follow-up: move otel-agent to its own namespace
+    # and flip enforce to `restricted` here.
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
