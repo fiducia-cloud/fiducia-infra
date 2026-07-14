@@ -24,11 +24,13 @@ const fail = (m) => { throw new RenderError(m); };
 // Supports: `key = "str" | int | true | false`, [table], and [[array.of.tables]].
 // Comments and blanks on their own lines only.
 export function parseToml(text) {
-  const rootObj = {};
-  const arrays = {};
+  // Null-prototype tables: a hostile key can only ever land on the data object,
+  // never on Object.prototype.
+  const rootObj = Object.create(null);
+  const arrays = Object.create(null);
   let cur = rootObj;
-  // Keys that would land on Object.prototype (or the constructor) instead of the
-  // data object — writing them is prototype pollution, so reject outright.
+  // Keys that target the prototype chain (or the constructor) are prototype
+  // pollution regardless of the receiver — reject outright.
   const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
   const checkKey = (k, raw) => {
     if (FORBIDDEN_KEYS.has(k)) fail(`forbidden key name: ${raw}`);
