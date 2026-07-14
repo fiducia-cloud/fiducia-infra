@@ -64,11 +64,12 @@ module "vultr" {
 
 # ── civo (brain member) — managed k3s, Cilium CNI for Cluster Mesh ────────────
 module "civo" {
-  source       = "../../modules/civo"
-  count        = var.enable_civo ? 1 : 0
-  cluster_name = "fiducia-prod-civo"
-  region       = "LON1"
-  node_count   = var.node_count
-  cni          = "cilium"
-  labels       = local.labels
+  source        = "../../modules/civo"
+  count         = var.enable_civo ? 1 : 0
+  cluster_name  = "fiducia-prod-civo"
+  region        = "LON1"
+  node_count    = var.node_count
+  cni           = "cilium"
+  allowed_cidrs = var.civo_allowed_cidrs
+  labels        = local.labels
 }
