@@ -44,14 +44,27 @@ no_orphan_quorum_leader(){ j "$1" '[.shards[]?|select(.role=="leader" and .has_q
 log "── Core: cross-cluster Raft health ──"
 snapshot
 for c in "${CLUSTERS[@]}"; do
-  eq "$c /v1/status reachable"             "$([[ -n "$(j "$c" '.node_id // empty')" ]] && echo up || echo down)" "up"
-  eq "$c shard_count"                      "$(j "$c" '.shard_count // 0')" "$SHARD_COUNT"
+  eq "$c /v1/status reachable"              "$([[ -n "$(j "$c" '.node_id // empty')" ]] && echo up || echo down)" "up"
+  eq "$c shard_count"                       "$(j "$c" '.shard_count // 0')" "$SHARD_COUNT"
+  eq "$c hosts all $SHARD_COUNT shards"     "$(j "$c" '.hosted_shards|length // 0')" "$SHARD_COUNT"
   eq "$c every hosted shard knows a leader" "$(j "$c" '[.shards[]?|select((.leader_id//"")=="")]|length // 0')" "0"
-  ge "$c leads at least one shard"         "$(j "$c" '.leading_shards|length // 0')" "1"
-  eq "$c no leader shard without quorum"   "$(no_orphan_quorum_leader "$c")" "0"
+  eq "$c no leader shard without quorum"    "$(no_orphan_quorum_leader "$c")" "0"
 done
-eq "leadership spread covers all $SHARD_COUNT shards (one leader each, across clouds)" \
+# Fleet-wide Raft SAFETY invariants (not spread — spread is a brain optimization):
+#  (a) every shard is led somewhere, and (b) there is EXACTLY one leadership per
+#  shard (Σ leading_shards == shard_count ⇒ no shard double-led = no split-brain).
+eq "every shard is led (union of leaders covers all $SHARD_COUNT)" \
    "$(count_shards_covered "${CLUSTERS[@]}")" "$SHARD_COUNT"
+eq "exactly $SHARD_COUNT leaderships fleet-wide (no split-brain double leader)" \
+   "$(for c in "${CLUSTERS[@]}"; do j "$c" '.leading_shards[]?'; done | wc -l | tr -d ' ')" "$SHARD_COUNT"
+# CROSS-CLUSTER REPLICATION PROOF: every leader shard has a majority of its 3
+# cross-cluster replicas caught up to the commit index (has_quorum already checked;
+# this asserts the actual replica count spans clusters).
+minrep=$(for c in "${CLUSTERS[@]}"; do j "$c" '.shards[]?|select(.role=="leader")|.healthy_replicas'; done | sort -n | head -1)
+ge "leader shards hold cross-cluster quorum (min healthy_replicas ≥ 2 of 3)" "${minrep:-0}" "2"
+fullrep=$(for c in "${CLUSTERS[@]}"; do j "$c" '[.shards[]?|select(.role=="leader" and .healthy_replicas>=3)]|length'; done | paste -sd+ - | bc 2>/dev/null || echo 0)
+printf '  \033[1;90m--\033[0m INFO %s/%s leader shards fully replicated on all 3 clusters; leadership currently on %s/3 clusters (brain rebalances over time)\n' \
+  "${fullrep:-0}" "$SHARD_COUNT" "$(for c in "${CLUSTERS[@]}"; do [[ "$(j "$c" '.leading_shards|length // 0')" -ge 1 ]] && echo x; done | wc -l | tr -d ' ')"
 
 # ── DATA PATH (best-effort) ─────────────────────────────────────────────────────
 log "── Data path (best-effort): cross-cluster KV write/read ──"
