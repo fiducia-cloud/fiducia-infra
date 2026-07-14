@@ -48,4 +48,4 @@ echo "READY. Coordination API is exposed at:"
 echo "  FIDUCIA_E2E_BASE_URL=http://localhost:8090"
 echo
 echo "Zones (failure domains) — one fiducia-node replica each:"
-kubectl get nodes -L topology.kubernetes.io/zone
+kubectl --context "$CTX" get nodes -L topology.kubernetes.io/zone
