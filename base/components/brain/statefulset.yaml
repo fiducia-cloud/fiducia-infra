@@ -69,6 +69,14 @@ spec:
             # :8095 to in-namespace. Matches the `peer` containerPort + Service port.
             - name: FIDUCIA_BRAIN_PEER_PORT
               value: "9095"
+            # Durable Raft state (term/vote/log/snapshots) MUST live on the PVC
+            # mounted at /var/lib/fiducia-brain below. Without this the brain
+            # defaults FIDUCIA_DATA_DIR to /tmp/fiducia-brain (the emptyDir), so a
+            # pod restart DROPS this member's replicated placement/scale log and it
+            # rejoins empty — exactly the durability the StatefulSet + PVC exist to
+            # provide. Mirrors the node's FIDUCIA_DATA_DIR wiring.
+            - name: FIDUCIA_DATA_DIR
+              value: "/var/lib/fiducia-brain"
             # Shared secret peer brains present (bearer) on /raft/*; the brain
             # enables Raft auth only when this is set. The Secret is required
             # (same Secret as the node/LB
