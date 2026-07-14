@@ -22,6 +22,9 @@ spec:
       labels:
         app: fiducia-load-balance
     spec:
+      # The LB does not call the Kubernetes API (it talks to nodes + brain over
+      # HTTP) — don't mount a SA token onto this public-facing pod.
+      automountServiceAccountToken: false
       # Hardened baseline: run unprivileged, drop all Linux capabilities, and
       # forbid privilege escalation. The binary listens on a high port (8088) so
       # it needs no capabilities. rootfs is read-only with a writable /tmp.
