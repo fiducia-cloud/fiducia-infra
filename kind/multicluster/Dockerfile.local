@@ -1,0 +1,25 @@
+# syntax=docker/dockerfile:1
+# LOCAL-source build for the emulation: unlike the repos' own Dockerfiles (which
+# git-fetch fiducia-routing/fiducia-interfaces at pinned SHAs that can trail the
+# local working tree), this copies the LOCAL sibling crates so the path deps
+# resolve to exactly what's checked out. Build context is the WORKSPACE ROOT
+# (fiducia.cloud/ — its .dockerignore include-lists just the needed crates).
+# ARG CRATE selects which service to build. Driven by ./build-local.sh.
+FROM rust:1.97.0-slim-bookworm@sha256:cfbb0e0ef7a73e736386bfa346f1cb0503c6d162969dc9426fb37834f3f64c25 AS build
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
+WORKDIR /build
+# Sibling path deps (../fiducia-routing.rs, ../fiducia-interfaces/generated/rust).
+COPY fiducia-routing.rs   /build/fiducia-routing.rs
+COPY fiducia-interfaces   /build/fiducia-interfaces
+ARG CRATE
+COPY ${CRATE} /build/${CRATE}
+WORKDIR /build/${CRATE}
+# No --locked: local dep tree can be ahead of the committed lockfile.
+RUN cargo build --release && \
+    bin="$(basename "$(pwd)" .rs)" && \
+    cp "target/release/${bin}" /out-bin && strip /out-bin
+
+FROM gcr.io/distroless/cc-debian12:nonroot@sha256:ce0d66bc0f64aae46e6a03add867b07f42cc7b8799c949c2e898057b7f75a151
+COPY --from=build --chown=65532:65532 /out-bin /usr/local/bin/fiducia-service
+USER 65532:65532
+ENTRYPOINT ["/usr/local/bin/fiducia-service"]
