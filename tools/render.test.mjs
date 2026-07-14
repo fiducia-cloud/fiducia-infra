@@ -144,6 +144,14 @@ test("edge region list mirrors lb endpoints", () => {
   assert.ok(regions.every((r) => r.url.startsWith("https://")));
 });
 
+test("checked-in generated files match a fresh render byte-for-byte", () => {
+  const files = render(loadTopology());
+  for (const [rel, content] of Object.entries(files)) {
+    const onDisk = fs.readFileSync(new URL(`../${rel}`, import.meta.url), "utf8");
+    assert.equal(onDisk, content, `${rel} is stale — run: node tools/render.mjs`);
+  }
+});
+
 // A node-only cluster (brain = false) — the documented way to add a 4th failure
 // domain without disturbing the odd 3-member brain group. The production
 // topology.toml keeps all clusters as brain members, so exercise this with a
