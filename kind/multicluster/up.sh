@@ -53,7 +53,9 @@ for c in "${CLUSTERS[@]}"; do
     ip="$(cp_ip "$o")"
     [[ -n "$ip" ]] || die "no container IP for $(cp_container "$o") on network '$DOCKER_NET'"
     node_peers+=("${ip}:${NP_NODE_PEER}")
-    brain_peers+=("${ip}:${NP_BRAIN_PEER}")
+    # The brain's Raft transport accepts HTTP base URLs directly (unlike the
+    # node transport, which prefixes bare host:port peers itself).
+    brain_peers+=("http://${ip}:${NP_BRAIN_PEER}")
   done
   np="$(IFS=,; echo "${node_peers[*]}")"
   bp="$(IFS=,; echo "${brain_peers[*]}")"

@@ -82,8 +82,8 @@ else
   pass "KV write committed via '$leader' (the shard's leader)"
   served=0
   for c in "${CLUSTERS[@]}"; do
-    got=$(curl -fsS --max-time 5 "$(api_url "$c")/v1/kv?key=$KEY" "${auth[@]}" 2>/dev/null | jq -r '.entry.value // empty' 2>/dev/null)
-    [[ "$got" == "$VAL" ]] && served=$((served+1))
+    got=$(curl -fsS --max-time 5 "$(api_url "$c")/v1/kv?key=$KEY" "${auth[@]}" 2>/dev/null | jq -r '.entry.value // empty' 2>/dev/null || echo '')
+    [[ "$got" == "$VAL" ]] && served=$((served+1)) || true
   done
   ge "KV readable after commit (>=1 cluster)" "$served" "1"
   if [[ "$served" -ge 2 ]]; then pass "value replicated + readable across clusters ($served/3)"
