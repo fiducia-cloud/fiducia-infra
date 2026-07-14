@@ -42,9 +42,9 @@ export function parseToml(text) {
     let m;
     if ((m = line.match(/^\[\[(\w+)\]\]$/))) {
       const k = checkKey(m[1], raw);
-      (arrays[k] ||= []).push((cur = {}));
+      (arrays[k] ||= []).push((cur = Object.create(null)));
     } else if ((m = line.match(/^\[(\w+)\]$/))) {
-      cur = rootObj[checkKey(m[1], raw)] ||= {};
+      cur = rootObj[checkKey(m[1], raw)] ||= Object.create(null);
     } else if ((m = line.match(/^([A-Za-z0-9_]+)\s*=\s*(.+)$/))) {
       cur[checkKey(m[1], raw)] = parseVal(m[2].trim(), raw);
     } else {
