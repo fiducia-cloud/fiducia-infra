@@ -154,6 +154,9 @@ spec:
               valueFrom: { fieldRef: { fieldPath: status.podIP } }
             - name: NODE_NAME
               valueFrom: { fieldRef: { fieldPath: spec.nodeName } }
+            # Explicit env so $(FIDUCIA_CLUSTER) expands — see the node container.
+            - name: FIDUCIA_CLUSTER
+              valueFrom: { configMapKeyRef: { name: fiducia-cluster, key: FIDUCIA_CLUSTER } }
             - name: FIDUCIA_NODE_ID
               value: "$(POD_NAME).$(FIDUCIA_CLUSTER)"
             - name: FIDUCIA_NODE_URL
