@@ -196,6 +196,10 @@ spec:
             - name: FIDUCIA_LOG_FORMAT
               value: "json"
           readinessProbe: { httpGet: { path: /healthz, port: 8091 }, periodSeconds: 10 }
+          # The sidecar owns the node's heartbeat to the brain. If it deadlocks,
+          # readiness alone won't restart it and the brain will mark an otherwise-
+          # healthy node dead (needless shard failover). Restart a hung sidecar.
+          livenessProbe:  { httpGet: { path: /healthz, port: 8091 }, periodSeconds: 15 }
           resources:
             requests: { cpu: "50m", memory: "64Mi" }
             limits: { cpu: "250m", memory: "256Mi" }
