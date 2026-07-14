@@ -150,6 +150,22 @@ export function render(t) {
     ].join("\n");
 
     // Node StatefulSet patch (replicas + storage class) applies to every cluster.
+    //
+    // IMPORTANT: volumeClaimTemplates has NO strategic-merge key, so kustomize
+    // REPLACES the whole list — a patch carrying only storageClassName silently
+    // drops accessModes/resources and the API server then rejects the
+    // StatefulSet ("at least 1 access mode is required"). Every patch must
+    // restate the FULL PVC spec. Sizes mirror base/ (node 10Gi, brain 2Gi).
+    const pvc = (storageClass, size) => `  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: ${size}
+        storageClassName: ${storageClass}`;
+
     const patches = [`apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -157,11 +173,7 @@ metadata:
   namespace: fiducia
 spec:
   replicas: ${c.node_replicas}
-  volumeClaimTemplates:
-    - metadata:
-        name: data
-      spec:
-        storageClassName: ${c.storage_class}`];
+${pvc(c.storage_class, "10Gi")}`];
 
     // Brain storage patch only on brain clusters. Whether a cluster RUNS a brain
     // is decided by its overlay including the `base/components/brain` Component
@@ -174,11 +186,7 @@ metadata:
   name: fiducia-brain
   namespace: fiducia
 spec:
-  volumeClaimTemplates:
-    - metadata:
-        name: data
-      spec:
-        storageClassName: ${c.storage_class}`);
+${pvc(c.storage_class, "2Gi")}`);
     }
 
     files[`clusters/${c.name}/patches.yaml`] = `# ${BANNER}\n${patches.join("\n---\n")}\n`;
