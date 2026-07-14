@@ -190,7 +190,8 @@ if [[ "$SCENARIOS" == 1 ]]; then
   eq "isolated civo leads NOTHING with quorum (stepped down)" "$(j civo '[.shards[]?|select(.role=="leader" and .has_quorum==true)]|length // 0')" "0"
 
   log "── Scenario: heal — civo rejoins, followers catch up ──"
-  "$HERE/partition.sh" heal >/dev/null; sleep 8; snapshot
+  "$HERE/partition.sh" heal >/dev/null
+  for _ in $(seq 1 8); do sleep 3; snapshot; [[ "$(j civo '[.shards[]?|select((.leader_id//"")=="")]|length // 0')" == "0" ]] && break; done
   eq "after heal: civo knows a leader for every shard again" "$(j civo '[.shards[]?|select((.leader_id//"")=="")]|length // 0')" "0"
   eq "after heal: leadership again covers all $SHARD_COUNT shards" "$(count_shards_covered "${CLUSTERS[@]}")" "$SHARD_COUNT"
 fi
