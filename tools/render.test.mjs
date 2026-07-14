@@ -2,6 +2,7 @@
 //   node --test tools/*.test.mjs
 
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { test } from "node:test";
 
 import { parseToml, loadTopology, render, validateTopology } from "./render.mjs";
