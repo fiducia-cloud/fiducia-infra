@@ -38,10 +38,10 @@ if [[ "${FIDUCIA_LOAD_IMAGES:-0}" == "1" ]]; then
 fi
 
 echo "Deploying fiducia (kind overlay)…"
-kubectl apply -k "$ROOT/kind/overlay"
+kubectl --context "$CTX" apply -k "$ROOT/kind/overlay"
 
 echo "Waiting for fiducia-node to become ready…"
-kubectl -n fiducia rollout status statefulset/fiducia-node --timeout="${FIDUCIA_ROLLOUT_TIMEOUT:-180s}"
+kubectl --context "$CTX" -n fiducia rollout status statefulset/fiducia-node --timeout="${FIDUCIA_ROLLOUT_TIMEOUT:-180s}"
 
 echo
 echo "READY. Coordination API is exposed at:"
