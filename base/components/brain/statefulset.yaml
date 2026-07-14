@@ -22,6 +22,8 @@ spec:
       labels:
         app: fiducia-brain
     spec:
+      # The brain does not call the Kubernetes API — don't mount a SA token.
+      automountServiceAccountToken: false
       # Hardened baseline: unprivileged, no added capabilities, no privilege
       # escalation. Listens on a high port (8095). rootfs read-only + writable /tmp;
       # durable state lives only on the mounted PVC (fsGroup makes it writable).
