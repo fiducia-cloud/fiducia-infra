@@ -59,6 +59,9 @@ jobs:
   kind-e2e:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    # Manual runs go through this environment so repo settings can attach
+    # required-reviewer protection; auto-created (ungated) if absent.
+    environment: e2e
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1
