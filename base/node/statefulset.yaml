@@ -129,6 +129,11 @@ spec:
               value: "json"
           envFrom:
             - configMapRef: { name: fiducia-cluster }   # FIDUCIA_CLUSTER, FIDUCIA_SHARD_COUNT, FIDUCIA_PEERS
+          # startupProbe gates liveness/readiness until the member is up: a Raft node
+          # can replay a large log/snapshot on boot and take a while to serve
+          # /healthz; without this the 15s liveness (×3) could kill it into a restart
+          # loop. Allows up to 60×2s = 120s to start.
+          startupProbe:   { httpGet: { path: /healthz, port: 8090 }, periodSeconds: 2, failureThreshold: 60 }
           readinessProbe: { httpGet: { path: /readyz, port: 8090 }, initialDelaySeconds: 5, periodSeconds: 10 }
           livenessProbe:  { httpGet: { path: /healthz, port: 8090 }, periodSeconds: 15 }
           resources:
