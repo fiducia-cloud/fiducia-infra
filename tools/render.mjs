@@ -51,7 +51,7 @@ export function parseToml(text) {
       fail(`cannot parse TOML line: ${raw}`);
     }
   }
-  return { ...rootObj, ...arrays };
+  return Object.assign(Object.create(null), rootObj, arrays);
 }
 function parseVal(v, raw) {
   if (/^".*"$/.test(v)) return v.slice(1, -1);
