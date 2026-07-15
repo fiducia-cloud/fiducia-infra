@@ -64,6 +64,22 @@ data:
         operators:
           - id: container-parser
             type: container
+      prometheus/fiducia_sidecars:
+        config:
+          scrape_configs:
+            - job_name: fiducia-sidecars
+              scrape_interval: 15s
+              kubernetes_sd_configs:
+                - role: pod
+                  namespaces:
+                    names: [fiducia]
+              relabel_configs:
+                - source_labels: [__meta_kubernetes_pod_label_app]
+                  regex: fiducia-(node|brain)
+                  action: keep
+                - source_labels: [__meta_kubernetes_pod_container_port_name]
+                  regex: sidecar
+                  action: keep
 
     processors:
       memory_limiter:
@@ -154,7 +170,7 @@ data:
           processors: [memory_limiter, k8sattributes, resource/fiducia, attributes/redact, batch]
           exporters: [otlphttp/gateway]
         metrics:
-          receivers: [otlp]
+          receivers: [otlp, prometheus/fiducia_sidecars]
           processors: [memory_limiter, k8sattributes, resource/fiducia, attributes/redact, batch]
           exporters: [otlphttp/gateway]
         logs:

@@ -22,6 +22,11 @@ spec:
       labels:
         app: fiducia-brain
     spec:
+      # KubeOracle needs a narrow list-pods ServiceAccount token. Disable the
+      # automatic all-container mount and project that token only into the brain;
+      # the observability sidecar does not need Kubernetes API credentials.
+      serviceAccountName: fiducia-brain
+      automountServiceAccountToken: false
       # Hardened baseline: unprivileged, no added capabilities, no privilege
       # escalation. Listens on a high port (8095). rootfs read-only + writable /tmp;
       # durable state lives only on the mounted PVC (fsGroup makes it writable).
@@ -96,9 +101,68 @@ spec:
           volumeMounts:
             - { name: data, mountPath: /var/lib/fiducia-brain }
             - { name: tmp, mountPath: /tmp }
+            - { name: brain-api-token, mountPath: /var/run/secrets/kubernetes.io/serviceaccount, readOnly: true }
+
+        # Same operational image as node pods, configured as a brain exporter.
+        # It never heartbeats/registers a node and has no Kubernetes API token.
+        - name: sidecar
+          image: ghcr.io/fiducia-cloud/fiducia-node-sidecar:v0.1.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - { containerPort: 8091, name: sidecar }
+          env:
+            - name: POD_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            - name: FIDUCIA_CLUSTER
+              valueFrom: { configMapKeyRef: { name: fiducia-cluster, key: FIDUCIA_CLUSTER } }
+            # The exporter currently calls its constant identity label node_id;
+            # give it the stable brain member identity rather than a fake node.
+            - name: FIDUCIA_NODE_ID
+              value: "$(POD_NAME).$(FIDUCIA_CLUSTER)"
+            - name: FIDUCIA_BRAIN_URL
+              value: "http://localhost:8095"
+            - name: FIDUCIA_EXPORT_TARGET
+              value: "brain"
+            - name: FIDUCIA_SIDECAR_ROLE
+              value: "exporter"
+            - name: FIDUCIA_INTERNAL_SECRET
+              valueFrom:
+                secretKeyRef: { name: fiducia-secrets, key: internal-secret, optional: false }
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://fiducia-otel-agent.fiducia.svc.cluster.local:4317"
+            - name: OTEL_SERVICE_NAMESPACE
+              value: "fiducia-cloud"
+            - name: FIDUCIA_DEPLOYMENT_ENV
+              value: "prod"
+            - name: FIDUCIA_LOG_FORMAT
+              value: "json"
+          startupProbe:   { httpGet: { path: /healthz, port: 8091 }, periodSeconds: 2, failureThreshold: 30 }
+          readinessProbe: { httpGet: { path: /healthz, port: 8091 }, periodSeconds: 10 }
+          livenessProbe:  { httpGet: { path: /healthz, port: 8091 }, periodSeconds: 15 }
+          resources:
+            requests: { cpu: "25m", memory: "48Mi" }
+            limits: { cpu: "200m", memory: "192Mi" }
+          volumeMounts:
+            - { name: tmp-sidecar, mountPath: /tmp }
       volumes:
         - name: tmp
           emptyDir: {}
+        - name: tmp-sidecar
+          emptyDir: {}
+        - name: brain-api-token
+          projected:
+            sources:
+              - serviceAccountToken: { path: token, expirationSeconds: 3600 }
+              - configMap:
+                  name: kube-root-ca.crt
+                  items: [{ key: ca.crt, path: ca.crt }]
+              - downwardAPI:
+                  items: [{ path: namespace, fieldRef: { fieldPath: metadata.namespace } }]
   volumeClaimTemplates:
     - metadata:
         name: data

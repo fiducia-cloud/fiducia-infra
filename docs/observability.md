@@ -5,11 +5,15 @@ The production MVP is collector-first:
 1. Every Rust service initializes `fiducia-telemetry`.
 2. Services emit JSON structured logs to stdout and OTLP traces to the local
    `fiducia-otel-agent` service.
-3. One OTel agent DaemonSet runs in each Kubernetes cluster. It tails pod logs,
+3. The same `fiducia-node-sidecar` image runs once per node or brain pod: node
+   mode adds heartbeats and node metrics; brain mode exports placement/control
+   plane metrics without registering a node.
+4. One OTel agent DaemonSet runs in each Kubernetes cluster. It tails pod logs,
+   discovers and scrapes both sidecar profiles,
    receives OTLP, enriches with Kubernetes/cluster metadata, redacts known
    sensitive attributes, batches data, and writes a file-backed exporter queue.
-4. Agents forward to a central observability gateway.
-5. The gateway fans out raw logs/traces/metrics to the observability stores and
+5. Agents forward to a central observability gateway.
+6. The gateway fans out raw logs/traces/metrics to the observability stores and
    writes only high-value structured events to CockroachDB TTL tables.
 
 ## Why Not Three Cockroach Nodes
@@ -38,6 +42,8 @@ References:
 ## Implemented Here
 
 - `base/observability/otel-agent.yaml` adds the per-cluster OTel agent.
+- The agent's Prometheus receiver discovers the named `sidecar` port on both
+  `fiducia-node` and `fiducia-brain` pods.
 - `base/kustomization.yaml` includes that agent in every cluster overlay.
 - The `node`, `node-sidecar`, `brain`, and `load-balance` manifests point
   `OTEL_EXPORTER_OTLP_ENDPOINT` at `fiducia-otel-agent:4317`.

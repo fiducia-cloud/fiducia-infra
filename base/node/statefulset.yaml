@@ -66,8 +66,14 @@ spec:
               valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
             - name: NODE_NAME
               valueFrom: { fieldRef: { fieldPath: spec.nodeName } }
-            # Globally-unique node id: <pod>.<cluster> (FIDUCIA_CLUSTER from the
-            # cluster ConfigMap below).
+            # Globally-unique node id: <pod>.<cluster>. FIDUCIA_CLUSTER must be an
+            # EXPLICIT env entry here (not only envFrom): k8s $(VAR) interpolation
+            # can only reference earlier `env` entries — envFrom vars are invisible
+            # to it. Without this, FIDUCIA_NODE_ID stays the LITERAL string
+            # "…$(FIDUCIA_CLUSTER)" and every cluster's pod-N claims the SAME
+            # identity — a cross-cluster Raft/membership collision.
+            - name: FIDUCIA_CLUSTER
+              valueFrom: { configMapKeyRef: { name: fiducia-cluster, key: FIDUCIA_CLUSTER } }
             - name: FIDUCIA_NODE_ID
               value: "$(POD_NAME).$(FIDUCIA_CLUSTER)"
             - name: PORT
@@ -132,12 +138,19 @@ spec:
               valueFrom: { fieldRef: { fieldPath: status.podIP } }
             - name: NODE_NAME
               valueFrom: { fieldRef: { fieldPath: spec.nodeName } }
+            # Explicit env so $(FIDUCIA_CLUSTER) expands — see the node container.
+            - name: FIDUCIA_CLUSTER
+              valueFrom: { configMapKeyRef: { name: fiducia-cluster, key: FIDUCIA_CLUSTER } }
             - name: FIDUCIA_NODE_ID
               value: "$(POD_NAME).$(FIDUCIA_CLUSTER)"
             - name: FIDUCIA_NODE_URL
               value: "http://localhost:8090"
             - name: FIDUCIA_NODE_ADDRESS
               value: "http://$(POD_IP):8090"
+            - name: FIDUCIA_EXPORT_TARGET
+              value: "node"
+            - name: FIDUCIA_SIDECAR_ROLE
+              value: "full"
             # Talk to the LOCAL brain member; brain members form one Raft group
             # across clusters and forward to the brain leader.
             - name: FIDUCIA_BRAIN_URL
@@ -161,7 +174,16 @@ spec:
               value: "prod"
             - name: FIDUCIA_LOG_FORMAT
               value: "json"
+          # /healthz on :8091 — the sidecar's default PORT (build_router in
+          # fiducia-node-sidecar main.rs; the manifest sets no PORT so 8091 holds).
+          # The startup gate keeps the 15s liveness from killing a sidecar still
+          # wiring up its exporter/heartbeat on first boot: up to 30×2s = 60s.
+          startupProbe:   { httpGet: { path: /healthz, port: 8091 }, periodSeconds: 2, failureThreshold: 30 }
           readinessProbe: { httpGet: { path: /healthz, port: 8091 }, periodSeconds: 10 }
+          # The sidecar owns the node's heartbeat to the brain. If it deadlocks,
+          # readiness alone won't restart it and the brain will mark an otherwise-
+          # healthy node dead (needless shard failover). Restart a hung sidecar.
+          livenessProbe:  { httpGet: { path: /healthz, port: 8091 }, periodSeconds: 15 }
           resources:
             requests: { cpu: "50m", memory: "64Mi" }
             limits: { cpu: "250m", memory: "256Mi" }

@@ -129,6 +129,13 @@ test("server rollout targets use versioned images for new releases", () => {
       container: "sidecar",
       repository: "ghcr.io/fiducia-cloud/fiducia-node-sidecar",
     },
+    {
+      file: "base/components/brain/statefulset.yaml",
+      kind: "StatefulSet",
+      workload: "fiducia-brain",
+      container: "sidecar",
+      repository: "ghcr.io/fiducia-cloud/fiducia-node-sidecar",
+    },
   ];
 
   for (const target of targets) {
@@ -146,4 +153,40 @@ test("server rollout targets use versioned images for new releases", () => {
       assertVersionedFiduciaImage(line.trim().replace(/^image:\s*/, ""));
     }
   }
+});
+
+test("node and brain use one sidecar image with workload-specific profiles", () => {
+  const node = read("base/node/statefulset.yaml");
+  const brain = read("base/components/brain/statefulset.yaml");
+  const nodeSidecar = containerBlock(node, "sidecar");
+  const brainSidecar = containerBlock(brain, "sidecar");
+
+  assert.equal(imageRef(nodeSidecar), imageRef(brainSidecar));
+  assert.match(nodeSidecar, /name:\s*FIDUCIA_EXPORT_TARGET\s*\n\s+value:\s*"node"/);
+  assert.match(nodeSidecar, /name:\s*FIDUCIA_SIDECAR_ROLE\s*\n\s+value:\s*"full"/);
+  assert.match(brainSidecar, /name:\s*FIDUCIA_EXPORT_TARGET\s*\n\s+value:\s*"brain"/);
+  assert.match(brainSidecar, /name:\s*FIDUCIA_SIDECAR_ROLE\s*\n\s+value:\s*"exporter"/);
+  assert.match(nodeSidecar, /containerPort:\s*8091, name:\s*sidecar/);
+  assert.match(brainSidecar, /containerPort:\s*8091, name:\s*sidecar/);
+});
+
+test("brain API credentials stay out of the observability sidecar", () => {
+  const manifest = read("base/components/brain/statefulset.yaml");
+  const brain = containerBlock(manifest, "brain");
+  const sidecar = containerBlock(manifest, "sidecar");
+
+  assert.match(manifest, /automountServiceAccountToken:\s*false/);
+  assert.match(brain, /name:\s*brain-api-token/);
+  assert.doesNotMatch(sidecar, /name:\s*brain-api-token/);
+  assert.match(manifest, /serviceAccountToken:\s*\{\s*path:\s*token, expirationSeconds:\s*3600\s*\}/);
+});
+
+test("OpenTelemetry discovers and scrapes both sidecar profiles", () => {
+  const manifest = read("base/observability/otel-agent.yaml");
+
+  assert.match(manifest, /prometheus\/fiducia_sidecars:/);
+  assert.match(manifest, /regex:\s*fiducia-\(node\|brain\)/);
+  assert.match(manifest, /__meta_kubernetes_pod_container_port_name/);
+  assert.match(manifest, /regex:\s*sidecar/);
+  assert.match(manifest, /receivers:\s*\[otlp, prometheus\/fiducia_sidecars\]/);
 });
