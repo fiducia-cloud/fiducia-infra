@@ -37,7 +37,20 @@ ensure_chain() { # <container>
 }
 drop_both()     { docker exec "$1" sh -c "iptables -t raw -A $CHAIN -s $2 -j DROP; iptables -t raw -A $CHAIN -d $2 -j DROP"; }  # <ctr> <peer-ip>
 drop_out_only() { docker exec "$1" sh -c "iptables -t raw -A $CHAIN -d $2 -j DROP"; }                                          # <ctr> <peer-ip>
-heal_one()      { docker exec "$1" sh -c "iptables -t raw -F $CHAIN 2>/dev/null || true"; }
+# Remove both the drops and the dedicated hooks. Leaving an empty chain is
+# traffic-safe, but makes a later run inherit fault-injection state and obscures
+# whether `heal` really restored the pre-test node firewall.
+heal_one() {
+  docker exec "$1" sh -c "
+    for hook in PREROUTING OUTPUT; do
+      while iptables -t raw -C \$hook -j $CHAIN 2>/dev/null; do
+        iptables -t raw -D \$hook -j $CHAIN || break
+      done
+    done
+    iptables -t raw -F $CHAIN 2>/dev/null || true
+    iptables -t raw -X $CHAIN 2>/dev/null || true
+  "
+}
 
 cmd="${1:-}"; shift || true
 case "$cmd" in
@@ -63,7 +76,7 @@ case "$cmd" in
     ;;
   heal)
     for c in "${CLUSTERS[@]}"; do heal_one "$(cp_container "$c")"; done
-    ok "all partitions healed — expect re-election + follower catch-up"
+    ok "all partitions healed and fault chain removed — expect re-election + follower catch-up"
     ;;
   show)
     for c in "${CLUSTERS[@]}"; do echo "== $c =="; docker exec "$(cp_container "$c")" sh -c "iptables -t raw -S $CHAIN 2>/dev/null || echo '(no $CHAIN chain)'"; done

@@ -81,7 +81,8 @@ docker build -t ghcr.io/fiducia-cloud/fiducia-node-sidecar:v0.1.0 ../../../fiduc
 FIDUCIA_LOAD_IMAGES=1 ./up.sh
 ```
 
-Rough footprint: 3 single-node Kind clusters ≈ 3 containers + 6 fiducia pods
+Rough footprint: 3 single-node Kind clusters ≈ 3 containers + 12 Fiducia pods
+(one node, one brain, and two load-balancer replicas per cloud)
 (~3–4 GB RAM). Distinct Pod/Service CIDRs per cluster (10.10/10.20/10.30) so
 cross-cluster traffic never collides.
 
@@ -92,7 +93,7 @@ cross-cluster traffic never collides.
 ```sh
 ./up.sh                       # create 3 kind clusters, deploy, wire cross-cluster peers
 ./test/run.sh                 # assert: reachable, leader per shard, quorum, spread
-./test/run.sh --scenarios     # + WAN latency + partition/heal assertions
+./test/run.sh --scenarios     # + WAN, partition/heal, whole-provider failover
 
 ./netem.sh eu                 # ~10ms±3 egress each  -> ~20ms pairwise RTT (nearby EU)
 ./netem.sh continental        # ~45ms±10 each        -> ~90ms RTT (US<->EU stress)
@@ -126,19 +127,25 @@ authenticated, so the test sends the internal-auth header up.sh installed):
 - every cluster is reachable and reports the configured `shard_count`;
 - **every hosted shard knows its leader** (`leader_id` non-empty) — the cross-
   cluster group elected one;
-- **leadership is spread** — the union of `leading_shards` across the three
-  clusters covers *all* shards, and each cluster leads ≥ 1 (no single-cluster
-  master);
+- **leadership is safe** — the union of `leading_shards` across the three
+  clusters covers *all* shards exactly once (no leaderless shard or
+  split-brain). Placement may temporarily concentrate leadership while the
+  brain scheduler rebalances, so an even per-cluster split is not an invariant;
 - **no leader shard is without quorum** (`has_quorum` holds).
 
-**Data path** (best-effort, authed `PUT/GET /v1/kv`): write a key on the shard's
-leader cluster, read it back across clusters. Skips cleanly if direct-to-node
-writes aren't accepted (the LB path isn't deployed in this slice).
+**Data path** (best-effort direct-node plus required LB path, authed
+`PUT/GET /v1/kv`): write a key on the shard's leader cluster and read it back
+across clusters; then write and read through different local load balancers.
+The direct-node portion skips cleanly if writes are leader-only, but the LB path
+is required and proves the actual client entrypoint.
 
 **Scenarios** (`--scenarios`): under **EU latency**, leadership + quorum stay
 stable (proving heartbeat 100 ms > RTT); **isolating civo** keeps the other two at
 2/3 quorum while civo leads nothing with quorum; **healing** rejoins civo and
-re-covers all shards.
+re-covers all shards. Finally, the runner pauses the whole Civo Kind control
+plane—not just its Raft links—proves survivor LB writes and cross-LB reads
+commit within a bounded ten-second leader-table refresh window, then resumes
+Civo and requires every leader to return to 3 healthy replicas.
 
 ### Raft scenarios worth exercising
 
@@ -146,8 +153,10 @@ The commands above cover the important cases; extend `test/run.sh` for more:
 normal operation at different RTTs (`netem.sh delay`), steady packet loss
 (`netem.sh loss <cluster> <pct>`), one-way failures (`partition.sh directed`),
 full isolation (`isolate`), the `1-1-1` no-quorum split (`split-brain`), leader
-process kill (`kubectl delete pod`), whole-cluster loss (`kind delete cluster`),
-and re-election racing with recovery (`heal` right after a kill).
+process kill (`kubectl delete pod`), destructive cluster reconstruction (`kind
+delete cluster`), and re-election racing with recovery (`heal` right after a
+kill). `--scenarios` already covers a non-destructive whole-provider outage via
+`docker pause`.
 
 ---
 

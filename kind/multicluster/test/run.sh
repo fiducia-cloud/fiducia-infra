@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # Cross-cluster Raft assertions against the running emulation (run ../up.sh first).
 #
-#   ./test/run.sh              # core: reachability + leadership spread + quorum
-#   ./test/run.sh --scenarios  # + WAN latency and partition/heal scenarios
+#   ./test/run.sh              # core: reachability + leadership safety + quorum
+#   ./test/run.sh --scenarios  # + WAN, partition/heal, and whole-cluster failover
 #
 # The CORE checks use GET /v1/status (rich Raft state: per-shard
 # role/term/leader_id/has_quorum + leading_shards) on each cluster's host API port.
 # /v1/status is org-exempt but still trusted-hop authenticated, so we send the
 # internal-auth header (org header is added only for tenant endpoints like KV).
 # The data check does an authed KV write/read across clusters (best-effort — skips
-# if direct-to-node writes aren't accepted). Scenarios drive netem.sh + partition.sh
-# and re-check, proving the prod cross-cloud Raft timing holds under emulated WAN.
+# if direct-to-node writes aren't accepted). Scenarios drive netem.sh,
+# partition.sh, and a reversible Kind control-plane pause, proving the prod
+# cross-cloud Raft timing holds through WAN faults and a whole-provider outage.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
 require_tools curl jq
@@ -27,18 +28,33 @@ PASS=0; FAIL=0; SKIP=0
 pass(){ ok "$1"; PASS=$((PASS+1)); }
 fail(){ warn "FAIL: $1"; FAIL=$((FAIL+1)); }
 skip(){ printf '  \033[1;90m--\033[0m SKIP %s\n' "$1"; SKIP=$((SKIP+1)); }
-eq(){ [[ "$2" == "$3" ]] && pass "$1 [$2]" || fail "$1 (got '$2' want '$3')"; }
-ge(){ { [[ "$2" =~ ^[0-9]+$ ]] && (( $2 >= $3 )); } && pass "$1 [$2>=$3]" || fail "$1 (got '$2' want >=$3)"; }
+eq(){
+  if [[ "$2" == "$3" ]]; then pass "$1 [$2]"; else fail "$1 (got '$2' want '$3')"; fi
+}
+ge(){
+  if [[ "$2" =~ ^[0-9]+$ ]] && (( $2 >= $3 )); then pass "$1 [$2>=$3]"; else fail "$1 (got '$2' want >=$3)"; fi
+}
 
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-snapshot(){ local c; for c in "${CLUSTERS[@]}"; do
+TMP="$(mktemp -d)"
+PAUSED_CONTAINER=""
+cleanup(){
+  # A scenario may stop the runner after Docker has paused a whole emulated
+  # provider. Always resume it before dropping the local status snapshots.
+  [[ -z "$PAUSED_CONTAINER" ]] || docker unpause "$PAUSED_CONTAINER" >/dev/null 2>&1 || true
+  rm -rf "$TMP"
+}
+trap cleanup EXIT
+snapshot_one(){
+  local c="$1"
   # The node wraps NodeStatus under `.consensus`; unwrap so filters read .shards etc.
   curl -fsS --max-time 5 "${IA[@]}" "$(api_url "$c")/v1/status" 2>/dev/null \
     | jq '.consensus // .' >"$TMP/$c.json" 2>/dev/null || echo '{}' >"$TMP/$c.json"
-done; }
+}
+snapshot(){ local c; for c in "${CLUSTERS[@]}"; do snapshot_one "$c"; done; }
 j(){ jq -r "$2" "$TMP/$1.json" 2>/dev/null; }                        # j <cluster> <jq-filter>
 count_shards_covered(){ local c; for c in "$@"; do jq -r '.leading_shards[]?' "$TMP/$c.json" 2>/dev/null; done | sort -nu | wc -l | tr -d ' '; }
 no_orphan_quorum_leader(){ j "$1" '[.shards[]?|select(.role=="leader" and .has_quorum==false)]|length // 0'; }
+min_leader_replicas(){ local c; for c in "${CLUSTERS[@]}"; do j "$c" '.shards[]?|select(.role=="leader")|.healthy_replicas'; done | sort -n | head -1; }
 
 # ── CONVERGENCE ─────────────────────────────────────────────────────────────────
 # up.sh only waits for pod readiness; Raft still needs a few seconds after a
@@ -83,7 +99,7 @@ eq "exactly $SHARD_COUNT leaderships fleet-wide (no split-brain double leader)" 
 # CROSS-CLUSTER REPLICATION PROOF: every leader shard has a majority of its 3
 # cross-cluster replicas caught up to the commit index (has_quorum already checked;
 # this asserts the actual replica count spans clusters).
-minrep=$(for c in "${CLUSTERS[@]}"; do j "$c" '.shards[]?|select(.role=="leader")|.healthy_replicas'; done | sort -n | head -1)
+minrep="$(min_leader_replicas)"
 ge "leader shards hold cross-cluster quorum (min healthy_replicas ≥ 2 of 3)" "${minrep:-0}" "2"
 fullrep=$(for c in "${CLUSTERS[@]}"; do j "$c" '[.shards[]?|select(.role=="leader" and .healthy_replicas>=3)]|length'; done | paste -sd+ - | bc 2>/dev/null || echo 0)
 printf '  \033[1;90m--\033[0m INFO %s/%s leader shards fully replicated on all 3 clusters; leadership currently on %s/3 clusters (brain rebalances over time)\n' \
@@ -193,9 +209,69 @@ if [[ "$SCENARIOS" == 1 ]]; then
 
   log "── Scenario: heal — civo rejoins, followers catch up ──"
   "$HERE/partition.sh" heal >/dev/null
-  for _ in $(seq 1 8); do sleep 3; snapshot; [[ "$(j civo '[.shards[]?|select((.leader_id//"")=="")]|length // 0')" == "0" ]] && break; done
+  for _ in $(seq 1 8); do
+    sleep 3; snapshot
+    healed_minrep="$(min_leader_replicas)"
+    [[ "$(j civo '[.shards[]?|select((.leader_id//"")=="")]|length // 0')" == "0" \
+      && "$healed_minrep" =~ ^[0-9]+$ && "$healed_minrep" -ge 3 ]] && break
+  done
   eq "after heal: civo knows a leader for every shard again" "$(j civo '[.shards[]?|select((.leader_id//"")=="")]|length // 0')" "0"
   eq "after heal: leadership again covers all $SHARD_COUNT shards" "$(count_shards_covered "${CLUSTERS[@]}")" "$SHARD_COUNT"
+  ge "after heal: every leader has all 3 replicas healthy" "$(min_leader_replicas)" "3"
+
+  log "── Scenario: pause civo control plane — survivors keep serving, then civo catches up ──"
+  require_tools docker
+  PAUSED_CONTAINER="$(cp_container civo)"
+  docker pause "$PAUSED_CONTAINER" >/dev/null
+  docker inspect -f '{{.State.Paused}}' "$PAUSED_CONTAINER" | grep -qx true || die "failed to pause $PAUSED_CONTAINER"
+  pass "civo Kind control plane paused (whole-provider outage injected)"
+
+  # Unlike partition.sh, this removes Civo's Kubernetes API, workloads, and
+  # NodePorts together. Probe only the two survivors while the target is paused:
+  # a paused host port may legitimately wait until curl's timeout.
+  for _ in $(seq 1 10); do
+    sleep 3
+    snapshot_one hetzner; snapshot_one vultr
+    [[ "$(count_shards_covered hetzner vultr)" == "$SHARD_COUNT" \
+      && "$(no_orphan_quorum_leader hetzner)" == "0" \
+      && "$(no_orphan_quorum_leader vultr)" == "0" ]] && break
+  done
+  eq "after whole-provider loss: survivors cover all $SHARD_COUNT shards" "$(count_shards_covered hetzner vultr)" "$SHARD_COUNT"
+  eq "after whole-provider loss: hetzner has no unquorate leader" "$(no_orphan_quorum_leader hetzner)" "0"
+  eq "after whole-provider loss: vultr has no unquorate leader" "$(no_orphan_quorum_leader vultr)" "0"
+
+  outage_key="emu/failover/civo-pause-${SECONDS}-$$"
+  outage_value="committed-during-civo-pause"
+  outage_write_attempt=0; code=000
+  # Raft leadership converges before every LB's periodic brain-table refresh.
+  # A production caller retries an idempotent/fenced request across that short
+  # window; make it an explicit bounded assertion instead of a flaky one-shot.
+  for attempt in $(seq 1 10); do
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -X PUT "$(lb_url hetzner)/v1/kv?key=$outage_key" \
+      "${edge[@]}" -H 'content-type: application/json' -d "{\"value\":\"$outage_value\"}" 2>/dev/null || echo 000)
+    [[ "$code" == 2* ]] && { outage_write_attempt="$attempt"; break; }
+    sleep 1
+  done
+  ge "after whole-provider loss: survivor LB write commits within 10s (last status $code)" "$outage_write_attempt" "1"
+  got=''
+  if [[ "$outage_write_attempt" -ge 1 ]]; then
+    got=$(curl -fsS --max-time 10 "$(lb_url vultr)/v1/kv?key=$outage_key" "${edge[@]}" 2>/dev/null | jq -r '.entry.value // empty' 2>/dev/null || echo '')
+  fi
+  eq "after whole-provider loss: other survivor LB reads committed value" "$got" "$outage_value"
+
+  docker unpause "$PAUSED_CONTAINER" >/dev/null
+  PAUSED_CONTAINER=""
+  for _ in $(seq 1 12); do
+    sleep 3; snapshot
+    recovered_minrep="$(min_leader_replicas)"
+    [[ "$(count_shards_covered "${CLUSTERS[@]}")" == "$SHARD_COUNT" \
+      && "$(j civo '[.shards[]?|select((.leader_id//"")=="")]|length // 0')" == "0" \
+      && "$recovered_minrep" =~ ^[0-9]+$ && "$recovered_minrep" -ge 3 ]] && break
+  done
+  eq "after whole-provider recovery: civo status is reachable" "$( [[ -n "$(j civo '.node_id // empty')" ]] && echo up || echo down )" "up"
+  eq "after whole-provider recovery: civo knows every shard leader" "$(j civo '[.shards[]?|select((.leader_id//"")=="")]|length // 0')" "0"
+  eq "after whole-provider recovery: leadership covers all $SHARD_COUNT shards" "$(count_shards_covered "${CLUSTERS[@]}")" "$SHARD_COUNT"
+  ge "after whole-provider recovery: every leader has all 3 replicas healthy" "$(min_leader_replicas)" "3"
 fi
 
 # ── SUMMARY ─────────────────────────────────────────────────────────────────────
