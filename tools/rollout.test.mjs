@@ -58,7 +58,11 @@ test("load balancer rollout uses a zero-downtime Deployment strategy", () => {
   assert.match(deployment, /name:\s*fiducia-load-balance/);
   assert.match(deployment, /strategy:\s*\n\s+type:\s*RollingUpdate/);
   assert.match(deployment, /rollingUpdate:\s*\n\s+maxSurge:\s*1\s*\n\s+maxUnavailable:\s*0/);
-  assert.match(deployment, /readinessProbe:\s*\{\s*httpGet:\s*\{\s*path:\s*\/healthz/);
+  // Readiness waits for a hydrated route table, while liveness only checks that
+  // the process remains responsive. Keep both probes explicit so a regression
+  // cannot make a live-but-unroutable LB receive traffic.
+  assert.match(deployment, /readinessProbe:\s*\{\s*httpGet:\s*\{\s*path:\s*\/readyz/);
+  assert.match(deployment, /livenessProbe:\s*\{\s*httpGet:\s*\{\s*path:\s*\/healthz/);
 });
 
 test("node rollout limits disruption and preserves StatefulSet canary mechanics", () => {
