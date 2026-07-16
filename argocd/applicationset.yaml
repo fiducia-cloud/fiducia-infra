@@ -25,9 +25,28 @@ spec:
   clusterResourceWhitelist:
     - group: ""
       kind: Namespace
+    # The rendered base includes the otel-agent's cluster-scoped RBAC (needed by the
+    # k8sattributes processor). Without these two, ArgoCD refuses them and the
+    # Application sits OutOfSync/Degraded with otel enrichment broken.
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+  # Namespaced kinds are pinned to exactly what the overlays render. Notably NO
+  # Secret: fiducia-secrets, the LB TLS material, and the observability gateway
+  # token are provisioned out-of-band and must never be git-synced through
+  # ArgoCD. A new kind in base/ must be added here or its Application degrades.
   namespaceResourceWhitelist:
-    - group: "*"
-      kind: "*"
+    - { group: "", kind: ConfigMap }
+    - { group: "", kind: Service }
+    - { group: "", kind: ServiceAccount }
+    - { group: apps, kind: Deployment }
+    - { group: apps, kind: StatefulSet }
+    - { group: apps, kind: DaemonSet }
+    - { group: rbac.authorization.k8s.io, kind: Role }
+    - { group: rbac.authorization.k8s.io, kind: RoleBinding }
+    - { group: networking.k8s.io, kind: NetworkPolicy }
+    - { group: policy, kind: PodDisruptionBudget }
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet

@@ -1,0 +1,63 @@
+# NodePorts that make each cluster's Raft peer ports + coordination API reachable
+# from OUTSIDE the cluster. This is what lets the three independent Kind clusters
+# form cross-cluster Raft groups over the shared `kind` Docker network:
+#
+#   * node peer  :9090  -> nodePort 30090   (other clusters dial <cp-container-ip>:30090)
+#   * brain peer :9095  -> nodePort 30095   (other clusters dial <cp-container-ip>:30095)
+#   * node API   :8090  -> nodePort 30080   (mapped to the host by the kind config,
+#                                            so the test harness hits it on 127.0.0.1:809x)
+#   * local LB   :8088  -> nodePort 30088   (also mapped to the host, so tests
+#                                            exercise trusted-edge → LB → leader)
+#
+# up.sh discovers each cluster's control-plane container IP on the `kind` network
+# and writes the peer NodePort addresses into the other clusters' topology.env.
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-node-api-ext
+  namespace: fiducia
+  labels: { app: fiducia-node, fiducia.cloud/emulation: "true" }
+spec:
+  type: NodePort
+  selector: { app: fiducia-node }
+  ports:
+    - { name: http, port: 8090, targetPort: 8090, nodePort: 30080, protocol: TCP }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-node-peer-ext
+  namespace: fiducia
+  labels: { app: fiducia-node, fiducia.cloud/emulation: "true" }
+spec:
+  type: NodePort
+  selector: { app: fiducia-node }
+  ports:
+    - { name: peer, port: 9090, targetPort: 9090, nodePort: 30090, protocol: TCP }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-brain-peer-ext
+  namespace: fiducia
+  labels: { app: fiducia-brain, fiducia.cloud/emulation: "true" }
+spec:
+  type: NodePort
+  selector: { app: fiducia-brain }
+  ports:
+    - { name: peer, port: 9095, targetPort: 9095, nodePort: 30095, protocol: TCP }
+---
+# Kind has no cloud LoadBalancer implementation. This NodePort is the local
+# equivalent of the per-cluster public LB Service, deliberately targeting the
+# plaintext listener that the local overlay enables.
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-load-balance-ext
+  namespace: fiducia
+  labels: { app: fiducia-load-balance, fiducia.cloud/emulation: "true" }
+spec:
+  type: NodePort
+  selector: { app: fiducia-load-balance }
+  ports:
+    - { name: http, port: 8088, targetPort: 8088, nodePort: 30088, protocol: TCP }

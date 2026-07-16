@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 # GitOps manifest render/check image.
-FROM node:26-slim@sha256:ffc78385a788964bb3cbab5e434ff79a10bdc25b8ae6db03fe5fe6cb14053c09
+# Node major must match .nvmrc and .github/workflows/ci.yml (22).
+FROM node:22-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3
 WORKDIR /app
 COPY package.json package-lock.json topology.toml ./
 COPY tools tools

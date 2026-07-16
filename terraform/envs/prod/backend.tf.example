@@ -1,0 +1,25 @@
+# PRODUCTION state MUST be remote, encrypted and locked. Prod state contains the
+# hetzner k3s join tokens (random_password) and the vultr + civo kubeconfigs / CA
+# material — writing that to unencrypted, unlocked local state on an operator's
+# disk (the default with no backend) is unacceptable, and concurrent applies with
+# no lock can corrupt it. Rename this to backend.tf and fill in your backend, then
+# `terraform init -migrate-state`. NEVER commit real state files.
+#
+# S3 + DynamoDB lock table:
+# terraform {
+#   backend "s3" {
+#     bucket         = "fiducia-tfstate"
+#     key            = "prod/terraform.tfstate"
+#     region         = "us-east-1"
+#     dynamodb_table = "fiducia-tflock"
+#     encrypt        = true    # SSE at rest (use a CMK for stronger control)
+#   }
+# }
+#
+# or GCS (versioned + encrypted bucket, native locking):
+# terraform {
+#   backend "gcs" {
+#     bucket = "fiducia-tfstate"
+#     prefix = "prod"
+#   }
+# }

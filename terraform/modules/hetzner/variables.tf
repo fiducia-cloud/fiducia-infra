@@ -27,6 +27,12 @@ variable "server_type" {
   description = "hcloud server type for control-plane + agents (e2e-grade default)."
 }
 
+variable "k8s_version" {
+  type        = string
+  default     = "v1.30.5+k3s1"
+  description = "Pinned k3s version (INSTALL_K3S_VERSION) for control-plane + agents. Pin it so nodes provisioned at different times don't drift to a different 'latest'. See https://github.com/k3s-io/k3s/releases."
+}
+
 variable "ssh_public_key" {
   type        = string
   description = "SSH public key material authorized on the servers (also needed to fetch the kubeconfig)."

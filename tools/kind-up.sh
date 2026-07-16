@@ -17,6 +17,9 @@
 set -euo pipefail
 
 CLUSTER="fiducia"
+# Every kubectl call MUST pin this context — the cluster-reuse path must never
+# inherit the ambient kubeconfig context (which could be a real cluster).
+CTX="kind-${CLUSTER}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NODE_IMAGE="${FIDUCIA_NODE_IMAGE:-ghcr.io/fiducia-cloud/fiducia-node:v0.1.0}"
 SIDECAR_IMAGE="${FIDUCIA_SIDECAR_IMAGE:-ghcr.io/fiducia-cloud/fiducia-node-sidecar:v0.1.0}"
@@ -35,14 +38,14 @@ if [[ "${FIDUCIA_LOAD_IMAGES:-0}" == "1" ]]; then
 fi
 
 echo "Deploying fiducia (kind overlay)…"
-kubectl apply -k "$ROOT/kind/overlay"
+kubectl --context "$CTX" apply -k "$ROOT/kind/overlay"
 
 echo "Waiting for fiducia-node to become ready…"
-kubectl -n fiducia rollout status statefulset/fiducia-node --timeout="${FIDUCIA_ROLLOUT_TIMEOUT:-180s}"
+kubectl --context "$CTX" -n fiducia rollout status statefulset/fiducia-node --timeout="${FIDUCIA_ROLLOUT_TIMEOUT:-180s}"
 
 echo
 echo "READY. Coordination API is exposed at:"
 echo "  FIDUCIA_E2E_BASE_URL=http://localhost:8090"
 echo
 echo "Zones (failure domains) — one fiducia-node replica each:"
-kubectl get nodes -L topology.kubernetes.io/zone
+kubectl --context "$CTX" get nodes -L topology.kubernetes.io/zone

@@ -14,15 +14,26 @@ that need no cloud spend — lives in [`../kind`](../kind).)
 
 ```
 terraform/
-  modules/
-    gke/       Google  — google_container_cluster + node pool
-    eks/       AWS     — aws_eks_cluster + managed node group (default VPC)
-    aks/       Azure   — azurerm_kubernetes_cluster
+  modules/                 one dir per provider — SAME interface, so a cluster's
+                           cloud is a drop-in swap (see "Swapping a provider")
     hetzner/   Hetzner — hcloud servers + k3s via cloud-init (no managed k8s there)
+    vultr/     Vultr   — vultr_kubernetes (managed VKE)
+    civo/      Civo    — civo_kubernetes_cluster (managed k3s, Cilium CNI)
+    gke/       Google  — google_container_cluster + node pool     ┐ additional
+    eks/       AWS     — aws_eks_cluster + managed node group      │ drop-in swap
+    aks/       Azure   — azurerm_kubernetes_cluster                ┘ targets
   envs/
-    e2e/       instantiates all four (each behind an enable_<cloud> toggle) and
-               emits the kubeconfigs + LB endpoints that feed topology.toml
+    prod/      THE 3-cluster prod fleet — hetzner + vultr + civo (node_count 5),
+               each behind an enable_<cloud> toggle → see envs/prod/README.md
+    e2e/       real-hyperscaler TEST fleet (gke/eks/aks/hetzner, node_count 3) for
+               the fiducia-e2e suite; emits kubeconfigs + LB endpoints
 ```
+
+The **prod** fleet mirrors [`../topology.toml`](../topology.toml)
+(hetzner/vultr/civo); the **e2e** fleet exists to exercise the same manifests on
+managed hyperscalers. Because every module shares one interface, swapping a prod
+cluster to another cloud (DigitalOcean/Scaleway/Akamai/…) is a `source =` change,
+not a rewrite — see **Swapping a provider** below.
 
 Every module honors the **same variable/output contract** so the env can treat
 them uniformly:
@@ -31,7 +42,7 @@ them uniformly:
 |-----------------|-----------------------------------------------------|
 | `cluster_name`  | cluster id (e.g. `fiducia-e2e-gcp`)                 |
 | `location`      | region/zone (matches the cluster's `region` in topology.toml) |
-| `node_count`    | worker node count (default 3 — one fiducia-node replica can schedule per node) |
+| `node_count`    | worker machines (e2e modules default 3; the prod trio defaults **5** — topology `node_replicas`=5, one node pod per machine) |
 | `k8s_version`   | Kubernetes minor (e.g. `1.30`)                      |
 | `labels`        | tags/labels applied to cluster + nodes              |
 
@@ -56,6 +67,43 @@ them uniformly:
 - Remote state: `envs/e2e/backend.tf.example` shows an S3/GCS backend with locking.
   Do not commit real state; the default local state is for throwaway runs only.
 
+## Provisioning the prod fleet
+
+The production 3-cluster fleet (hetzner + vultr + civo) lives in
+[`envs/prod`](envs/prod) and has its own runbook — see
+[`envs/prod/README.md`](envs/prod/README.md). In short:
+
+```sh
+export HCLOUD_TOKEN=…  VULTR_API_KEY=…  CIVO_TOKEN=…
+cd terraform/envs/prod
+terraform init && terraform apply \
+  -var 'hetzner_ssh_public_key=ssh-ed25519 AAAA…' \
+  -var 'hetzner_firewall_allowed_cidrs=["203.0.113.0/24"]'
+```
+
+Then register the three kubeconfigs, run
+[`../../tools/clustermesh.sh`](../tools/clustermesh.sh) to stitch them into a
+Cilium Cluster Mesh, set `topology.toml`'s `*_endpoint`s to the mesh global-service
+DNS, `node ../../tools/render.mjs`, and let ArgoCD sync the overlays. Full picture:
+[`../docs/multi-cluster-architecture.md`](../docs/multi-cluster-architecture.md).
+
+## Swapping a provider
+
+Every module honors the **same variable/output contract** (above), so a cluster's
+cloud is a `source =` change, not a rewrite. To move a prod cluster (say
+vultr → digitalocean):
+
+1. add `modules/digitalocean` implementing the contract (copy the shape of
+   `modules/vultr`; drop-in targets: digitalocean, scaleway, akamai/LKE, or the
+   `gke`/`eks`/`aks` modules already here);
+2. in `envs/prod/main.tf`, point `module "vultr"`'s `source` at it and set its
+   `region`;
+3. update that cluster's `platform` + `region` in [`../topology.toml`](../topology.toml);
+4. `terraform apply`, then re-point its `*_endpoint` and `node ../../tools/render.mjs`.
+
+Nothing in [`../base`](../base) or the app code changes — the platform only decides
+where the VMs live and the `storage_class` name.
+
 ## Provisioning the e2e fleet
 
 ```sh
@@ -68,9 +116,9 @@ terraform apply -var enable_gcp=true -var enable_aws=true -var enable_azure=true
 terraform output endpoints    # the FIDUCIA_E2E_ENDPOINTS list for fiducia-e2e
 ```
 
-Toggle any subset with the `enable_*` vars — e.g. bring up only GCP+AWS+Hetzner to
-mirror the original 3-cluster prod baseline, or add `enable_azure=true` for the
-4th failure domain.
+Toggle any subset with the `enable_*` vars — e.g. bring up only GCP+AWS+Hetzner as
+a real-hyperscaler test fleet, or add `enable_azure=true` for a 4th failure domain.
+(The real prod trio is hetzner/vultr/civo in `envs/prod`, above.)
 
 ## Prod-hardening (opt-in)
 
@@ -79,6 +127,12 @@ behavior exactly**, so existing `terraform apply` runs are unchanged until an
 operator opts in. The `envs/e2e` env threads each one through as a
 `<cloud>_<name>` variable that also defaults to the e2e behavior, so you can
 tighten a fleet cluster without editing modules:
+
+> **In `envs/prod`** the hetzner firewall is the relevant knob and defaults **on**
+> (`hetzner_enable_firewall = true`), so you must pass `hetzner_firewall_allowed_cidrs`
+> (world-open is rejected). Vultr VKE and Civo are managed control planes, so their
+> API-server hardening is provider-side, not a module input. The rows below are the
+> full catalog across every module (prod trio + hyperscaler swap targets).
 
 | Module | Variable (module → `envs/e2e`) | Default (e2e) | Set for prod |
 |--------|--------------------------------|---------------|--------------|

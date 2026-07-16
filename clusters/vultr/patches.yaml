@@ -5,12 +5,16 @@ metadata:
   name: fiducia-node
   namespace: fiducia
 spec:
-  replicas: 3
+  replicas: 5
   volumeClaimTemplates:
     - metadata:
         name: data
       spec:
-        storageClassName: standard-rwo
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 10Gi
+        storageClassName: vultr-block-storage-hdd
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -22,4 +26,8 @@ spec:
     - metadata:
         name: data
       spec:
-        storageClassName: standard-rwo
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 2Gi
+        storageClassName: vultr-block-storage-hdd

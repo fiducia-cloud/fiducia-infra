@@ -1,7 +1,7 @@
 # kind cluster that SIMULATES the multi-cloud topology on one local cluster.
 #
 # Four worker nodes, each labeled with a distinct failure domain
-# (topology.kubernetes.io/zone = gcp/aws/hetzner/azure). fiducia-node's existing
+# (topology.kubernetes.io/zone = hetzner/vultr/civo/digitalocean). fiducia-node's existing
 # topologySpreadConstraints then place one replica per zone — the same
 # "one replica per cluster" invariant the real fleet gets from topology.toml,
 # reproduced locally with zero cloud spend.
@@ -22,13 +22,13 @@ nodes:
         protocol: TCP
   - role: worker
     labels:
-      topology.kubernetes.io/zone: gcp
-  - role: worker
-    labels:
-      topology.kubernetes.io/zone: aws
-  - role: worker
-    labels:
       topology.kubernetes.io/zone: hetzner
   - role: worker
     labels:
-      topology.kubernetes.io/zone: azure
+      topology.kubernetes.io/zone: vultr
+  - role: worker
+    labels:
+      topology.kubernetes.io/zone: civo
+  - role: worker
+    labels:
+      topology.kubernetes.io/zone: digitalocean

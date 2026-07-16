@@ -1,0 +1,35 @@
+# Tier-3 (optional) — Chaos Mesh NetworkChaos: a Kubernetes-native, CRD-driven
+# alternative to netem.sh, applied PER CLUSTER.
+#
+# In this emulation each cloud is a SEPARATE kind cluster, so Chaos Mesh (which
+# only sees pods in its own cluster) is installed per cluster and delays THAT
+# cluster's fiducia-node egress — i.e. makes that cloud "far". For cross-cluster
+# PARTITIONS between the separate clusters, prefer ../partition.sh (host iptables
+# on the node containers); Chaos Mesh cannot see pods in another kind cluster.
+# netem.sh is the simplest option overall; this file is here if you standardize on
+# Chaos Mesh CRDs (targeted pods, jitter/correlation, scheduled experiments).
+#
+# Install into a cluster you want to fault, then apply this there:
+#   helm repo add chaos-mesh https://charts.chaos-mesh.org
+#   helm --kube-context kind-fiducia-hetzner install chaos-mesh chaos-mesh/chaos-mesh \
+#     -n chaos-mesh --create-namespace \
+#     --set chaosDaemon.runtime=containerd \
+#     --set chaosDaemon.socketPath=/run/containerd/containerd.sock
+#   kubectl --context kind-fiducia-hetzner apply -f chaos/networkchaos.yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: fiducia-wan-latency
+  namespace: fiducia
+spec:
+  action: delay
+  mode: all
+  selector:
+    namespaces: [fiducia]
+    labelSelectors:
+      app: fiducia-node        # delay THIS cloud's Raft egress -> it becomes "far"
+  delay:
+    latency: "45ms"
+    jitter: "10ms"
+    correlation: "50"
+  duration: "5m"               # auto-reverts; delete the object to clear sooner

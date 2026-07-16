@@ -1,8 +1,9 @@
 # fiducia-infra
 
 Kubernetes deployment config for [fiducia.cloud](https://fiducia.cloud) across
-**three clusters on three platforms** (GCP, AWS, and a 3rd — here Hetzner), with
-one goal:
+**three clusters on three platforms** (Hetzner, Vultr, and Civo — each a drop-in
+[swap](docs/multi-cluster-architecture.md#8-scaling-out--swapping-a-provider) for
+DigitalOcean/Scaleway/Akamai/…), with one goal:
 
 > **As long as 2 of the 3 clusters are alive, fiducia keeps working.**
 
@@ -28,10 +29,10 @@ Fiducia is already a quorum system internally (Raft). The trick here is to make
                   ┌───────────────┼───────────────┐  (routes to a healthy cluster)
                   ▼               ▼               ▼
             ┌──────────┐    ┌──────────┐    ┌──────────┐
-            │  GCP k8s │    │  AWS k8s │    │ Hetzner  │
+            │  Hetzner │    │  Vultr   │    │  Civo    │
             │  LB      │    │  LB      │    │  LB      │
             │  brain-1 │◀──▶│  brain-2 │◀──▶│  brain-3 │   one Raft group (RF3)
-            │  nodes   │◀──▶│  nodes   │◀──▶│  nodes   │   shard replicas 1/cluster
+            │  nodes ×5│◀──▶│  nodes ×5│◀──▶│  nodes ×5│   shard replicas 1/cluster
             └──────────┘    └──────────┘    └──────────┘
                   └───────── cross-cluster Raft (peer transport) ─────────┘
 
@@ -40,7 +41,7 @@ Fiducia is already a quorum system internally (Raft). The trick here is to make
 
 ### The mechanism that enforces it
 
-Each cluster's overlay sets `FIDUCIA_CLUSTER` (gcp/aws/hetzner). The node's
+Each cluster's overlay sets `FIDUCIA_CLUSTER` (hetzner/vultr/civo). The node's
 sidecar reports that as its **failure domain** (`FIDUCIA_REGION`) to the brain,
 and the brain spreads each shard's 3 replicas across **distinct** failure domains
 — i.e. one per cluster. That single label is what turns "3 replicas somewhere"
@@ -64,12 +65,12 @@ connectivity mode, and (crucially) every cluster's **reachable endpoints**:
 
 ```toml
 [[cluster]]
-name = "gcp"
-storage_class = "standard-rwo"
-node_replicas = 3
-brain_endpoint = "brain.gcp.fiducia.cloud:9095"     # how OTHER clusters reach this brain
-node_peer_endpoint = "node.gcp.fiducia.cloud:9090"  # how OTHER clusters reach these nodes
-lb_endpoint = "https://gcp.lb.fiducia.cloud"        # for the edge
+name = "hetzner"
+storage_class = "hcloud-volumes"
+node_replicas = 5
+brain_endpoint = "brain.hetzner.fiducia.cloud:9095"     # how OTHER clusters reach this brain
+node_peer_endpoint = "node.hetzner.fiducia.cloud:9090"  # how OTHER clusters reach these nodes
+lb_endpoint = "https://hetzner.lb.fiducia.cloud"        # for the edge
 ```
 
 `tools/render.mjs` fans that one file out into every cluster's kustomize inputs,
@@ -99,9 +100,9 @@ ConfigMap; the edge reads the region list. One place to declare IPs/DNS.
 `topology.toml` declares **membership** (which peers exist + how to reach them) —
 never **leadership**. There is no "master node" to point k8s or this config at:
 
-- **Kubernetes control plane** — each cluster has its own (GKE/EKS-managed, or
-  kubeadm/k3s on Hetzner). fiducia neither declares nor cares about it; k8s just
-  schedules our pods. Nothing in this repo touches it.
+- **Kubernetes control plane** — each cluster has its own (Vultr VKE / Civo
+  managed k3s, or k3s-on-raw-VMs on Hetzner). fiducia neither declares nor cares
+  about it; k8s just schedules our pods. Nothing in this repo touches it.
 - **fiducia leadership** — sharded multi-Raft: every shard's replicas elect their
   own leader, and the brain members elect a brain leader. Leadership is **chosen
   by Raft at runtime**, spreads across nodes/clusters, and **moves automatically
@@ -217,9 +218,12 @@ base/                      shared manifests (don't apply directly)
   brain/       StatefulSet (1 member/cluster) + headless service
   load-balance/ Deployment + LoadBalancer service
 clusters/                  per-cluster Kustomize overlays
-  gcp/ aws/ hetzner/       kustomization.yaml + GENERATED topology.env & patches.yaml
+  hetzner/ vultr/ civo/    kustomization.yaml + GENERATED topology.env & patches.yaml
 generated/edge-regions.json  FIDUCIA_REGIONS for fiducia-edge (generated)
 argocd/                    ApplicationSet fanning out clusters/<name> -> cluster
+kind/                      LOCAL test clusters (no cloud spend)
+  multizone.yaml           Tier 1: one cluster, zone-labeled workers
+  multicluster/            Tier 2: three kind clusters + cross-cluster Raft + WAN faults
 ```
 
 Why these workload types: **node** and **brain** are Raft members → `StatefulSet`
@@ -227,27 +231,33 @@ Why these workload types: **node** and **brain** are Raft members → `StatefulS
 stateless cache → `Deployment`. The **sidecar** is a second container in the node
 pod (its bridge to brain + telemetry).
 
-> **A 4th platform (Azure) is now in [`topology.toml`](topology.toml).** RF stays 3,
-> so each shard's replicas still spread one-per-cluster across three distinct
-> failure domains; the 4th cluster adds a spare domain + capacity and does **not**
-> change the "survive losing 1 cluster" guarantee. The kustomize model is N-cluster
-> already — `render.mjs` fans out to every `[[cluster]]` block.
+> **Want a 4th platform?** The kustomize model is N-cluster already — `render.mjs`
+> fans out to every `[[cluster]]` block, so a 4th cluster adds a spare failure
+> domain + capacity and does **not** change the "survive losing 1 cluster"
+> guarantee (RF stays 3; each shard's replicas still spread one-per-cluster across
+> three distinct failure domains).
 >
-> Azure is added **node-only** (`brain = false`): the brain Raft group must stay an
-> **odd** size, so it's pinned at 3 (gcp/aws/hetzner). Brain-member clusters include
-> the [`base/components/brain`](base/components/brain) Component; node-only clusters
-> omit it. `render.mjs` enforces an odd, ≥ RF brain group.
+> Add it **node-only** (`brain = false`): the brain Raft group must stay an **odd**
+> size, so it's pinned at 3 (hetzner/vultr/civo). A commented `digitalocean` example
+> is in [`topology.toml`](topology.toml). Brain-member clusters include the
+> [`base/components/brain`](base/components/brain) Component; node-only clusters omit
+> it. `render.mjs` enforces an odd, ≥ RF brain group.
 
 ## Provisioning & testing
 
-The overlays below assume the clusters exist. Two sibling tiers stand them up and
-test the coordination API across them — see [`docs/e2e.md`](docs/e2e.md):
+The overlays below assume the clusters exist. A ladder of tiers stands them up and
+tests the coordination API across them — see [`docs/e2e.md`](docs/e2e.md):
 
-- [`terraform/`](terraform) — **Tier 2**: IaC for the real managed clusters
-  (GKE / EKS / AKS / Hetzner k3s), each behind an `enable_<cloud>` toggle.
 - [`kind/`](kind) + [`tools/kind-up.sh`](tools/kind-up.sh) — **Tier 1**: one local
   kind cluster with four zone-labeled workers simulating the failure domains, for
   free CI conformance + chaos runs.
+- [`kind/multicluster/`](kind/multicluster) — **Tier 2**: *three separate* local
+  kind clusters (hetzner/vultr/civo) wired into cross-cluster Raft groups over a
+  shared Docker network, with WAN latency + partition injection — test cross-cluster
+  consensus + failover locally, no cloud spend. (Tier 3 = add a cross-cluster CNI.)
+- [`terraform/`](terraform) — **Tier 4**: IaC for the real clusters (Hetzner
+  k3s-on-VMs / Vultr VKE / Civo managed k3s — each provider a drop-in module
+  swap), each behind an `enable_<cloud>` toggle.
 - [`fiducia-e2e`](https://github.com/fiducia-cloud/fiducia-e2e) — the shared
   Node `--test` suite (per-primitive conformance + multi-cluster fault injection)
   that runs against either tier.
@@ -257,10 +267,9 @@ test the coordination API across them — see [`docs/e2e.md`](docs/e2e.md):
 Render/apply one cluster:
 
 ```bash
-kubectl --context gcp     apply -k clusters/gcp
-kubectl --context aws     apply -k clusters/aws
 kubectl --context hetzner apply -k clusters/hetzner
-kubectl --context azure   apply -k clusters/azure
+kubectl --context vultr   apply -k clusters/vultr
+kubectl --context civo    apply -k clusters/civo
 ```
 
 For non-production GitOps, register test clusters with ArgoCD and apply
@@ -273,7 +282,7 @@ protected `fiducia-monorepo` deploy workflow from its exact submodule pins.
 
 - **Container images** at `ghcr.io/fiducia-cloud/fiducia-{node,brain,load-balance,node-sidecar}`.
 - **Cross-cluster networking** + real `FIDUCIA_PEERS` / `FIDUCIA_BRAIN_PEERS`.
-- **StorageClass** names per cluster (overlays use `standard-rwo` / `gp3` / `hcloud-volumes` — adjust to yours).
+- **StorageClass** names per cluster (overlays use `hcloud-volumes` / `vultr-block-storage-hdd` / `civo-volume` — adjust to yours).
 - Per-cluster **public LB exposure** so the edge can reach each cluster.
 
 ## Security posture
@@ -356,8 +365,9 @@ per-overlay `ipBlock` allow for that cluster's node CIDR on `:8088`/`:8090`/`:80
 
 **Cross-cluster peering** is expressed by port (not hostname/CIDR, which
 NetworkPolicy can't match against the mesh), so the peer policies are identical
-across clusters and live in `base`. The node-only overlays (azure, kind) get the
-node policies but not the brain ones.
+across clusters and live in `base`. Node-only overlays (the local `kind` cluster,
+or an optional 4th cluster added `brain = false`) get the node policies but not
+the brain ones.
 
 ## Tooling: `.cli-flags.toml` & flags-2-env
 
@@ -395,11 +405,13 @@ every overlay):
   edge `:443` ingress, otel egress, and cross-cluster peering with `kubectl
   kustomize` on every overlay.
 - **Terraform prod-hardening wired as opt-in variables** (defaults reproduce the
-  e2e baseline exactly — see **terraform prod-hardening** in
-  [`terraform/README.md`](terraform/README.md)): private VPC/subnets +
-  authorized API CIDRs on EKS, `deletion_protection` + private cluster +
-  authorized networks + network-policy on GKE, authorized API ranges +
-  network-policy on AKS, and an `hcloud_firewall` on Hetzner.
+  e2e baseline exactly — see **Prod-hardening (opt-in)** in
+  [`terraform/README.md`](terraform/README.md)): for the prod trio, an
+  `hcloud_firewall` on Hetzner (default-deny inbound except SSH/`:6443`/NodePorts;
+  Vultr VKE and Civo are managed control planes). The drop-in hyperscaler swap
+  modules keep their own knobs — private VPC/subnets + authorized API CIDRs on
+  EKS, `deletion_protection` + private cluster + network-policy on GKE, authorized
+  API ranges + network-policy on AKS.
 
 Accepted / known risks (reported, deliberately **not** auto-changed):
 
@@ -417,4 +429,4 @@ Accepted / known risks (reported, deliberately **not** auto-changed):
 
 ## Related
 
-- [`fiducia-node.rs`](https://github.com/fiducia-cloud/fiducia-node.rs) · [`fiducia-brain.rs`](https://github.com/fiducia-cloud/fiducia-brain.rs) · [`fiducia-load-balance.rs`](https://github.com/fiducia-cloud/fiducia-load-balance.rs) · [`fiducia-node-sidecar.rs`](https://github.com/fiducia-cloud/fiducia-node-sidecar.rs) · [`fiducia-edge`](https://github.com/fiducia-cloud/fiducia-edge)
+- [`fiducia-node.rs`](https://github.com/fiducia-cloud/fiducia-node.rs) · [`fiducia-brain.rs`](https://github.com/fiducia-cloud/fiducia-brain.rs) · [`fiducia-load-balance.rs`](https://github.com/fiducia-cloud/fiducia-load-balance.rs) · [`fiducia-routing.rs`](https://github.com/fiducia-cloud/fiducia-routing.rs) · [`fiducia-node-sidecar.rs`](https://github.com/fiducia-cloud/fiducia-node-sidecar.rs) · [`fiducia-edge`](https://github.com/fiducia-cloud/fiducia-edge)

@@ -1,5 +1,5 @@
 # fiducia-brain: the control plane. Runs ONE member per cluster; the three
-# members (one each in gcp/aws/3rd) form a single Raft group, so the control
+# members (one each in hetzner/vultr/civo) form a single Raft group, so the control
 # plane itself survives losing any one cluster (2/3 quorum). StatefulSet for
 # stable identity + durable placement-map storage.
 apiVersion: apps/v1
@@ -39,7 +39,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: brain
-          image: ghcr.io/fiducia-cloud/fiducia-brain:v0.1.0
+          image: ghcr.io/fiducia-cloud/fiducia-brain:v0.1.0   # tag pin — prod must pin by digest (base/README.md "Image pinning")
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -56,6 +56,16 @@ spec:
               valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
             - name: NODE_NAME
               valueFrom: { fieldRef: { fieldPath: spec.nodeName } }
+            # Globally-unique brain member id: <pod>.<cluster>. Without this the
+            # brain defaults its id to "http://localhost:8095" — the SAME value on
+            # all three members, which breaks the peers-exclude-self filter and
+            # member identity in the cross-cluster brain Raft group.
+            # FIDUCIA_CLUSTER must be an explicit env entry (not only envFrom):
+            # $(VAR) interpolation cannot see envFrom values.
+            - name: FIDUCIA_CLUSTER
+              valueFrom: { configMapKeyRef: { name: fiducia-cluster, key: FIDUCIA_CLUSTER } }
+            - name: FIDUCIA_BRAIN_ID
+              value: "$(POD_NAME).$(FIDUCIA_CLUSTER)"
             - name: PORT
               value: "8095"                # control plane: /healthz, /readyz, /v1/*
             # Peer plane: cross-cluster brain-Raft RPC (/raft/*). Brain members
@@ -64,6 +74,14 @@ spec:
             # :8095 to in-namespace. Matches the `peer` containerPort + Service port.
             - name: FIDUCIA_BRAIN_PEER_PORT
               value: "9095"
+            # Durable Raft state (term/vote/log/snapshots) MUST live on the PVC
+            # mounted at /var/lib/fiducia-brain below. Without this the brain
+            # defaults FIDUCIA_DATA_DIR to /tmp/fiducia-brain (the emptyDir), so a
+            # pod restart DROPS this member's replicated placement/scale log and it
+            # rejoins empty — exactly the durability the StatefulSet + PVC exist to
+            # provide. Mirrors the node's FIDUCIA_DATA_DIR wiring.
+            - name: FIDUCIA_DATA_DIR
+              value: "/var/lib/fiducia-brain"
             # Shared secret peer brains present (bearer) on /raft/*; the brain
             # enables Raft auth only when this is set. The Secret is required
             # (same Secret as the node/LB
@@ -93,6 +111,9 @@ spec:
           # "survive losing 1 cluster" guarantee for data shards.
           envFrom:
             - configMapRef: { name: fiducia-cluster }
+          # Gate liveness until the brain member has restored its replicated log
+          # from the PVC and can serve /healthz (see the node's startupProbe note).
+          startupProbe:   { httpGet: { path: /healthz, port: 8095 }, periodSeconds: 2, failureThreshold: 60 }
           readinessProbe: { httpGet: { path: /readyz, port: 8095 }, initialDelaySeconds: 5, periodSeconds: 10 }
           livenessProbe:  { httpGet: { path: /healthz, port: 8095 }, periodSeconds: 15 }
           resources:

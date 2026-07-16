@@ -27,9 +27,29 @@ spec:
       labels:
         app: fiducia-node
     spec:
-      # Spread node pods across zones WITHIN a cluster. Cross-CLUSTER spread of a
-      # shard's replicas is enforced by the brain (failure domain = cluster), not
-      # by k8s scheduling.
+      # Neither the node nor its sidecar calls the Kubernetes API, so don't mount a
+      # ServiceAccount token — one less credential on the cross-cluster-reachable
+      # node pod (CIS 5.1.6; defense-in-depth behind the egress NetworkPolicy).
+      automountServiceAccountToken: false
+      # ── One node pod per machine (required) ──────────────────────────────────
+      # Each node pod is a Raft member holding shard replicas; two of them on the
+      # same VM would make that VM a correlated failure domain (lose it, lose two
+      # of a shard's local replicas) and would waste the "5 machines" spread. So a
+      # REQUIRED host anti-affinity pins at most one fiducia-node per machine —
+      # node_replicas=5 therefore lands on 5 distinct machines. The single brain
+      # member per cluster is NOT in this set, so it may share a machine with a
+      # node (the deliberate "brain co-located with a node" case). To deliberately
+      # pack >1 node per machine, relax this to preferredDuringScheduling.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app: fiducia-node
+      # Then spread those per-machine pods across zones WITHIN a cluster (best
+      # effort). Cross-CLUSTER spread of a shard's replicas is enforced by the
+      # brain (failure domain = cluster), not by k8s scheduling.
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: topology.kubernetes.io/zone
@@ -49,7 +69,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: node
-          image: ghcr.io/fiducia-cloud/fiducia-node:v0.1.0
+          image: ghcr.io/fiducia-cloud/fiducia-node:v0.1.0   # tag pin — prod must pin by digest (base/README.md "Image pinning")
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -109,6 +129,11 @@ spec:
               value: "json"
           envFrom:
             - configMapRef: { name: fiducia-cluster }   # FIDUCIA_CLUSTER, FIDUCIA_SHARD_COUNT, FIDUCIA_PEERS
+          # startupProbe gates liveness/readiness until the member is up: a Raft node
+          # can replay a large log/snapshot on boot and take a while to serve
+          # /healthz; without this the 15s liveness (×3) could kill it into a restart
+          # loop. Allows up to 60×2s = 120s to start.
+          startupProbe:   { httpGet: { path: /healthz, port: 8090 }, periodSeconds: 2, failureThreshold: 60 }
           readinessProbe: { httpGet: { path: /readyz, port: 8090 }, initialDelaySeconds: 5, periodSeconds: 10 }
           livenessProbe:  { httpGet: { path: /healthz, port: 8090 }, periodSeconds: 15 }
           resources:
@@ -120,7 +145,7 @@ spec:
 
         # --- sidecar: control-plane heartbeat/metadata + logs/metrics ---
         - name: sidecar
-          image: ghcr.io/fiducia-cloud/fiducia-node-sidecar:v0.1.0
+          image: ghcr.io/fiducia-cloud/fiducia-node-sidecar:v0.1.0   # tag pin — prod must pin by digest (base/README.md "Image pinning")
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -202,4 +227,4 @@ spec:
         resources:
           requests:
             storage: 10Gi
-        # storageClassName is set per-cluster by the overlay (gcp/aws/hetzner).
+        # storageClassName is set per-cluster by the overlay (hetzner/vultr/civo).

@@ -76,3 +76,26 @@ spec:
   egress:
     - ports:
         - { protocol: TCP, port: 9095 }
+---
+# Egress for the KubeOracle (statefulset.yaml / rbac.yaml): under the namespace
+# default-deny the brain must be allowed to dial the Kubernetes API server, or
+# every oracle poll times out and the failure detector silently degrades to
+# timeouts-only. The API server is not selectable by namespace/pod labels, so
+# scope by destination port only (443 = in-cluster `kubernetes.default`
+# ClusterIP; 6443 = k3s / kubeadm apiserver) — same shape as the otel-agent's
+# rule (b) in observability/networkpolicy.yaml; kube RBAC (list pods only) is
+# the real authz. Ships only with the brain Component.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fiducia-brain-oracle-egress
+  namespace: fiducia
+spec:
+  podSelector:
+    matchLabels:
+      app: fiducia-brain
+  policyTypes: [Egress]
+  egress:
+    - ports:
+        - { protocol: TCP, port: 443 }
+        - { protocol: TCP, port: 6443 }

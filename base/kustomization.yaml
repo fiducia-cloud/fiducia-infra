@@ -20,4 +20,5 @@ resources:
   - node/pdb.yaml
   - load-balance/deployment.yaml
   - load-balance/service.yaml
+  - load-balance/pdb.yaml                # keep >=1 LB replica through drains
   - load-balance/networkpolicy.yaml     # LB edge (:8443) ingress

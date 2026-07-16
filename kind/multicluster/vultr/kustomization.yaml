@@ -1,0 +1,13 @@
+# Emulated "vultr" cloud overlay. Adds this cluster's fiducia-cluster ConfigMap
+# (identity + cross-cluster peers) on top of ../common.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: fiducia
+resources:
+  - ../common
+configMapGenerator:
+  - name: fiducia-cluster
+    envs:
+      - topology.env
+generatorOptions:
+  disableNameSuffixHash: true

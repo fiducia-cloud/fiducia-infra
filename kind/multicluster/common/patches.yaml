@@ -1,0 +1,51 @@
+# Local-emulation patches on the base node + brain StatefulSets:
+#   * node -> 1 replica: ONE Raft member per cluster, so the cross-cluster group is
+#     a clean 3 (one per cloud), each individually addressable via its NodePort.
+#     (Prod runs 5 nodes/cluster; the emulation reduces to 1 to keep the cross-
+#     cluster group directly addressable and three clusters light — see README.)
+#   * kind storage class `standard` (rancher local-path, shipped with kind).
+#   * tolerate the control-plane taint so pods run on the single-node clusters.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fiducia-node
+  namespace: fiducia
+spec:
+  replicas: 1
+  template:
+    spec:
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 10Gi
+        storageClassName: standard
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fiducia-brain
+  namespace: fiducia
+spec:
+  template:
+    spec:
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 2Gi
+        storageClassName: standard

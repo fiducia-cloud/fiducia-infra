@@ -5,11 +5,15 @@ metadata:
   name: fiducia-node
   namespace: fiducia
 spec:
-  replicas: 3
+  replicas: 5
   volumeClaimTemplates:
     - metadata:
         name: data
       spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 10Gi
         storageClassName: hcloud-volumes
 ---
 apiVersion: apps/v1
@@ -22,4 +26,8 @@ spec:
     - metadata:
         name: data
       spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 2Gi
         storageClassName: hcloud-volumes

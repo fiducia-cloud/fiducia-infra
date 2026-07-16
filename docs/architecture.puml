@@ -1,0 +1,194 @@
+' fiducia multi-cluster architecture — UML.
+'
+' The same system as docs/multi-cluster-architecture.md, expressed as UML so it
+' renders in PlantUML-aware tooling. Three diagrams, one per @startuml block:
+'   1. COMPONENT   — services, their ports, and the render/GitOps pipeline
+'   2. DEPLOYMENT  — pods on machines across the three clouds (2-of-3 quorum)
+'   3. SEQUENCE    — the cross-cluster write/commit path
+'
+' Render:  plantuml docs/architecture.puml        (-> architecture*.png)
+' Values (clusters, ports, RF) mirror ../topology.toml — the source of truth.
+
+' ─────────────────────────────────────────────────────────────────────────────
+' 1. COMPONENT DIAGRAM
+' ─────────────────────────────────────────────────────────────────────────────
+@startuml architecture-component
+title fiducia — component & port view (per cluster + shared control)
+skinparam componentStyle rectangle
+skinparam shadowing false
+left to right direction
+
+actor "Client" as client
+
+component "fiducia-edge\n(anycast / Cloudflare)" as edge
+
+package "one Kubernetes cluster (hetzner | vultr | civo)" {
+  component "fiducia-load-balance\n(Deployment, stateless)\nkey-aware router + auth/idempotency" as lb
+  component "fiducia-node\n(StatefulSet, 5 pods)" as fnode
+  component "fiducia-node-sidecar\n(container in node pod)" as sidecar
+  component "fiducia-brain\n(StatefulSet, 1 pod)" as brain
+}
+
+' Shared library — compiled INTO the lb + node images, not a deployed pod.
+component "fiducia-routing\n(library — linked in, 0 pods)" as routing <<library>>
+
+interface "shard Raft\n:9090" as raft9090
+interface "brain Raft\n:9095" as raft9095
+interface "node data\n:8090" as data8090
+interface "brain API\n:8095" as api8095
+
+client --> edge : coordination API
+edge --> lb : steer to a HEALTHY cluster (:443)
+lb --> data8090 : key -> shard -> leader
+data8090 - fnode
+brain --> lb : /v1/placement\n(shard->leader cache seed)
+lb ..> routing : key -> shard
+fnode ..> routing : key -> shard
+fnode --> raft9090 : cross-cluster replicate\n(RF 3, one replica/cluster)
+sidecar --> api8095 : heartbeat + failure domain\n(FIDUCIA_REGION)
+api8095 - brain
+brain --> raft9095 : cross-cluster placement Raft\n(3 members, one/cluster)
+
+note right of routing
+  The FROZEN key->shard hash (fnv1a % shard_count).
+  lb and node link the SAME crate, so the router and
+  the storage layer can never disagree on where a key
+  lives. Compiled in like fiducia-interfaces -> nothing
+  to deploy.
+end note
+
+note bottom of fnode
+  Required podAntiAffinity on kubernetes.io/hostname
+  => 1 node pod per machine (>= 5 machines/cluster).
+  Brain has no such rule => may co-locate with a node.
+  Leaders are ELECTED per shard / per brain group,
+  never declared.
+end note
+
+package "GitOps pipeline (declarative)" {
+  artifact "topology.toml\n(single source of truth)" as topo
+  component "tools/render.mjs\n(validate + fan out)" as render
+  artifact "clusters/NAME/topology.env\n+ patches.yaml\n+ edge-regions.json" as generated
+  component "ArgoCD ApplicationSet\n(cluster generator)" as argo
+  topo --> render : node tools/render.mjs
+  render --> generated
+  generated --> argo
+  argo --> fnode : sync overlay
+  generated ..> edge : FIDUCIA_REGIONS
+}
+
+package "Terraform (provider = a swap)" {
+  interface "module interface\ncluster_name, region, node_count\n-> name, endpoint,\nca_certificate, kubeconfig_hint" as tfiface
+  component "modules/hetzner" as tfh
+  component "modules/vultr" as tfv
+  component "modules/civo" as tfc
+  component "modules/{digitalocean,\nscaleway, akamai, gke/eks/aks}\n(drop-in)" as tfx
+  tfh ..|> tfiface
+  tfv ..|> tfiface
+  tfc ..|> tfiface
+  tfx ..|> tfiface
+}
+@enduml
+
+' ─────────────────────────────────────────────────────────────────────────────
+' 2. DEPLOYMENT DIAGRAM
+' ─────────────────────────────────────────────────────────────────────────────
+@startuml architecture-deployment
+title fiducia — deployment across 3 clouds (2-of-3 quorum)
+skinparam shadowing false
+skinparam nodesep 12
+skinparam ranksep 30
+
+cloud "fiducia-edge\nhealth-check + steer" as edge
+
+node "Hetzner cluster\neu-central" as hz {
+  artifact "LB :443" as hzlb
+  node "machine 1" as hzm1 {
+    component "node pod 1\n(+ sidecar)" as hzn1
+    component "brain member\n(co-located)" as hzb
+  }
+  node "machines 2..5" as hzm2 {
+    component "node pods 2..5\n(1 per machine)" as hzn2
+  }
+}
+
+node "Vultr cluster\nfra" as vu {
+  artifact "LB :443" as vulb
+  node "machine 1" as vum1 {
+    component "brain member" as vub
+    component "node pod 1\n(+ sidecar)" as vun1
+  }
+  node "machines 2..5" as vum2 {
+    component "node pods 2..5\n(1 per machine)" as vun2
+  }
+}
+
+node "Civo cluster\nlon1" as ci {
+  artifact "LB :443" as cilb
+  node "machine 1" as cim1 {
+    component "brain member" as cib
+    component "node pod 1\n(+ sidecar)" as cin1
+  }
+  node "machines 2..5" as cim2 {
+    component "node pods 2..5\n(1 per machine)" as cin2
+  }
+}
+
+edge --> hzlb
+edge --> vulb
+edge --> cilb
+
+hzb <--> vub : brain Raft :9095
+vub <--> cib : brain Raft :9095
+cib <--> hzb : brain Raft :9095
+
+hzn1 <--> vun1 : shard Raft :9090
+vun1 <--> cin1 : shard Raft :9090
+cin1 <--> hzn1 : shard Raft :9090
+
+note as N
+  RF = 3, one replica per cluster, over Cilium Cluster Mesh.
+  Any ONE cluster down => every shard + the brain keep 2/3 => still serving.
+  Each cluster also runs fiducia-load-balance (stateless Deployment, ~2 pods).
+  Total: 3 brain + 15 node + ~6 LB pods across >= 15 machines.
+  fiducia-routing is a LIBRARY compiled into the node + LB images -> 0 pods.
+end note
+N .. vu
+@enduml
+
+' ─────────────────────────────────────────────────────────────────────────────
+' 3. SEQUENCE DIAGRAM — cross-cluster write/commit
+' ─────────────────────────────────────────────────────────────────────────────
+@startuml architecture-write-path
+title fiducia — cross-cluster write path (commit = 2nd-fastest cluster RTT)
+skinparam shadowing false
+autonumber
+
+actor Client
+participant "fiducia-edge" as Edge
+participant "fiducia-load-balance\n(key-aware router)" as LB
+participant "fiducia-brain" as Brain
+participant "shard leader\n(cluster A)" as Leader
+participant "follower\n(cluster B)" as F1
+participant "follower\n(cluster C)" as F2
+
+Brain --> LB : /v1/placement (shard->leader map; async, cached)
+Client -> Edge : coordination API request (key)
+Edge -> LB : route to a HEALTHY cluster (:443)
+note right of LB : authenticate (API key / JWT), idempotency;\nkey -> shard via fiducia-routing (fnv1a % shard_count)
+LB -> Leader : forward to the shard leader (:8090)
+note right of LB : backstop: follower NotLeader (307 + hint)\n=> refresh cache, retry named leader
+
+group Raft replicate over Cluster Mesh (:9090)
+  Leader -> F1 : AppendEntries
+  Leader -> F2 : AppendEntries
+  F1 --> Leader : ack
+end
+note over Leader : commit once a MAJORITY (2/3) acks\n= leader + the 2nd-fastest cluster
+
+Leader --> LB : result
+LB --> Client : result
+
+== if cluster A is partitioned ==
+note over Leader : check_quorum => ex-leader steps down\nand refuses stale linearizable reads;\nB & C elect a new leader (2/3 quorum)
+@enduml
