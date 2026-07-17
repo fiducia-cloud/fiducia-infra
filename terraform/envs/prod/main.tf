@@ -45,15 +45,6 @@ locals {
 
 # ── hetzner (brain member) — k3s on raw VMs ──────────────────────────────────
 module "hetzner" {
-<<<<<<< HEAD
-  source                 = "../../modules/hetzner"
-  count                  = var.enable_hetzner ? 1 : 0
-  cluster_name           = "fiducia-prod-hetzner"
-  location               = "nbg1"
-  network_zone           = "eu-central"
-  node_count             = var.node_count
-  server_type            = var.hetzner_server_type
-=======
   source       = "../../modules/hetzner"
   count        = var.enable_hetzner ? 1 : 0
   cluster_name = "fiducia-prod-hetzner"
@@ -62,8 +53,8 @@ module "hetzner" {
   # The k3s control plane is schedulable and counts as one of the node_count
   # machines, so agents = node_count - 1 (node_count = 1 ⇒ a single server).
   node_count             = var.node_count - 1
+  server_type            = var.hetzner_server_type
   cni                    = "cilium" # topology connectivity = clustermesh needs Cilium; install it before first use (see module NOTE)
->>>>>>> origin/main
   ssh_public_key         = var.hetzner_ssh_public_key
   ssh_key_name           = var.hetzner_ssh_key_name
   labels                 = local.labels
