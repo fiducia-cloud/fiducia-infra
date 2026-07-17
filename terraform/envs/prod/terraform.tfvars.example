@@ -15,8 +15,11 @@ enable_civo    = true
 # node_replicas). Full design = 5.
 node_count = 1
 
-# Required when enable_hetzner = true (contents of e.g. ~/.ssh/id_ed25519.pub):
+# When enable_hetzner = true, set EXACTLY ONE of these: key material to upload
+# (contents of e.g. ~/.ssh/id_ed25519.pub), or the name of a key already
+# registered in the hcloud project (Hetzner rejects duplicate fingerprints):
 hetzner_ssh_public_key = "ssh-ed25519 AAAA... you@host"
+# hetzner_ssh_key_name = "operator-key"
 
 # Source CIDRs allowed to reach SSH / k8s API / NodePorts. World-open is
 # rejected by the modules — set your operator IP + trusted mesh/edge ranges.
