@@ -63,6 +63,7 @@ module "vultr" {
   cluster_name = "fiducia-prod-vultr"
   region       = "fra"
   node_count   = var.node_count
+  plan         = var.vultr_plan
   labels       = local.labels
 }
 
