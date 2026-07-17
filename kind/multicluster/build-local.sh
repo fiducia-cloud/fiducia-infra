@@ -20,7 +20,7 @@ for s in "${SERVICES[@]}"; do
   crate="fiducia-${s}.rs"
   image="ghcr.io/fiducia-cloud/fiducia-${s}:v0.1.0"
   [[ -d "$WORKSPACE/$crate" ]] || die "no such crate dir: $WORKSPACE/$crate (services: node brain node-sidecar load-balance)"
-  log "building $image from LOCAL $crate…"
+  log "building $image from LOCAL ${crate}…"
   docker build -f "$HERE/Dockerfile.local" --build-arg CRATE="$crate" -t "$image" "$WORKSPACE"
   ok "$image"
   images+=("$image")

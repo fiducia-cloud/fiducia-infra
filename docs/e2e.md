@@ -49,7 +49,7 @@ and recovery the way they behave across clouds — without cloud spend.
 ```sh
 cd kind/multicluster
 ./up.sh                     # 3 kind clusters, deploy, wire cross-cluster peers
-./test/run.sh --scenarios   # leadership + quorum, then latency + partition/heal
+./test/run.sh --scenarios   # leadership + quorum, latency, partition/heal, full provider pause
 ./netem.sh eu               # ~20ms pairwise RTT; ./partition.sh isolate civo; ./down.sh
 ```
 

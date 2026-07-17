@@ -172,6 +172,10 @@ spec:
               value: "http://localhost:8090"
             - name: FIDUCIA_NODE_ADDRESS
               value: "http://$(POD_IP):8090"
+            - name: FIDUCIA_EXPORT_TARGET
+              value: "node"
+            - name: FIDUCIA_SIDECAR_ROLE
+              value: "full"
             # Talk to the LOCAL brain member; brain members form one Raft group
             # across clusters and forward to the brain leader.
             - name: FIDUCIA_BRAIN_URL
