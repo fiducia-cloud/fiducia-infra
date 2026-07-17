@@ -3,9 +3,12 @@
 # names/regions mirror topology.toml so the deployed clusters line up with the
 # kustomize overlays in ../../clusters.
 #
-# node_count defaults to 5: topology node_replicas = 5 with a required
-# one-node-pod-per-machine anti-affinity ⇒ each cluster needs >= 5 worker
-# machines. The single brain member per cluster may share a machine with a node.
+# node_count defaults to 1 (STARTER TIER, mirrors topology node_replicas = 1):
+# one big worker machine per cloud carrying node + brain + LB + observability.
+# Hetzner is k3s on raw VMs, so its cluster is node_count workers + 1 small
+# control-plane VM; Vultr (VKE) and Civo control planes are provider-managed.
+# Full design = node_count 5 (one-node-pod-per-machine anti-affinity ⇒ >= 5
+# workers); the brain member may share a machine with a node.
 #
 # ── Swapping a provider ──────────────────────────────────────────────────────
 # Every module shares one interface (cluster_name/region/node_count → name/
