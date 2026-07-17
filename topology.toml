@@ -59,17 +59,26 @@ election_jitter_ms = 600
 # DNS (e.g. fiducia-node.fiducia.svc.clusterset.local:9090); otherwise real
 # DNS/IPs (LoadBalancer addresses or VPN addresses).
 #
-# node_replicas = 5 with one pod per machine (enforced by a required host
-# anti-affinity in base/node) ⇒ each cluster needs >= 5 worker machines. The
-# single brain member per cluster MAY share a machine with a node (it has no
-# node anti-affinity), so 5 machines/cluster is the floor, not 6.
+# node_replicas × one pod per machine (enforced by a required host
+# anti-affinity in base/node) ⇒ each cluster needs >= node_replicas worker
+# machines. The single brain member per cluster MAY share a machine with a node
+# (it has no node anti-affinity), so node_replicas machines/cluster is the
+# floor, not +1.
+#
+# STARTER TIER (current): node_replicas = 1 — one worker machine per cloud.
+# Cross-cloud redundancy is unchanged (RF 3, one replica per cluster, survives
+# losing any one cloud); what is given up is *intra*-cluster redundancy: a
+# machine loss = that whole failure domain down until the VM heals. Size the
+# single machine to carry node + brain + 2×LB + observability (>= 4 vCPU /
+# 16 GB, 8 vCPU preferred). Scale back to the full design by setting
+# node_replicas = 5 here + node_count = 5 in terraform/envs/prod, re-render.
 
 [[cluster]]
 name = "hetzner"
 platform = "hetzner"
 region = "eu-central"
 storage_class = "hcloud-volumes"
-node_replicas = 5
+node_replicas = 1
 brain_endpoint = "brain.hetzner.fiducia.cloud:9095"
 node_peer_endpoint = "node.hetzner.fiducia.cloud:9090"
 lb_endpoint = "https://hetzner.lb.fiducia.cloud"
@@ -79,7 +88,7 @@ name = "vultr"
 platform = "vultr"
 region = "fra"
 storage_class = "vultr-block-storage-hdd"
-node_replicas = 5
+node_replicas = 1
 brain_endpoint = "brain.vultr.fiducia.cloud:9095"
 node_peer_endpoint = "node.vultr.fiducia.cloud:9090"
 lb_endpoint = "https://vultr.lb.fiducia.cloud"
@@ -89,7 +98,7 @@ name = "civo"
 platform = "civo"
 region = "lon1"
 storage_class = "civo-volume"
-node_replicas = 5
+node_replicas = 1
 brain_endpoint = "brain.civo.fiducia.cloud:9095"
 node_peer_endpoint = "node.civo.fiducia.cloud:9090"
 lb_endpoint = "https://civo.lb.fiducia.cloud"
@@ -107,7 +116,7 @@ lb_endpoint = "https://civo.lb.fiducia.cloud"
 # platform = "digitalocean"
 # region = "fra1"
 # storage_class = "do-block-storage"
-# node_replicas = 5
+# node_replicas = 1
 # brain = false
 # brain_endpoint = "brain.digitalocean.fiducia.cloud:9095"
 # node_peer_endpoint = "node.digitalocean.fiducia.cloud:9090"

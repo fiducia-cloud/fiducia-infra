@@ -3,9 +3,12 @@
 # names/regions mirror topology.toml so the deployed clusters line up with the
 # kustomize overlays in ../../clusters.
 #
-# node_count defaults to 5: topology node_replicas = 5 with a required
-# one-node-pod-per-machine anti-affinity ⇒ each cluster needs >= 5 worker
-# machines. The single brain member per cluster may share a machine with a node.
+# node_count defaults to 1 (STARTER TIER, mirrors topology node_replicas = 1):
+# one big worker machine per cloud carrying node + brain + LB + observability.
+# Hetzner is k3s on raw VMs, so its cluster is node_count workers + 1 small
+# control-plane VM; Vultr (VKE) and Civo control planes are provider-managed.
+# Full design = node_count 5 (one-node-pod-per-machine anti-affinity ⇒ >= 5
+# workers); the brain member may share a machine with a node.
 #
 # ── Swapping a provider ──────────────────────────────────────────────────────
 # Every module shares one interface (cluster_name/region/node_count → name/
@@ -46,6 +49,7 @@ module "hetzner" {
   location               = "nbg1"
   network_zone           = "eu-central"
   node_count             = var.node_count
+  server_type            = var.hetzner_server_type
   ssh_public_key         = var.hetzner_ssh_public_key
   labels                 = local.labels
   enable_firewall        = var.hetzner_enable_firewall
@@ -59,6 +63,7 @@ module "vultr" {
   cluster_name = "fiducia-prod-vultr"
   region       = "fra"
   node_count   = var.node_count
+  plan         = var.vultr_plan
   labels       = local.labels
 }
 
@@ -69,6 +74,7 @@ module "civo" {
   cluster_name  = "fiducia-prod-civo"
   region        = "LON1"
   node_count    = var.node_count
+  node_size     = var.civo_node_size
   cni           = "cilium"
   allowed_cidrs = var.civo_allowed_cidrs
   labels        = local.labels

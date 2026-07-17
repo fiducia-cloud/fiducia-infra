@@ -5,7 +5,7 @@ metadata:
   name: fiducia-node
   namespace: fiducia
 spec:
-  replicas: 5
+  replicas: 1
   volumeClaimTemplates:
     - metadata:
         name: data

@@ -1,0 +1,31 @@
+# Copy to terraform.tfvars and fill in. Credentials are NOT set here — use each
+# provider's standard env auth before `terraform plan/apply`:
+#   Hetzner: export HCLOUD_TOKEN=...    (existing account; make a NEW project
+#            "fiducia-prod" in the console and issue the token there, so the
+#            fiducia cluster is isolated from the pre-existing k8s cluster)
+#   Vultr:   export VULTR_API_KEY=...   (Account → API; also allowlist your IP
+#            for API access in the same screen)
+#   Civo:    export CIVO_TOKEN=...      (Profile → Security → API key)
+
+enable_hetzner = true
+enable_vultr   = true
+enable_civo    = true
+
+# STARTER TIER: 1 worker machine per cloud (must equal topology.toml
+# node_replicas). Full design = 5.
+node_count = 1
+
+# Required when enable_hetzner = true (contents of e.g. ~/.ssh/id_ed25519.pub):
+hetzner_ssh_public_key = "ssh-ed25519 AAAA... you@host"
+
+# Source CIDRs allowed to reach SSH / k8s API / NodePorts. World-open is
+# rejected by the modules — set your operator IP + trusted mesh/edge ranges.
+hetzner_firewall_allowed_cidrs = ["203.0.113.10/32"]
+civo_allowed_cidrs             = ["203.0.113.10/32"]
+
+# Starter-tier machine sizes (single machine carries the whole per-cluster
+# stack). Verify ids against live catalogs at apply time:
+#   hcloud server-type list / vultr-cli plans list / civo size list
+# hetzner_server_type = "cx42"
+# vultr_plan          = "vc2-6c-16gb"
+# civo_node_size      = "g4s.kube.xlarge"
