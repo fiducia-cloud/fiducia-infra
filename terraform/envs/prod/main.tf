@@ -74,6 +74,7 @@ module "civo" {
   cluster_name  = "fiducia-prod-civo"
   region        = "LON1"
   node_count    = var.node_count
+  node_size     = var.civo_node_size
   cni           = "cilium"
   allowed_cidrs = var.civo_allowed_cidrs
   labels        = local.labels
