@@ -3,9 +3,12 @@
 # names/regions mirror topology.toml so the deployed clusters line up with the
 # kustomize overlays in ../../clusters.
 #
-# node_count defaults to 5: topology node_replicas = 5 with a required
-# one-node-pod-per-machine anti-affinity ⇒ each cluster needs >= 5 worker
-# machines. The single brain member per cluster may share a machine with a node.
+# node_count defaults to 1 — the single-VM-per-cloud bootstrap (topology
+# node_replicas = 1): one machine per cluster runs node + brain + load-balance
+# + otel together. The one-node-pod-per-machine anti-affinity means node_count
+# must track topology node_replicas when scaling up. On hetzner the schedulable
+# k3s control plane counts as that machine (agents = node_count - 1); vultr and
+# civo have provider-managed control planes, so node_count is the VM count.
 #
 # ── Swapping a provider ──────────────────────────────────────────────────────
 # Every module shares one interface (cluster_name/region/node_count → name/
@@ -40,13 +43,17 @@ locals {
 
 # ── hetzner (brain member) — k3s on raw VMs ──────────────────────────────────
 module "hetzner" {
-  source                 = "../../modules/hetzner"
-  count                  = var.enable_hetzner ? 1 : 0
-  cluster_name           = "fiducia-prod-hetzner"
-  location               = "nbg1"
-  network_zone           = "eu-central"
-  node_count             = var.node_count
+  source       = "../../modules/hetzner"
+  count        = var.enable_hetzner ? 1 : 0
+  cluster_name = "fiducia-prod-hetzner"
+  location     = "nbg1"
+  network_zone = "eu-central"
+  # The k3s control plane is schedulable and counts as one of the node_count
+  # machines, so agents = node_count - 1 (node_count = 1 ⇒ a single server).
+  node_count             = var.node_count - 1
+  cni                    = "cilium" # topology connectivity = clustermesh needs Cilium; install it before first use (see module NOTE)
   ssh_public_key         = var.hetzner_ssh_public_key
+  ssh_key_name           = var.hetzner_ssh_key_name
   labels                 = local.labels
   enable_firewall        = var.hetzner_enable_firewall
   firewall_allowed_cidrs = var.hetzner_firewall_allowed_cidrs

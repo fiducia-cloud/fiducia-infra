@@ -12,7 +12,7 @@ variable "region" {
 variable "node_count" {
   type        = number
   default     = 5
-  description = "Worker nodes in the Civo pool. Must be >= topology node_replicas (5) so the one-node-pod-per-machine anti-affinity can schedule."
+  description = "Worker nodes in the Civo pool. Must be >= topology node_replicas so the one-node-pod-per-machine anti-affinity can schedule (prod bootstrap: 1)."
 }
 
 variable "node_size" {

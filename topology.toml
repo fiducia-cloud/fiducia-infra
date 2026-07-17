@@ -59,17 +59,20 @@ election_jitter_ms = 600
 # DNS (e.g. fiducia-node.fiducia.svc.clusterset.local:9090); otherwise real
 # DNS/IPs (LoadBalancer addresses or VPN addresses).
 #
-# node_replicas = 5 with one pod per machine (enforced by a required host
-# anti-affinity in base/node) ⇒ each cluster needs >= 5 worker machines. The
-# single brain member per cluster MAY share a machine with a node (it has no
-# node anti-affinity), so 5 machines/cluster is the floor, not 6.
+# node_replicas = 1 (single-VM bootstrap): each cluster is ONE machine running
+# the node pod, the brain member, the load-balancer and the otel agent together.
+# Quorum math is unchanged — RF=3 with one replica per cluster; losing any one
+# cluster keeps a 2/3 majority. What this trades away is intra-cluster
+# redundancy/capacity only. Scale-up path: raise node_replicas here and the
+# terraform env's node_count to match (one node pod per machine is enforced by
+# a required host anti-affinity in base/node), then re-render + re-apply.
 
 [[cluster]]
 name = "hetzner"
 platform = "hetzner"
 region = "eu-central"
 storage_class = "hcloud-volumes"
-node_replicas = 5
+node_replicas = 1
 brain_endpoint = "brain.hetzner.fiducia.cloud:9095"
 node_peer_endpoint = "node.hetzner.fiducia.cloud:9090"
 lb_endpoint = "https://hetzner.lb.fiducia.cloud"
@@ -79,7 +82,7 @@ name = "vultr"
 platform = "vultr"
 region = "fra"
 storage_class = "vultr-block-storage-hdd"
-node_replicas = 5
+node_replicas = 1
 brain_endpoint = "brain.vultr.fiducia.cloud:9095"
 node_peer_endpoint = "node.vultr.fiducia.cloud:9090"
 lb_endpoint = "https://vultr.lb.fiducia.cloud"
@@ -89,7 +92,7 @@ name = "civo"
 platform = "civo"
 region = "lon1"
 storage_class = "civo-volume"
-node_replicas = 5
+node_replicas = 1
 brain_endpoint = "brain.civo.fiducia.cloud:9095"
 node_peer_endpoint = "node.civo.fiducia.cloud:9090"
 lb_endpoint = "https://civo.lb.fiducia.cloud"
@@ -107,7 +110,7 @@ lb_endpoint = "https://civo.lb.fiducia.cloud"
 # platform = "digitalocean"
 # region = "fra1"
 # storage_class = "do-block-storage"
-# node_replicas = 5
+# node_replicas = 1
 # brain = false
 # brain_endpoint = "brain.digitalocean.fiducia.cloud:9095"
 # node_peer_endpoint = "node.digitalocean.fiducia.cloud:9090"
