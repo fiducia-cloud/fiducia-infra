@@ -49,6 +49,7 @@ module "hetzner" {
   location               = "nbg1"
   network_zone           = "eu-central"
   node_count             = var.node_count
+  server_type            = var.hetzner_server_type
   ssh_public_key         = var.hetzner_ssh_public_key
   labels                 = local.labels
   enable_firewall        = var.hetzner_enable_firewall
