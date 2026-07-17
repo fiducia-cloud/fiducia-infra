@@ -65,13 +65,15 @@ election_jitter_ms = 600
 # (it has no node anti-affinity), so node_replicas machines/cluster is the
 # floor, not +1.
 #
-# STARTER TIER (current): node_replicas = 1 — one worker machine per cloud.
-# Cross-cloud redundancy is unchanged (RF 3, one replica per cluster, survives
-# losing any one cloud); what is given up is *intra*-cluster redundancy: a
-# machine loss = that whole failure domain down until the VM heals. Size the
-# single machine to carry node + brain + 2×LB + observability (>= 4 vCPU /
-# 16 GB, 8 vCPU preferred). Scale back to the full design by setting
-# node_replicas = 5 here + node_count = 5 in terraform/envs/prod, re-render.
+# node_replicas = 1 (current — single-VM starter tier): each cluster is ONE
+# machine running the node pod, the brain member, the load-balancer and the
+# otel agent together. Quorum math is unchanged — RF=3 with one replica per
+# cluster; losing any one cluster keeps a 2/3 majority. What this trades away
+# is intra-cluster redundancy/capacity only: a machine loss = that whole
+# failure domain down until the VM heals. Size the single machine for the full
+# stack (>= 4 vCPU / 16 GB, 8 vCPU preferred — see the machine-size variables
+# in terraform/envs/prod). Scale-up path: raise node_replicas here and the
+# terraform env's node_count to match, then re-render + re-apply.
 
 [[cluster]]
 name = "hetzner"

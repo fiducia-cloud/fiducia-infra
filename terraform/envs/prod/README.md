@@ -8,10 +8,14 @@ Instantiates the three failure domains from `../../topology.toml`:
 | vultr | `../../modules/vultr` | managed VKE | yes |
 | civo | `../../modules/civo` | managed k3s (Cilium CNI) | yes |
 
-Each provisions **5 worker machines** (`node_count = 5`) so the required
-one-node-pod-per-machine anti-affinity places all five `fiducia-node` pods on
-distinct machines. The single `fiducia-brain` member per cluster may co-locate
-with a node.
+Each provisions **one machine** (`node_count = 1`, the single-VM-per-cloud
+bootstrap matching topology `node_replicas = 1`): that machine runs the
+`fiducia-node` pod, the `fiducia-brain` member, `fiducia-load-balance` and the
+otel agent together. On hetzner the schedulable k3s control plane *is* the
+machine (agents = `node_count - 1`); vultr/civo control planes are
+provider-managed. To scale a cluster out, raise `node_count` and topology
+`node_replicas` together — the required one-node-pod-per-machine anti-affinity
+places each `fiducia-node` pod on its own machine.
 
 ## Apply
 

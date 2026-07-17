@@ -17,11 +17,11 @@ variable "enable_civo" {
 variable "node_count" {
   type        = number
   default     = 1
-  description = "Worker machines per cluster. Must be >= topology.toml node_replicas (currently 1 — starter tier, one big machine per cloud) so the required one-node-pod-per-machine anti-affinity schedules all node pods. Full design = 5; keep this in lockstep with topology.toml."
+  description = "Schedulable machines per cluster. Must be >= topology node_replicas so the required one-node-pod-per-machine anti-affinity schedules all node pods. Default 1 = the single-VM-per-cloud bootstrap (topology node_replicas = 1); on hetzner the schedulable k3s control plane is that machine (agents = node_count - 1). Full design = 5; keep this in lockstep with topology.toml."
 
   validation {
     condition     = var.node_count >= 1
-    error_message = "node_count must be >= topology node_replicas (currently 1; one node pod per machine)."
+    error_message = "node_count must be >= 1 (and >= topology.toml node_replicas, one node pod per machine)."
   }
 }
 
@@ -49,7 +49,13 @@ variable "civo_node_size" {
 variable "hetzner_ssh_public_key" {
   type        = string
   default     = ""
-  description = "SSH public key material (required when enable_hetzner = true; enforced by a precondition in modules/hetzner so it fails clearly instead of sending an empty key to the provider)."
+  description = "SSH public key material to upload (one of this or hetzner_ssh_key_name is required when enable_hetzner = true; enforced by a precondition in modules/hetzner)."
+}
+
+variable "hetzner_ssh_key_name" {
+  type        = string
+  default     = ""
+  description = "Name of an ssh key ALREADY registered in the hcloud project to authorize instead of uploading hetzner_ssh_public_key (Hetzner rejects duplicate fingerprints, so use this when the operator key is already registered)."
 }
 
 variable "civo_allowed_cidrs" {
