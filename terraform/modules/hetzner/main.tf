@@ -36,16 +36,30 @@ resource "random_password" "k3s_agent_token" {
   special = false
 }
 
+# Either reuse an already-registered project key (ssh_key_name) or upload the
+# given material. Hetzner rejects uploading a key whose fingerprint already
+# exists in the project, so reuse is the path when the operator's key is
+# registered (e.g. by another cluster in the same project).
+data "hcloud_ssh_key" "existing" {
+  count = var.ssh_key_name != "" ? 1 : 0
+  name  = var.ssh_key_name
+}
+
 resource "hcloud_ssh_key" "this" {
+  count      = var.ssh_key_name == "" ? 1 : 0
   name       = "${var.cluster_name}-key"
   public_key = var.ssh_public_key
 
   lifecycle {
     precondition {
       condition     = length(trimspace(var.ssh_public_key)) > 0
-      error_message = "ssh_public_key must be non-empty (needed to fetch the kubeconfig and manage the cluster)."
+      error_message = "Set ssh_public_key (key material to upload) or ssh_key_name (existing project key) — needed to fetch the kubeconfig and manage the cluster."
     }
   }
+}
+
+locals {
+  ssh_key_ids = var.ssh_key_name != "" ? [data.hcloud_ssh_key.existing[0].id] : [hcloud_ssh_key.this[0].id]
 }
 
 resource "hcloud_network" "this" {
@@ -109,7 +123,7 @@ resource "hcloud_server" "control_plane" {
   server_type  = var.server_type
   image        = "ubuntu-24.04"
   location     = var.location
-  ssh_keys     = [hcloud_ssh_key.this.id]
+  ssh_keys     = local.ssh_key_ids
   labels       = var.labels
   firewall_ids = var.enable_firewall ? [hcloud_firewall.this[0].id] : []
 
@@ -119,14 +133,15 @@ resource "hcloud_server" "control_plane" {
   # comes from Hetzner's metadata service (169.254.169.254), not a third-party
   # `curl ifconfig.me` whose failure would silently produce a cert the kubeconfig
   # can't verify. Agents get a SEPARATE token (--agent-token).
-  # NOTE: this installs the default flannel CNI. The prod topology's Cluster Mesh
-  # needs Cilium — add `--flannel-backend=none --disable-network-policy` here and a
-  # Cilium install step before using this cluster as a mesh member (see README).
+  # NOTE: var.cni = "flannel" (default) installs k3s's default flannel CNI.
+  # The prod topology's Cluster Mesh needs Cilium — var.cni = "cilium" starts the
+  # server with --flannel-backend=none --disable-network-policy; run
+  # `cilium install` against the cluster afterwards (nodes are NotReady until then).
   user_data = <<-EOF
     #cloud-config
     runcmd:
       - PUBIP=$(curl -sf http://169.254.169.254/hetzner/v1/metadata/public-ipv4)
-      - curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="${var.k8s_version}" INSTALL_K3S_EXEC="server --disable traefik --tls-san $PUBIP --token ${random_password.k3s_token.result} --agent-token ${random_password.k3s_agent_token.result}" sh -
+      - curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="${var.k8s_version}" INSTALL_K3S_EXEC="server --disable traefik --tls-san $PUBIP --token ${random_password.k3s_token.result} --agent-token ${random_password.k3s_agent_token.result}${var.cni == "cilium" ? " --flannel-backend=none --disable-network-policy" : ""}" sh -
   EOF
 
   network {
@@ -142,7 +157,7 @@ resource "hcloud_server" "agent" {
   server_type  = var.server_type
   image        = "ubuntu-24.04"
   location     = var.location
-  ssh_keys     = [hcloud_ssh_key.this.id]
+  ssh_keys     = local.ssh_key_ids
   labels       = var.labels
   firewall_ids = var.enable_firewall ? [hcloud_firewall.this[0].id] : []
 

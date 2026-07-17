@@ -23,8 +23,8 @@ variable "node_count" {
 
 variable "server_type" {
   type        = string
-  default     = "cx32"
-  description = "hcloud server type for control-plane + agents (e2e-grade default)."
+  default     = "cx33"
+  description = "hcloud server type for control-plane + agents (4 vCPU / 8 GB shared x86; cx32 was retired from the hcloud catalog)."
 }
 
 variable "k8s_version" {
@@ -33,9 +33,27 @@ variable "k8s_version" {
   description = "Pinned k3s version (INSTALL_K3S_VERSION) for control-plane + agents. Pin it so nodes provisioned at different times don't drift to a different 'latest'. See https://github.com/k3s-io/k3s/releases."
 }
 
+variable "cni" {
+  type        = string
+  default     = "flannel"
+  description = "CNI baseline. \"flannel\" keeps k3s's default (e2e behavior). \"cilium\" starts k3s with --flannel-backend=none --disable-network-policy so Cilium can be installed — required for the prod topology's Cluster Mesh. NOTE: with \"cilium\" the nodes stay NotReady until `cilium install` runs against the cluster."
+
+  validation {
+    condition     = contains(["flannel", "cilium"], var.cni)
+    error_message = "cni must be \"flannel\" or \"cilium\"."
+  }
+}
+
 variable "ssh_public_key" {
   type        = string
-  description = "SSH public key material authorized on the servers (also needed to fetch the kubeconfig)."
+  default     = ""
+  description = "SSH public key material to UPLOAD and authorize on the servers (also needed to fetch the kubeconfig). Leave empty and set ssh_key_name instead to reuse a key already registered in the hcloud project (Hetzner rejects re-uploading a duplicate fingerprint)."
+}
+
+variable "ssh_key_name" {
+  type        = string
+  default     = ""
+  description = "Name of an EXISTING hcloud ssh key to authorize on the servers, instead of uploading var.ssh_public_key. Exactly one of the two must be set."
 }
 
 variable "labels" {
