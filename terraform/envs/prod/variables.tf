@@ -16,12 +16,12 @@ variable "enable_civo" {
 
 variable "node_count" {
   type        = number
-  default     = 5
-  description = "Worker machines per cluster. Must be >= topology node_replicas (5) so the required one-node-pod-per-machine anti-affinity schedules all node pods."
+  default     = 1
+  description = "Worker machines per cluster. Must be >= topology.toml node_replicas (currently 1 — starter tier, one big machine per cloud) so the required one-node-pod-per-machine anti-affinity schedules all node pods. Full design = 5; keep this in lockstep with topology.toml."
 
   validation {
-    condition     = var.node_count >= 5
-    error_message = "node_count must be >= 5 (topology node_replicas = 5, one node pod per machine)."
+    condition     = var.node_count >= 1
+    error_message = "node_count must be >= topology node_replicas (currently 1; one node pod per machine)."
   }
 }
 
