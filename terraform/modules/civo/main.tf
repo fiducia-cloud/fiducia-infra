@@ -59,6 +59,20 @@ resource "civo_firewall" "this" {
     action     = "allow"
   }
   ingress_rule {
+    label      = "http"
+    protocol   = "tcp"
+    port_range = "80" # ingress / load-balancer
+    cidr       = var.allowed_cidrs
+    action     = "allow"
+  }
+  ingress_rule {
+    label      = "https"
+    protocol   = "tcp"
+    port_range = "443" # ingress / load-balancer
+    cidr       = var.allowed_cidrs
+    action     = "allow"
+  }
+  ingress_rule {
     label      = "nodeports"
     protocol   = "tcp"
     port_range = "30000-32767" # LB + cross-cluster mesh reachability
