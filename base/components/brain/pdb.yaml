@@ -1,0 +1,23 @@
+# PodDisruptionBudget for the brain control-plane member.
+#
+# Unlike fiducia-node (multiple replicas per cluster, maxUnavailable: 1), the
+# brain runs exactly ONE member per cluster — the three members form a single
+# cross-cluster Raft group with quorum 2. Losing one member is tolerable, but a
+# per-cluster PDB cannot see the other clusters' brains, so overlapping voluntary
+# drains across two clusters would silently drop quorum (no placement/scaling).
+#
+# maxUnavailable: 0 therefore blocks *voluntary* eviction of this member: a node
+# drain or rollout must be consciously overridden (kubectl drain
+# --disable-eviction / delete the pod) by an operator who has confirmed the other
+# clusters' brains are healthy. Involuntary failures (crash, node loss) are
+# unaffected — this only gates maintenance.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: fiducia-brain
+  namespace: fiducia
+spec:
+  maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: fiducia-brain
