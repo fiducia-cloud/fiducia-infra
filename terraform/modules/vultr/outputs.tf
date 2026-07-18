@@ -9,12 +9,12 @@ output "endpoint" {
 }
 
 output "ca_certificate" {
-  # The cluster CA (NOT the client cert): this is what a kubeconfig's
-  # certificate-authority-data must be. The previous value wired the admin CLIENT
-  # certificate here, so any consumer building a kubeconfig from it got TLS
-  # verification failures against the API server.
-  value       = vultr_kubernetes.this.cluster_ca_certificate
-  description = "Cluster CA certificate (for kubeconfig certificate-authority-data)."
+  # The cluster CA (NOT the client cert): the previous value wired the admin
+  # CLIENT certificate here, so any consumer building a kubeconfig from it got TLS
+  # verification failures against the API server. Vultr returns the CA base64-
+  # encoded, so decode it to PEM to match the shared module interface.
+  value       = base64decode(vultr_kubernetes.this.cluster_ca_certificate)
+  description = "Cluster CA certificate (PEM)."
   sensitive   = true
 }
 
