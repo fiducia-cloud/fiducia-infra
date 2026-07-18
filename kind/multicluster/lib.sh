@@ -4,10 +4,33 @@
 # shellcheck disable=SC2034  # vars here are consumed by the scripts that source this
 set -euo pipefail
 
-# The three emulated clouds — mirror ../../topology.toml (hetzner/vultr/civo).
-CLUSTERS=(hetzner vultr civo)
+# Default to three disposable clusters that model separate Hetzner failure
+# domains. This is deliberately a *single-provider* profile: it exercises three
+# Kubernetes control planes and cross-cluster Raft without claiming that one
+# Docker host proves Hetzner's physical failure domains.
+#
+# The former labels remain available only to reproduce old local runs with
+# FIDUCIA_EMULATION_PROFILE=legacy-multicloud. They are not the default: this
+# harness neither creates nor implies any Civo or Vultr resources.
+EMULATION_PROFILE="${FIDUCIA_EMULATION_PROFILE:-hetzner-regions}"
+case "$EMULATION_PROFILE" in
+  hetzner-regions)
+    CLUSTERS=(hetzner-fsn1 hetzner-nbg1 hetzner-hel1)
+    EMULATION_PROVIDER="hetzner"
+    OUTAGE_CLUSTER="hetzner-hel1"
+    ;;
+  legacy-multicloud)
+    CLUSTERS=(hetzner vultr civo)
+    EMULATION_PROVIDER="mixed-local-labels"
+    OUTAGE_CLUSTER="civo"
+  ;;
+  *)
+    printf '%s\n' "error: unknown FIDUCIA_EMULATION_PROFILE '$EMULATION_PROFILE' (use hetzner-regions or legacy-multicloud)" >&2
+    exit 1
+    ;;
+esac
 
-KIND_PREFIX="fiducia"       # kind cluster name  = <prefix>-<cloud>  (e.g. fiducia-hetzner)
+KIND_PREFIX="fiducia"       # kind cluster name = <prefix>-<member>
 DOCKER_NET="kind"           # kind attaches every cluster to this Docker network
 NAMESPACE="fiducia"
 SHARD_COUNT=16              # keep small so status is readable + startup is fast
@@ -30,18 +53,24 @@ kind_name()    { echo "${KIND_PREFIX}-$1"; }
 kube_ctx()     { echo "kind-${KIND_PREFIX}-$1"; }        # context kind creates
 cp_container() { echo "${KIND_PREFIX}-$1-control-plane"; }
 api_host_port() {
-  case "$1" in
-    hetzner) echo 8090 ;;
-    vultr)   echo 8091 ;;
-    civo)    echo 8092 ;;
+  case "$EMULATION_PROFILE:$1" in
+    hetzner-regions:hetzner-fsn1) echo 8100 ;;
+    hetzner-regions:hetzner-nbg1) echo 8101 ;;
+    hetzner-regions:hetzner-hel1) echo 8102 ;;
+    legacy-multicloud:hetzner) echo 8090 ;;
+    legacy-multicloud:vultr)   echo 8091 ;;
+    legacy-multicloud:civo)    echo 8092 ;;
     *) die "unknown emulated cluster: $1" ;;
   esac
 }
 lb_host_port() {
-  case "$1" in
-    hetzner) echo 8093 ;;
-    vultr)   echo 8094 ;;
-    civo)    echo 8095 ;;
+  case "$EMULATION_PROFILE:$1" in
+    hetzner-regions:hetzner-fsn1) echo 8103 ;;
+    hetzner-regions:hetzner-nbg1) echo 8104 ;;
+    hetzner-regions:hetzner-hel1) echo 8105 ;;
+    legacy-multicloud:hetzner) echo 8093 ;;
+    legacy-multicloud:vultr)   echo 8094 ;;
+    legacy-multicloud:civo)    echo 8095 ;;
     *) die "unknown emulated cluster: $1" ;;
   esac
 }
@@ -57,6 +86,23 @@ cp_ip() {
 
 # kubectl against a given emulated cluster's context.
 kc() { local c="$1"; shift; kubectl --context "$(kube_ctx "$c")" "$@"; }
+
+next_cluster() {
+  local current="$1" index
+  for index in "${!CLUSTERS[@]}"; do
+    [[ "${CLUSTERS[$index]}" == "$current" ]] || continue
+    echo "${CLUSTERS[$(((index + 1) % ${#CLUSTERS[@]}))]}"
+    return 0
+  done
+  die "unknown emulated cluster: $current"
+}
+
+survivor_clusters() {
+  local excluded="$1" c
+  for c in "${CLUSTERS[@]}"; do
+    [[ "$c" == "$excluded" ]] || printf '%s\n' "$c"
+  done
+}
 
 have() { command -v "$1" >/dev/null 2>&1; }
 require_tools() {

@@ -1,10 +1,16 @@
-# Local 3-cluster emulation (Tier 2) — cross-cluster Raft without real clouds
+# Local Hetzner-region emulation (Tier 2) — cross-cluster Raft without real clouds
 
-Emulate the production **three-cloud** topology (hetzner / vultr / civo) on one
-machine: **three separate Kind clusters**, each running one `fiducia-node` + one
-`fiducia-brain` Raft member, wired into **cross-cluster Raft groups** over a shared
-Docker network, with **WAN latency + partition injection** so you can test leader
-election, quorum, and recovery the way they'll actually behave across clouds.
+The default profile models a **single Hetzner provider** on one machine with
+three separate Kind clusters named `hetzner-fsn1`, `hetzner-nbg1`, and
+`hetzner-hel1`. Each runs one `fiducia-node` + one `fiducia-brain` Raft member,
+wired into **cross-cluster Raft groups** over a shared Docker network, with WAN
+latency + partition injection. It validates quorum, routing, and recovery
+without creating or depending on Civo, Vultr, or real Hetzner infrastructure.
+
+This profile proves software behaviour across independent Kubernetes control
+planes. It does **not** prove provider-level availability: all three members
+still share the same local Docker host. A real Hetzner rollout requires a
+separately authorized infrastructure change and its own availability review.
 
 > **Why not three namespaces in one cluster?** Namespaces share the API server,
 > nodes, CNI, and a flat low-latency network — so they can't reproduce the things
@@ -23,9 +29,9 @@ This is the missing middle of the test ladder — see [../README.md](../README.m
 | Tier | What | Fidelity | Cost | Here |
 |------|------|----------|------|------|
 | **1** | one Kind cluster, 4 zone-labeled workers ([../multizone.yaml](../multizone.yaml)) | app + failure-domain spread; single network | free | [../README.md](../README.md) |
-| **2** | **three Kind clusters + exposed peer ports + fault injection** | **separate control planes, cross-cluster Raft, emulated WAN/partitions** | **free** | **this dir** |
+| **2** | **three Hetzner-labelled Kind clusters + peer ports + fault injection** | **separate control planes, cross-cluster Raft, emulated WAN/partitions** | **free** | **this dir** |
 | **3** | Tier 2 **+ Cilium ClusterMesh / Submariner** | + real cross-cluster *pod* networking, CNI policy | free | [§ Optional CNI](#optional-real-cross-cluster-pod-networking-cilium--submariner) |
-| **4** | three **real** clusters (hetzner/vultr/civo) | real cloud routing, LBs, physical failure domains | 💸 | [../../terraform/envs/prod](../../terraform/envs/prod) |
+| **4** | real provider clusters | real cloud routing, LBs, physical failure domains | 💸 | separately authorized infrastructure work |
 
 Tier 2 is the best cost-to-fidelity option for cross-cluster Raft work: it
 reproduces separate Kubernetes control planes and cross-cluster consensus over an
@@ -39,31 +45,32 @@ multicluster networking — Tier 3).
 ```
   host (127.0.0.1)                 shared "kind" Docker network
   ┌───────────────┐    ┌──────────────────────────────────────────────────┐
-  │ :8090 hetzner │◀──▶│  fiducia-hetzner-control-plane                    │
-  │ :8091 vultr   │    │    node(1) + brain(1)  NodePorts 30090/30095 ─┐   │
-  │ :8092 civo    │    │  fiducia-vultr-control-plane                  │   │
-  │ (test/run.sh) │    │    node(1) + brain(1)  30090/30095 ───────────┼─▶ │  cross-cluster
-  └───────────────┘    │  fiducia-civo-control-plane                   │   │  Raft groups:
+  │ :8100 FSN1    │◀──▶│  fiducia-hetzner-fsn1-control-plane             │
+  │ :8101 NBG1    │    │    node(1) + brain(1)  NodePorts 30090/30095 ─┐ │
+  │ :8102 HEL1    │    │  fiducia-hetzner-nbg1-control-plane            │ │
+  │ (test/run.sh) │    │    node(1) + brain(1)  30090/30095 ───────────┼─▶│  cross-cluster
+  └───────────────┘    │  fiducia-hetzner-hel1-control-plane            │ │  Raft groups:
                        │    node(1) + brain(1)  30090/30095 ───────────┘   │  node↔node :9090
                        └──────────────────────────────────────────────────┘  brain↔brain :9095
    fault injection (host): netem.sh = tc on each container's eth0 (WAN RTT)
                            partition.sh = iptables between containers (outages)
 ```
 
-- **1 node + 1 brain per cluster** (3 + 3). One Raft member per cloud makes each
+- **1 node + 1 brain per cluster** (3 + 3). One Raft member per local member makes each
   cross-cluster group a clean 3 — one per cluster, each individually addressable
   via its NodePort. (Prod runs 5 nodes/cluster; the emulation reduces to 1 for
   addressability + to keep three local clusters light.)
 - **Cross-cluster peers by IP.** Pods can't resolve Kind container DNS names, so
   [up.sh](up.sh) discovers each cluster's control-plane container IP on the `kind`
-  network and writes `<ip>:30090` / `<ip>:30095` into the other clusters'
-  [`topology.env`](hetzner/topology.env). Pods reach those IPs across the shared
-  Docker bridge (Kind masquerades pod egress out the node).
+  network and renders `<ip>:30090` / `<ip>:30095` into the other clusters'
+  ConfigMaps without changing the tracked
+  [`topology.env`](hetzner-fsn1/topology.env) templates. Pods reach those IPs
+  across the shared Docker bridge (Kind masquerades pod egress out the node).
 - **Same manifests as prod.** The overlays reuse [`../../base`](../../base) — the
   real `fiducia-node` + `fiducia-brain` StatefulSets — trimmed to the Raft slice
   (LB + otel-agent are `$patch:delete`-d; see [common/kustomization.yaml](common/kustomization.yaml)).
-- **Prod Raft timing.** [`topology.env`](hetzner/topology.env) carries the real
-  cross-cloud `FIDUCIA_RAFT_*` (heartbeat 100 ms, election 600 ms) from
+- **Prod Raft timing.** [`topology.env`](hetzner-fsn1/topology.env) carries the
+  `FIDUCIA_RAFT_*` timing (heartbeat 100 ms, election 600 ms) from
   [`../../topology.toml`](../../topology.toml) — the point is to validate *those*
   values under emulated WAN.
 
@@ -82,8 +89,8 @@ FIDUCIA_LOAD_IMAGES=1 ./up.sh
 ```
 
 Rough footprint: 3 single-node Kind clusters ≈ 3 containers + 12 Fiducia pods
-(one node, one brain, and two load-balancer replicas per cloud)
-(~3–4 GB RAM). Distinct Pod/Service CIDRs per cluster (10.10/10.20/10.30) so
+(one node, one brain, and two load-balancer replicas per member)
+(~3–4 GB RAM). Distinct Pod/Service CIDRs per cluster (10.40/10.42/10.44) so
 cross-cluster traffic never collides.
 
 ---
@@ -93,14 +100,14 @@ cross-cluster traffic never collides.
 ```sh
 ./up.sh                       # create 3 kind clusters, deploy, wire cross-cluster peers
 ./test/run.sh                 # assert: reachable, leader per shard, quorum, spread
-./test/run.sh --scenarios     # + WAN, partition/heal, whole-provider failover
+./test/run.sh --scenarios     # + WAN, partition/heal, whole-member failover
 
 ./netem.sh eu                 # ~10ms±3 egress each  -> ~20ms pairwise RTT (nearby EU)
 ./netem.sh continental        # ~45ms±10 each        -> ~90ms RTT (US<->EU stress)
 ./netem.sh clear
 
-./partition.sh isolate civo   # cut civo off; hetzner+vultr keep 2/3 quorum
-./partition.sh directed hetzner vultr   # one-way (asymmetric) drop
+./partition.sh isolate hetzner-hel1   # cut HEL1 off; FSN1+NBG1 keep 2/3 quorum
+./partition.sh directed hetzner-fsn1 hetzner-nbg1   # one-way (asymmetric) drop
 ./partition.sh split-brain    # 1-1-1: nobody has quorum (reads refused)
 ./partition.sh heal
 
@@ -112,7 +119,7 @@ header, so pass the dev secret up.sh installed):
 
 ```sh
 H='x-fiducia-internal-auth: emulation-internal-secret-do-not-use-in-prod'
-watch -n1 "for p in 8090 8091 8092; do echo \"== :\$p ==\"; \
+watch -n1 "for p in 8100 8101 8102; do echo \"== :\$p ==\"; \
   curl -s -H '$H' localhost:\$p/v1/status | \
   jq '{cluster:.node_id, leads:(.leading_shards|length), quorum:([.shards[]|select(.role==\"leader\")|.has_quorum]|all)}'; done"
 ```
@@ -140,12 +147,12 @@ The direct-node portion skips cleanly if writes are leader-only, but the LB path
 is required and proves the actual client entrypoint.
 
 **Scenarios** (`--scenarios`): under **EU latency**, leadership + quorum stay
-stable (proving heartbeat 100 ms > RTT); **isolating civo** keeps the other two at
-2/3 quorum while civo leads nothing with quorum; **healing** rejoins civo and
-re-covers all shards. Finally, the runner pauses the whole Civo Kind control
+stable (proving heartbeat 100 ms > RTT); **isolating HEL1** keeps FSN1+NBG1 at
+2/3 quorum while HEL1 leads nothing with quorum; **healing** rejoins HEL1 and
+re-covers all shards. Finally, the runner pauses the whole HEL1 Kind control
 plane—not just its Raft links—proves survivor LB writes and cross-LB reads
 commit within a bounded ten-second leader-table refresh window, then resumes
-Civo and requires every leader to return to 3 healthy replicas.
+HEL1 and requires every leader to return to 3 healthy replicas.
 
 ### Raft scenarios worth exercising
 
@@ -155,7 +162,7 @@ normal operation at different RTTs (`netem.sh delay`), steady packet loss
 full isolation (`isolate`), the `1-1-1` no-quorum split (`split-brain`), leader
 process kill (`kubectl delete pod`), destructive cluster reconstruction (`kind
 delete cluster`), and re-election racing with recovery (`heal` right after a
-kill). `--scenarios` already covers a non-destructive whole-provider outage via
+kill). `--scenarios` already covers a non-destructive whole-member outage via
 `docker pause`.
 
 ---

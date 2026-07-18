@@ -3,10 +3,9 @@
 #
 #   ./down.sh   # delete all three kind clusters
 #
-# The FIDUCIA_PEERS/FIDUCIA_BRAIN_PEERS lines in the per-cluster topology.env files
-# were rewritten in place by up.sh with live container IPs. They're placeholders —
-# reset them with `git checkout kind/multicluster/*/topology.env` if you want a
-# clean tree (up.sh rewrites them again next run regardless).
+# `up.sh` renders live Kind peer addresses into the Kubernetes apply stream; it
+# never modifies the checked-in topology.env templates. Tearing down an emulator
+# therefore leaves the source tree unchanged.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 require_tools kind
