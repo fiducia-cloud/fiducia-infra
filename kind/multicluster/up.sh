@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Bring up the local 3-cluster emulation (Tier 2): three single-node Kind clusters
-# (hetzner/vultr/civo), each running ONE fiducia-node + ONE fiducia-brain Raft
-# member, wired into cross-cluster Raft groups over the shared `kind` Docker
-# network. See README.md for the design + fidelity limits.
+# Bring up the local 3-cluster emulation (Tier 2): by default, three single-node
+# Kind clusters labelled as separate Hetzner regions. Each runs ONE fiducia-node
+# + ONE fiducia-brain Raft member, wired into cross-cluster Raft groups over the
+# shared `kind` Docker network. See README.md for the design + fidelity limits.
 #
 #   ./up.sh                        # create 3 clusters, deploy, wire peers
 #   FIDUCIA_LOAD_IMAGES=1 ./up.sh  # `kind load` local images first (CI, no pull)
 #
 # Env: FIDUCIA_NODE_IMAGE, FIDUCIA_BRAIN_IMAGE, FIDUCIA_SIDECAR_IMAGE,
-#      FIDUCIA_LB_IMAGE,
+#      FIDUCIA_LB_IMAGE, FIDUCIA_EMULATION_PROFILE (default hetzner-regions),
 #      FIDUCIA_LOAD_IMAGES=1, FIDUCIA_ROLLOUT_TIMEOUT (default 180s)
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -38,7 +38,7 @@ if [[ "${FIDUCIA_LOAD_IMAGES:-0}" == "1" ]]; then
   done
 fi
 
-# 3. discover control-plane IPs, rewrite each cluster's cross-cluster peers ---------
+# 3. discover control-plane IPs and render each cluster's cross-cluster peers ------
 # Pods can't resolve Kind container DNS names, so peers are addressed by the other
 # clusters' control-plane container IPs (reachable from pods over the `kind` net).
 for c in "${CLUSTERS[@]}"; do
@@ -46,39 +46,32 @@ for c in "${CLUSTERS[@]}"; do
   [[ -n "$ip" ]] || die "no container IP for $(cp_container "$c") on network '$DOCKER_NET'"
   ok "$c control-plane @ $ip"
 done
-for c in "${CLUSTERS[@]}"; do
-  self_ip="$(cp_ip "$c")"     # this cluster's OWN control-plane IP (its node id/addr)
-  node_peers=(); brain_peers=()
+# Render the dynamic peer values into Kustomize's stdout instead of rewriting
+# checked-in topology.env templates. A test run therefore cannot dirty or leave
+# host-specific container addresses in the repository.
+render_overlay() {
+  local c="$1" o ip self_ip self_addr np bp
+  local node_peers=() brain_peers=()
+  self_ip="$(cp_ip "$c")"
+  [[ -n "$self_ip" ]] || die "no container IP for $(cp_container "$c") on network '$DOCKER_NET'"
   for o in "${CLUSTERS[@]}"; do
     [[ "$o" == "$c" ]] && continue
     ip="$(cp_ip "$o")"
     [[ -n "$ip" ]] || die "no container IP for $(cp_container "$o") on network '$DOCKER_NET'"
     node_peers+=("${ip}:${NP_NODE_PEER}")
-    # The brain's Raft transport accepts HTTP base URLs directly (unlike the
-    # node transport, which prefixes bare host:port peers itself).
     brain_peers+=("http://${ip}:${NP_BRAIN_PEER}")
   done
   np="$(IFS=,; echo "${node_peers[*]}")"
   bp="$(IFS=,; echo "${brain_peers[*]}")"
-  # This cluster's addressable node id/advertised address as <own-ip>:<node-API
-  # NodePort> — host:port with NO scheme. Used as FIDUCIA_NODE_ID (Raft member id +
-  # the leader hint a NotLeader carries; the LB normalizes host:port → http URL when
-  # resolving it) AND FIDUCIA_NODE_ADDRESS (what the sidecar advertises to the
-  # brain). It MUST stay path-safe: the sidecar heartbeats to
-  # /v1/nodes/<node-id>/heartbeat, so a scheme ("http://…") injects slashes and 404s.
-  # Must be cross-cluster routable — hence the host IP + NodePort, not the pod IP.
+  # It must be host:port without a scheme: the sidecar puts the node id inside
+  # /v1/nodes/<node-id>/heartbeat and a scheme would introduce path slashes.
   self_addr="${self_ip}:${NP_API}"
-  env_file="$HERE/$c/topology.env"
-  # Portable in-place sed (works on BSD/macOS + GNU) with no backup artefact:
-  # rewrite only the generated lines.
-  sed_expr="s#^FIDUCIA_PEERS=.*#FIDUCIA_PEERS=${np}#; s#^FIDUCIA_BRAIN_PEERS=.*#FIDUCIA_BRAIN_PEERS=${bp}#; s#^FIDUCIA_SELF_ADDR=.*#FIDUCIA_SELF_ADDR=${self_addr}#"
-  if sed --version >/dev/null 2>&1; then
-    sed -i -E "$sed_expr" "$env_file"
-  else
-    sed -i '' -E "$sed_expr" "$env_file"
-  fi
-  ok "$c self=$self_addr peers -> $np"
-done
+  ok "$c self=$self_addr peers -> $np" >&2
+  kubectl kustomize "$HERE/$c" | sed -E \
+    -e "s|^  FIDUCIA_PEERS:.*|  FIDUCIA_PEERS: ${np}|" \
+    -e "s|^  FIDUCIA_BRAIN_PEERS:.*|  FIDUCIA_BRAIN_PEERS: ${bp}|" \
+    -e "s|^  FIDUCIA_SELF_ADDR:.*|  FIDUCIA_SELF_ADDR: ${self_addr}|"
+}
 
 # 4. dev secrets + deploy the overlay into each cluster ----------------------------
 for c in "${CLUSTERS[@]}"; do
@@ -88,7 +81,7 @@ for c in "${CLUSTERS[@]}"; do
     --from-literal=internal-secret="$DEV_INTERNAL_SECRET" \
     --from-literal=brain-raft-secret="$DEV_BRAIN_SECRET" \
     --dry-run=client -o yaml | kc "$c" apply -f -
-  kc "$c" apply -k "$HERE/$c"
+  render_overlay "$c" | kc "$c" apply -f -
 done
 
 # 5. wait for readiness ------------------------------------------------------------
@@ -102,14 +95,14 @@ done
 
 # 6. summary -----------------------------------------------------------------------
 echo
-log "3-cluster emulation READY. Coordination APIs and local LBs:"
+log "3-cluster ${EMULATION_PROFILE} emulation READY. Coordination APIs and local LBs:"
 for c in "${CLUSTERS[@]}"; do printf '  %-8s node=%s/v1/status  lb=%s\n' "$c" "$(api_url "$c")" "$(lb_url "$c")"; done
 cat <<EOF
 
 Next:
   ./test/run.sh                 # assert cross-cluster Raft health
   ./netem.sh eu                 # inject ~20ms EU-spread WAN latency, then re-test
-  ./partition.sh isolate civo   # simulate a civo outage (other two keep quorum)
+  ./partition.sh isolate $OUTAGE_CLUSTER   # simulate one member outage (other two keep quorum)
   ./partition.sh heal
   ./down.sh                     # tear it all down
 EOF

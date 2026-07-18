@@ -1,0 +1,13 @@
+# Kind config for the disposable Hetzner FSN1-labelled test member.
+# It deliberately uses unique CIDRs and host ports so it can coexist with an
+# older legacy-multicloud run while migration is in progress.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+networking:
+  podSubnet: "10.40.0.0/16"
+  serviceSubnet: "10.41.0.0/16"
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - { containerPort: 30080, hostPort: 8100, listenAddress: "127.0.0.1", protocol: TCP }
+      - { containerPort: 30088, hostPort: 8103, listenAddress: "127.0.0.1", protocol: TCP }

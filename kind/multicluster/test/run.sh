@@ -11,12 +11,16 @@
 # The data check does an authed KV write/read across clusters (best-effort — skips
 # if direct-to-node writes aren't accepted). Scenarios drive netem.sh,
 # partition.sh, and a reversible Kind control-plane pause, proving the prod
-# cross-cloud Raft timing holds through WAN faults and a whole-provider outage.
+# cross-cluster Raft timing holds through WAN faults and a whole-member outage.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
 require_tools curl jq
 
 SCENARIOS=0; [[ "${1:-}" == "--scenarios" ]] && SCENARIOS=1
+PRIMARY_CLUSTER="${CLUSTERS[0]}"
+OUTAGE_SURVIVORS=()
+while IFS= read -r cluster; do OUTAGE_SURVIVORS+=("$cluster"); done < <(survivor_clusters "$OUTAGE_CLUSTER")
+[[ "${#OUTAGE_SURVIVORS[@]}" == 2 ]] || die "expected exactly two survivors for $OUTAGE_CLUSTER"
 
 # The node guards ALL of /v1 (including the org-exempt /v1/status) with the
 # internal-auth trusted-hop header — up.sh sets FIDUCIA_INTERNAL_SECRET, so the
@@ -39,9 +43,9 @@ TMP="$(mktemp -d)"
 PAUSED_CONTAINER=""
 cleanup(){
   # A scenario may stop the runner after Docker has paused a whole emulated
-  # provider. Always resume it before dropping the local status snapshots.
+  # member. Always resume it. Keep the temporary snapshots for post-failure
+  # forensics; test cleanup must never erase diagnostic evidence.
   [[ -z "$PAUSED_CONTAINER" ]] || docker unpause "$PAUSED_CONTAINER" >/dev/null 2>&1 || true
-  rm -rf "$TMP"
 }
 trap cleanup EXIT
 snapshot_one(){
@@ -145,13 +149,16 @@ for c in "${CLUSTERS[@]}"; do
   eq "$c LB /healthz (public, no auth)" "$code" "200"
 done
 
-# Fail-closed authz through the REAL LB: anonymous + insufficient scope.
-code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -X PUT "$(lb_url hetzner)/v1/kv?key=emu/deny" \
+# Fail-closed authz through the REAL LB: anonymous + insufficient scope. The
+# local profile explicitly enables FIDUCIA_AUTH_REQUIRED, so credential-less
+# requests are rejected at authentication (401) before route-scope evaluation.
+code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -X PUT "$(lb_url "$PRIMARY_CLUSTER")/v1/kv?key=emu/deny" \
   -H 'content-type: application/json' -d '{"value":"x"}' 2>/dev/null || echo 000)
-# Anonymous (no edge-auth) ⇒ identity=None ⇒ scoped route fails closed with 403
-# insufficient_scope (the LB never forwards a credential-less mutation to a node).
-eq "LB rejects ANONYMOUS kv write (fail closed, 403)" "$code" "403"
-code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -X PUT "$(lb_url hetzner)/v1/kv?key=emu/deny" \
+# Anonymous (no raw credential or trusted-edge proof) fails closed before it can
+# reach a node. It is intentionally 401 rather than 403 so callers can obtain a
+# credential instead of inferring route authorization from an anonymous request.
+eq "LB rejects ANONYMOUS kv write (missing credential, 401)" "$code" "401"
+code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -X PUT "$(lb_url "$PRIMARY_CLUSTER")/v1/kv?key=emu/deny" \
   -H "x-fiducia-edge-auth: $DEV_INTERNAL_SECRET" -H "x-fiducia-org-id: $DEV_ORG" -H "x-fiducia-scopes: kv:read" \
   -H 'content-type: application/json' -d '{"value":"x"}' 2>/dev/null || echo 000)
 eq "LB rejects kv:read-only scope for a write (403)" "$code" "403"
@@ -168,7 +175,7 @@ for i in 1 2 3 4 5 6; do
       "${edge[@]}" -H 'content-type: application/json' -d "{\"value\":\"$val\"}" 2>/dev/null || echo 000)
     [[ "$code" == 2* ]] && wrote=$((wrote+1)) || true
     # read back via the NEXT cluster's LB (cross-entrypoint linearizable read)
-    case "$c" in hetzner) rc=vultr;; vultr) rc=civo;; civo) rc=hetzner;; esac
+    rc="$(next_cluster "$c")"
     got=$(curl -fsS --max-time 8 "$(lb_url "$rc")/v1/kv?key=$key" "${edge[@]}" 2>/dev/null | jq -r '.entry.value // empty' 2>/dev/null || echo '')
     [[ "$got" == "$val" ]] && read_ok=$((read_ok+1)) || true
   done
@@ -196,68 +203,68 @@ if [[ "$SCENARIOS" == 1 ]]; then
   for c in "${CLUSTERS[@]}"; do eq "under latency: $c keeps quorum on its leader shards" "$(no_orphan_quorum_leader "$c")" "0"; done
   "$HERE/netem.sh" clear >/dev/null
 
-  log "── Scenario: isolate civo — the other two keep 2/3 quorum ──"
-  # Isolating the (possibly leader-heavy) civo forces re-election on the survivors
+  log "── Scenario: isolate $OUTAGE_CLUSTER — the other two keep 2/3 quorum ──"
+  # Isolating the (possibly leader-heavy) member forces re-election on the survivors
   # AND civo's check_quorum step-down; both take several election timeouts
   # (election_min 600ms + jitter). Give it room, then poll to the survivors' target.
-  "$HERE/partition.sh" isolate civo >/dev/null
-  for _ in $(seq 1 10); do sleep 3; snapshot; [[ "$(count_shards_covered hetzner vultr)" == "$SHARD_COUNT" ]] && break; done
-  eq "survivors (hetzner+vultr) still cover all $SHARD_COUNT shards" "$(count_shards_covered hetzner vultr)" "$SHARD_COUNT"
-  eq "hetzner keeps quorum on its leader shards" "$(no_orphan_quorum_leader hetzner)" "0"
-  eq "vultr keeps quorum on its leader shards"   "$(no_orphan_quorum_leader vultr)" "0"
-  eq "isolated civo leads NOTHING with quorum (stepped down)" "$(j civo '[.shards[]?|select(.role=="leader" and .has_quorum==true)]|length // 0')" "0"
+  "$HERE/partition.sh" isolate "$OUTAGE_CLUSTER" >/dev/null
+  for _ in $(seq 1 10); do sleep 3; snapshot; [[ "$(count_shards_covered "${OUTAGE_SURVIVORS[@]}")" == "$SHARD_COUNT" ]] && break; done
+  eq "survivors (${OUTAGE_SURVIVORS[*]}) still cover all $SHARD_COUNT shards" "$(count_shards_covered "${OUTAGE_SURVIVORS[@]}")" "$SHARD_COUNT"
+  for cluster in "${OUTAGE_SURVIVORS[@]}"; do
+    eq "$cluster keeps quorum on its leader shards" "$(no_orphan_quorum_leader "$cluster")" "0"
+  done
+  eq "isolated $OUTAGE_CLUSTER leads NOTHING with quorum (stepped down)" "$(j "$OUTAGE_CLUSTER" '[.shards[]?|select(.role=="leader" and .has_quorum==true)]|length // 0')" "0"
 
-  log "── Scenario: heal — civo rejoins, followers catch up ──"
+  log "── Scenario: heal — $OUTAGE_CLUSTER rejoins, followers catch up ──"
   "$HERE/partition.sh" heal >/dev/null
   for _ in $(seq 1 8); do
     sleep 3; snapshot
     healed_minrep="$(min_leader_replicas)"
-    [[ "$(j civo '[.shards[]?|select((.leader_id//"")=="")]|length // 0')" == "0" \
+    [[ "$(j "$OUTAGE_CLUSTER" '[.shards[]?|select((.leader_id//"")=="")]|length // 0')" == "0" \
       && "$healed_minrep" =~ ^[0-9]+$ && "$healed_minrep" -ge 3 ]] && break
   done
-  eq "after heal: civo knows a leader for every shard again" "$(j civo '[.shards[]?|select((.leader_id//"")=="")]|length // 0')" "0"
+  eq "after heal: $OUTAGE_CLUSTER knows a leader for every shard again" "$(j "$OUTAGE_CLUSTER" '[.shards[]?|select((.leader_id//"")=="")]|length // 0')" "0"
   eq "after heal: leadership again covers all $SHARD_COUNT shards" "$(count_shards_covered "${CLUSTERS[@]}")" "$SHARD_COUNT"
   ge "after heal: every leader has all 3 replicas healthy" "$(min_leader_replicas)" "3"
 
-  log "── Scenario: pause civo control plane — survivors keep serving, then civo catches up ──"
+  log "── Scenario: pause $OUTAGE_CLUSTER control plane — survivors keep serving, then it catches up ──"
   require_tools docker
-  PAUSED_CONTAINER="$(cp_container civo)"
+  PAUSED_CONTAINER="$(cp_container "$OUTAGE_CLUSTER")"
   docker pause "$PAUSED_CONTAINER" >/dev/null
   docker inspect -f '{{.State.Paused}}' "$PAUSED_CONTAINER" | grep -qx true || die "failed to pause $PAUSED_CONTAINER"
-  pass "civo Kind control plane paused (whole-provider outage injected)"
+  pass "$OUTAGE_CLUSTER Kind control plane paused (whole-member outage injected)"
 
-  # Unlike partition.sh, this removes Civo's Kubernetes API, workloads, and
+  # Unlike partition.sh, this removes the target's Kubernetes API, workloads, and
   # NodePorts together. Probe only the two survivors while the target is paused:
   # a paused host port may legitimately wait until curl's timeout.
   for _ in $(seq 1 10); do
     sleep 3
-    snapshot_one hetzner; snapshot_one vultr
-    [[ "$(count_shards_covered hetzner vultr)" == "$SHARD_COUNT" \
-      && "$(no_orphan_quorum_leader hetzner)" == "0" \
-      && "$(no_orphan_quorum_leader vultr)" == "0" ]] && break
+    for cluster in "${OUTAGE_SURVIVORS[@]}"; do snapshot_one "$cluster"; done
+    [[ "$(count_shards_covered "${OUTAGE_SURVIVORS[@]}")" == "$SHARD_COUNT" ]] && break
   done
-  eq "after whole-provider loss: survivors cover all $SHARD_COUNT shards" "$(count_shards_covered hetzner vultr)" "$SHARD_COUNT"
-  eq "after whole-provider loss: hetzner has no unquorate leader" "$(no_orphan_quorum_leader hetzner)" "0"
-  eq "after whole-provider loss: vultr has no unquorate leader" "$(no_orphan_quorum_leader vultr)" "0"
+  eq "after whole-member loss: survivors cover all $SHARD_COUNT shards" "$(count_shards_covered "${OUTAGE_SURVIVORS[@]}")" "$SHARD_COUNT"
+  for cluster in "${OUTAGE_SURVIVORS[@]}"; do
+    eq "after whole-member loss: $cluster has no unquorate leader" "$(no_orphan_quorum_leader "$cluster")" "0"
+  done
 
-  outage_key="emu/failover/civo-pause-${SECONDS}-$$"
-  outage_value="committed-during-civo-pause"
+  outage_key="emu/failover/${OUTAGE_CLUSTER}-pause-${SECONDS}-$$"
+  outage_value="committed-during-${OUTAGE_CLUSTER}-pause"
   outage_write_attempt=0; code=000
   # Raft leadership converges before every LB's periodic brain-table refresh.
   # A production caller retries an idempotent/fenced request across that short
   # window; make it an explicit bounded assertion instead of a flaky one-shot.
   for attempt in $(seq 1 10); do
-    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -X PUT "$(lb_url hetzner)/v1/kv?key=$outage_key" \
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -X PUT "$(lb_url "${OUTAGE_SURVIVORS[0]}")/v1/kv?key=$outage_key" \
       "${edge[@]}" -H 'content-type: application/json' -d "{\"value\":\"$outage_value\"}" 2>/dev/null || echo 000)
     [[ "$code" == 2* ]] && { outage_write_attempt="$attempt"; break; }
     sleep 1
   done
-  ge "after whole-provider loss: survivor LB write commits within 10s (last status $code)" "$outage_write_attempt" "1"
+  ge "after whole-member loss: survivor LB write commits within 10s (last status $code)" "$outage_write_attempt" "1"
   got=''
   if [[ "$outage_write_attempt" -ge 1 ]]; then
-    got=$(curl -fsS --max-time 10 "$(lb_url vultr)/v1/kv?key=$outage_key" "${edge[@]}" 2>/dev/null | jq -r '.entry.value // empty' 2>/dev/null || echo '')
+    got=$(curl -fsS --max-time 10 "$(lb_url "${OUTAGE_SURVIVORS[1]}")/v1/kv?key=$outage_key" "${edge[@]}" 2>/dev/null | jq -r '.entry.value // empty' 2>/dev/null || echo '')
   fi
-  eq "after whole-provider loss: other survivor LB reads committed value" "$got" "$outage_value"
+  eq "after whole-member loss: other survivor LB reads committed value" "$got" "$outage_value"
 
   docker unpause "$PAUSED_CONTAINER" >/dev/null
   PAUSED_CONTAINER=""
@@ -265,13 +272,13 @@ if [[ "$SCENARIOS" == 1 ]]; then
     sleep 3; snapshot
     recovered_minrep="$(min_leader_replicas)"
     [[ "$(count_shards_covered "${CLUSTERS[@]}")" == "$SHARD_COUNT" \
-      && "$(j civo '[.shards[]?|select((.leader_id//"")=="")]|length // 0')" == "0" \
+      && "$(j "$OUTAGE_CLUSTER" '[.shards[]?|select((.leader_id//"")=="")]|length // 0')" == "0" \
       && "$recovered_minrep" =~ ^[0-9]+$ && "$recovered_minrep" -ge 3 ]] && break
   done
-  eq "after whole-provider recovery: civo status is reachable" "$( [[ -n "$(j civo '.node_id // empty')" ]] && echo up || echo down )" "up"
-  eq "after whole-provider recovery: civo knows every shard leader" "$(j civo '[.shards[]?|select((.leader_id//"")=="")]|length // 0')" "0"
-  eq "after whole-provider recovery: leadership covers all $SHARD_COUNT shards" "$(count_shards_covered "${CLUSTERS[@]}")" "$SHARD_COUNT"
-  ge "after whole-provider recovery: every leader has all 3 replicas healthy" "$(min_leader_replicas)" "3"
+  eq "after whole-member recovery: $OUTAGE_CLUSTER status is reachable" "$( [[ -n "$(j "$OUTAGE_CLUSTER" '.node_id // empty')" ]] && echo up || echo down )" "up"
+  eq "after whole-member recovery: $OUTAGE_CLUSTER knows every shard leader" "$(j "$OUTAGE_CLUSTER" '[.shards[]?|select((.leader_id//"")=="")]|length // 0')" "0"
+  eq "after whole-member recovery: leadership covers all $SHARD_COUNT shards" "$(count_shards_covered "${CLUSTERS[@]}")" "$SHARD_COUNT"
+  ge "after whole-member recovery: every leader has all 3 replicas healthy" "$(min_leader_replicas)" "3"
 fi
 
 # ── SUMMARY ─────────────────────────────────────────────────────────────────────

@@ -2,7 +2,7 @@
 # Inject / clear emulated WAN conditions between the three clusters using `tc
 # netem` on each Kind node container's eth0 (its interface on the shared `kind`
 # network). Intra-cluster pod traffic does NOT traverse eth0, so this delays ONLY
-# cross-cluster (and host) traffic — a faithful stand-in for inter-cloud RTT that
+# cross-cluster (and host) traffic — a faithful stand-in for inter-region RTT that
 # does not slow each cluster's internal Raft/API.
 #
 #   ./netem.sh eu                       # ~10ms±3 egress each  -> ~20ms pairwise RTT (nearby EU)
