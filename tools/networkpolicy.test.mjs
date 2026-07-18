@@ -43,6 +43,11 @@ test("service and control traffic remains internal while peer Raft ports remain 
   assert.match(node, /name:\s*fiducia-node-ingress/);
   assert.match(node, /protocol:\s*TCP, port:\s*9090/);
   assert.match(node, /name:\s*fiducia-node-peer-egress/);
+  assert.doesNotMatch(
+    node,
+    /protocol:\s*TCP, port:\s*(?:443|8200)/,
+    "the shared base must not grant unrestricted Vault/HTTPS egress; overlays allow exact provider destinations",
+  );
 
   const brain = read("base/components/brain/networkpolicy.yaml");
   assert.match(brain, /name:\s*fiducia-brain-ingress/);

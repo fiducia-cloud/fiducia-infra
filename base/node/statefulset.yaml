@@ -129,6 +129,13 @@ spec:
               value: "json"
           envFrom:
             - configMapRef: { name: fiducia-cluster }   # FIDUCIA_CLUSTER, FIDUCIA_SHARD_COUNT, FIDUCIA_PEERS
+            # Provider-neutral at-rest protection contract. Populate this dedicated
+            # Secret through External Secrets, a CSI driver, Vault Agent, or another
+            # out-of-band injector. Absence keeps legacy deployments compatible;
+            # fiducia-node rejects partial local-keyring/Vault configuration.
+            - secretRef:
+                name: fiducia-kv-protection
+                optional: true
           # startupProbe gates liveness/readiness until the member is up: a Raft node
           # can replay a large log/snapshot on boot and take a while to serve
           # /healthz; without this the 15s liveness (×3) could kill it into a restart

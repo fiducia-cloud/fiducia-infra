@@ -121,3 +121,18 @@ test("no base workload consumes a mutable image tag", () => {
     }
   }
 });
+
+test("fiducia-node consumes only the provider-neutral KV protection Secret", () => {
+  const source = fs.readFileSync(path.join(root, "base/node/statefulset.yaml"), "utf8");
+
+  assert.match(
+    source,
+    /envFrom:\s*[\s\S]*secretRef:\s*\n\s+name:\s*fiducia-kv-protection\s*\n\s+optional:\s*true/,
+    "node must accept an out-of-band fiducia-kv-protection Secret",
+  );
+  assert.doesNotMatch(
+    source,
+    /FIDUCIA_KV_(?:ENCRYPTION_KEY|ENCRYPTION_KEYS|VAULT_TOKEN):\s*\S+/,
+    "KV encryption material must never be embedded in the workload manifest",
+  );
+});

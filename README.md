@@ -324,6 +324,10 @@ but the intent is:
   out-of-band (see the `kubectl create secret` commands above). The trusted-hop
   and brain-Raft references are `optional: false`, so a production pod **fails to
   schedule** rather than silently starting with authentication disabled. The
+  optional `fiducia-kv-protection` Secret is the provider-neutral contract for a
+  Vault Transit backend or versioned local keyring; partial backend configuration
+  makes `fiducia-node` fail startup. See the
+  [KV protection and rotation runbook](docs/kv-protection.md). The
   otel-agent redacts `authorization`/`cookie`/`password`/`secret` and
   hashes `token`/`api_key` before forwarding telemetry.
 - **Least-privilege RBAC.** The only cluster-scoped grant is the otel-agent
