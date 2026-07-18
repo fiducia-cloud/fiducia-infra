@@ -5,17 +5,6 @@ metadata:
   name: fiducia
   labels:
     app.kubernetes.io/part-of: fiducia
-    # Pod Security Admission. The fiducia services (node/sidecar/brain/lb) all meet
-    # `restricted`, but the otel-agent DaemonSet in this namespace runs as root with
-    # hostPath mounts (needs them to tail pod logs), which fails both `restricted`
-    # and `baseline` — so ENFORCE can only be `privileged` while otel is co-located.
-    # We still set audit+warn=restricted so any pod that violates `restricted`
-    # (otel, or a future/mis-rendered manifest) is surfaced. To enforce `restricted`,
-    # move the otel-agent to its own namespace (enforce=privileged) and flip this to
-    # enforce=restricted.
-    pod-security.kubernetes.io/enforce: privileged
-    pod-security.kubernetes.io/audit: restricted
-    pod-security.kubernetes.io/warn: restricted
     # Pod Security Admission. enforce=privileged (not restricted) ONLY because the
     # otel-agent DaemonSet is co-located here and needs root + hostPath (baseline-
     # forbidden). audit+warn=restricted still surface any pod that isn't restricted
