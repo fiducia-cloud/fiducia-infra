@@ -34,6 +34,16 @@ Mesh, set `topology.toml`'s `*_endpoint` values to the mesh global-service DNS,
 `node ../../tools/render.mjs`, and let ArgoCD (`../../argocd`) sync the overlays.
 Full runbook: `../../docs/ROLLOUT.md` and `../../docs/multi-cluster-architecture.md`.
 
+## Remote state
+
+Prod state **must** be remote, encrypted and locked. It contains the Hetzner k3s
+join tokens (`random_password`), the Vultr + Civo kubeconfigs and CA material —
+none of which may sit in unencrypted, unlocked local state on an operator's disk
+(the default when no backend is configured), and concurrent applies with no lock
+can corrupt it. See [`backend.tf.example`](./backend.tf.example): copy it to
+`backend.tf`, fill in an S3 + DynamoDB (`encrypt = true`) or GCS backend, then run
+`terraform init -migrate-state`. Never commit real state files.
+
 ## Swapping a provider
 
 Point a module's `source` at a different provider module (same interface) and
