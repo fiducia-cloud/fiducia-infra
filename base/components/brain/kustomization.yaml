@@ -12,3 +12,4 @@ resources:
   - statefulset.yaml
   - service.yaml
   - networkpolicy.yaml
+  - pdb.yaml            # gate voluntary eviction of the sole brain member (quorum)
