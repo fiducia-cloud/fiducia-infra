@@ -1,0 +1,26 @@
+[
+  {
+    "id": 139855460,
+    "name": "dd-k8s-fsn1",
+    "datacenter": null,
+    "location": { "name": "fsn1", "network_zone": "eu-central" }
+  },
+  {
+    "id": 139855544,
+    "name": "dd-k8s-nbg1",
+    "datacenter": null,
+    "location": { "name": "nbg1", "network_zone": "eu-central" }
+  },
+  {
+    "id": 139855672,
+    "name": "dd-k8s-hel1",
+    "datacenter": null,
+    "location": { "name": "hel1", "network_zone": "eu-central" }
+  },
+  {
+    "id": 139850001,
+    "name": "dd-k8s-control",
+    "datacenter": null,
+    "location": { "name": "nbg1", "network_zone": "eu-central" }
+  }
+]

@@ -6,18 +6,16 @@ multiple Kubernetes clusters on multiple clouds, and prove the multi-cluster quo
 invariant holds when a whole cluster dies.
 
 There is **one behavioral suite** ([`fiducia-e2e`](https://github.com/fiducia-cloud/fiducia-e2e))
-run against **four tiers of increasing fidelity** — pick the cheapest tier that
+run against **five tiers of increasing fidelity** — pick the cheapest tier that
 answers your question:
 
 ```
-                 fiducia-e2e  (conformance/ + chaos/, Node --test)
-                          │  FIDUCIA_E2E_BASE_URL / FIDUCIA_E2E_ENDPOINTS
-     ┌──────────────┬─────┴──────────────┬──────────────────────┐
-     ▼              ▼                     ▼                      ▼
-  Tier 1        Tier 2               Tier 3                  Tier 4
-  kind (1)      kind ×3 +            kind ×3 +               real clusters
-  zones         WAN emulation        Cilium/Submariner       (terraform)
-  ../kind       ../kind/multicluster  (cross-cluster CNI)     ../terraform
+fiducia-e2e (conformance + chaos)
+  ├─ Tier 1: one kind cluster, zone simulation
+  ├─ Tier 2: three kind clusters, WAN/partition emulation
+  ├─ Tier 3: three kind clusters plus a cross-cluster CNI
+  ├─ Tier 4: three vClusters on distinct existing Hetzner Nodes
+  └─ Tier 5: physically independent clusters provisioned by Terraform
 ```
 
 ## Tier 1 — `kind` single cluster (the CI default)
@@ -67,7 +65,24 @@ itself): recreate the Tier-2 clusters with Cilium and connect
 policy enforcement at the cost of more moving parts. See
 [../kind/multicluster/README.md](../kind/multicluster/README.md).
 
-## Tier 4 — real managed clusters (`terraform`)
+## Tier 4 — three vClusters on the existing Hetzner cluster
+
+[`../vcluster/hetzner-e2e`](../vcluster/hetzner-e2e) is the current Hetzner-only
+proof tier. It installs three isolated Kubernetes control planes on three
+distinct region Nodes of the existing five-node kubeadm cluster and creates no
+new Hetzner machines. Private vCluster service replication carries Fiducia Raft
+traffic; all operator/API access uses foreground loopback port forwards.
+
+The guarded flow validates distinct virtual cluster UIDs and physical Node
+placement, uses digest-pinned chart and workload images, forbids host
+NodePort/LoadBalancer Services, captures evidence, and invokes the strict
+locks/leases proof in `fiducia-e2e`.
+
+This is higher fidelity than local `kind`, but it is still a **shared physical
+host cluster**. It cannot prove tolerance of losing that kubeadm control plane or
+independent provider networking.
+
+## Tier 5 — real independent clusters (`terraform`)
 
 [`../terraform`](../terraform): IaC for real clusters. The **prod** trio is
 hetzner/vultr/civo ([`envs/prod`](../terraform/envs/prod)); a hyperscaler **test
@@ -103,15 +118,16 @@ NAT, and independent physical failure domains.
 
 ## Which tier to use
 
-| Question | Tier 1 (kind) | Tier 2 (kind ×3) | Tier 4 (terraform) |
-|----------|---------------|------------------|--------------------|
-| Cost | free | free | real cloud spend |
-| Runs in CI | yes (every push) | yes (overlay build); deploy gated | no (operator-run) |
-| Independent control planes | no | **yes** | yes |
-| Cross-cluster Raft + WAN timing | simulated (zones) | **emulated (real cross-cluster + tc netem)** | real |
-| Network partitions / asymmetric faults | drain a zone | **iptables / netem, directed** | real outages |
-| Real cloud quirks (storage, LBs, NAT) | no | no | yes |
+| Question | Tier 1 (kind) | Tier 2 (kind ×3) | Tier 4 (Hetzner vCluster ×3) | Tier 5 (physical) |
+|----------|---------------|------------------|------------------------------|-------------------|
+| Cost | free | free | existing capacity only | real cloud spend |
+| Runs in CI | yes | overlay build; deploy gated | render/build checks only; operator-run | no; operator-run |
+| Independent Kubernetes APIs | no | yes | **yes, logically isolated** | yes, physically isolated |
+| Distinct physical placement | zones in one cluster | Docker containers | **three Hetzner Nodes** | separate clusters/providers |
+| Cross-cluster Raft + WAN timing | simulated | emulated with `tc` | real host network, no WAN isolation | real |
+| Whole physical cluster/provider loss | no | emulated | no | yes |
 
-Use Tier 1 for fast correctness on every change; **Tier 2 to validate cross-cluster
-consensus, WAN timing, and partitions locally**; Tier 3 for multicluster networking;
-Tier 4 before a release, to catch what only real clouds surface.
+Use Tier 1 for fast correctness; **Tier 2 for repeatable WAN and partition
+faults**; Tier 3 for cross-cluster CNI behavior; Tier 4 for the current
+zero-new-server Hetzner locks/leases proof; and Tier 5 before making physical
+failure-domain claims.

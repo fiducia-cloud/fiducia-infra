@@ -1,0 +1,70 @@
+# Adapt the hardened production base to one schedulable k3s server per cluster.
+# Image tags remain placeholders here; the release renderer refuses to deploy
+# until all four core images are supplied as immutable sha256 references.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fiducia-node
+  namespace: fiducia
+spec:
+  template:
+    spec:
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: node
+          env:
+            - name: FIDUCIA_DEPLOYMENT_ENV
+              value: e2e
+        - name: sidecar
+          env:
+            - name: FIDUCIA_DEPLOYMENT_ENV
+              value: e2e
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fiducia-brain
+  namespace: fiducia
+spec:
+  template:
+    spec:
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: brain
+          env:
+            - name: FIDUCIA_DEPLOYMENT_ENV
+              value: e2e
+        - name: sidecar
+          env:
+            - name: FIDUCIA_DEPLOYMENT_ENV
+              value: e2e
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fiducia-load-balance
+  namespace: fiducia
+spec:
+  template:
+    spec:
+      containers:
+        - name: lb
+          env:
+            - name: FIDUCIA_TLS_CERT_PATH
+              $patch: delete
+            - name: FIDUCIA_TLS_KEY_PATH
+              $patch: delete
+            - name: FIDUCIA_DEPLOYMENT_ENV
+              value: e2e
+          volumeMounts:
+            - name: tls
+              $patch: delete
+      volumes:
+        - name: tls
+          $patch: delete

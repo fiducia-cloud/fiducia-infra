@@ -1,0 +1,36 @@
+# Additional allows for the private-network NodePort transport. Base remains
+# default-deny. No public CIDR is admitted; operator LB access arrives through
+# an SSH tunnel on the target node.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fiducia-hetzner-e2e-private-ingress
+  namespace: fiducia
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - ipBlock: { cidr: 10.30.0.0/24 }
+        - ipBlock: { cidr: 127.0.0.0/8 }
+      ports:
+        - { protocol: TCP, port: 8090 }
+        - { protocol: TCP, port: 8088 }
+        - { protocol: TCP, port: 9090 }
+        - { protocol: TCP, port: 9095 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fiducia-hetzner-e2e-private-nodeport-egress
+  namespace: fiducia
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock: { cidr: 10.30.0.0/24 }
+      ports:
+        - { protocol: TCP, port: 30080 }
+        - { protocol: TCP, port: 30090 }
+        - { protocol: TCP, port: 30095 }

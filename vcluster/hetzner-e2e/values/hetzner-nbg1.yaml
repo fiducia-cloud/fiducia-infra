@@ -1,0 +1,16 @@
+networking:
+  replicateServices:
+    toHost:
+      - from: fiducia/fiducia-node
+        to: fiducia-node-peer-nbg1
+      - from: fiducia/fiducia-brain
+        to: fiducia-brain-peer-nbg1
+    fromHost:
+      - from: fiducia-vc-fsn1/fiducia-node-peer-fsn1
+        to: fiducia/fiducia-node-peer-fsn1
+      - from: fiducia-vc-fsn1/fiducia-brain-peer-fsn1
+        to: fiducia/fiducia-brain-peer-fsn1
+      - from: fiducia-vc-hel1/fiducia-node-peer-hel1
+        to: fiducia/fiducia-node-peer-hel1
+      - from: fiducia-vc-hel1/fiducia-brain-peer-hel1
+        to: fiducia/fiducia-brain-peer-hel1

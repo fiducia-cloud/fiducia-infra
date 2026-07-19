@@ -1,0 +1,14 @@
+[
+  {
+    "name": "hetzner-fsn1",
+    "url": "http://127.0.0.1:18103"
+  },
+  {
+    "name": "hetzner-nbg1",
+    "url": "http://127.0.0.1:18104"
+  },
+  {
+    "name": "hetzner-hel1",
+    "url": "http://127.0.0.1:18105"
+  }
+]

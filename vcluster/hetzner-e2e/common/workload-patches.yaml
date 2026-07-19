@@ -1,0 +1,61 @@
+# Adapt the production base to one small member per logical vCluster. Immutable
+# image digests are injected only by the release renderer outside this repo.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fiducia-node
+  namespace: fiducia
+spec:
+  template:
+    spec:
+      containers:
+        - name: node
+          env:
+            - name: FIDUCIA_DEPLOYMENT_ENV
+              value: e2e
+        - name: sidecar
+          env:
+            - name: FIDUCIA_DEPLOYMENT_ENV
+              value: e2e
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fiducia-brain
+  namespace: fiducia
+spec:
+  template:
+    spec:
+      containers:
+        - name: brain
+          env:
+            - name: FIDUCIA_DEPLOYMENT_ENV
+              value: e2e
+        - name: sidecar
+          env:
+            - name: FIDUCIA_DEPLOYMENT_ENV
+              value: e2e
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fiducia-load-balance
+  namespace: fiducia
+spec:
+  template:
+    spec:
+      containers:
+        - name: lb
+          env:
+            - name: FIDUCIA_TLS_CERT_PATH
+              $patch: delete
+            - name: FIDUCIA_TLS_KEY_PATH
+              $patch: delete
+            - name: FIDUCIA_DEPLOYMENT_ENV
+              value: e2e
+          volumeMounts:
+            - name: tls
+              $patch: delete
+      volumes:
+        - name: tls
+          $patch: delete
