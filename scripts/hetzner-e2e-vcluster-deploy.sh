@@ -214,7 +214,20 @@ write_evidence() {
         cluster: $cluster,
         kubernetes_cluster_uid: $uid,
         visible_nodes: [$nodes.items[] | {name: .metadata.name, uid: .metadata.uid, providerID: .spec.providerID, labels: {region: .metadata.labels["topology.kubernetes.io/region"], zone: .metadata.labels["topology.kubernetes.io/zone"]}}],
-        workload_placement: [$pods.items[] | {name: .metadata.name, nodeName: .spec.nodeName, images: [.status.containerStatuses[]? | {name, image, imageID, ready}]}],
+        workload_placement: [$pods.items[] | {
+          name: .metadata.name,
+          nodeName: .spec.nodeName,
+          images: [
+            .spec.containers[] as $container
+            | ([.status.containerStatuses[]? | select(.name == $container.name)] | first) as $status
+            | {
+                name: $container.name,
+                image: $container.image,
+                imageID: $status.imageID,
+                ready: ($status.ready == true)
+              }
+          ]
+        }],
         topology: $config.data
       }')
     clusters_json=$(jq -cn --argjson values "$clusters_json" --argjson item "$item" '$values + [$item]')
