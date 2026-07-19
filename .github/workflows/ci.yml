@@ -69,6 +69,7 @@ jobs:
               exit 1
             fi
             grep -q 'ghcr.io/loft-sh/vcluster-oss:0.35.1@sha256:' "$out"
+            node tools/validate-vcluster-manifest.mjs "$out" "fiducia-$c"
           done
       - name: Validate operator scripts
         run: bash -n scripts/hetzner-e2e-*.sh

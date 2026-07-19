@@ -187,6 +187,7 @@ plan_fleet() {
     helm template "${HELM_ARGS[@]}" --include-crds |
       tee "$manifest" |
       openssl dgst -sha256
+    node "$REPO_ROOT/tools/validate-vcluster-manifest.mjs" "$manifest" "$(release_for "$cluster")"
     if rg -n '^\s*type:\s*(NodePort|LoadBalancer)\s*$' "$manifest" >/dev/null; then
       fail "$cluster chart render exposes a forbidden host NodePort or LoadBalancer"
     fi
@@ -253,6 +254,7 @@ verify_plan() {
     expected=$(jq -er --arg cluster "$cluster" '.manifests[$cluster] | sub("^sha256:"; "")' "$metadata")
     actual=$(openssl dgst -sha256 "$manifest" | awk '{print $NF}')
     test "$actual" = "$expected" || fail "$cluster planned manifest changed"
+    node "$REPO_ROOT/tools/validate-vcluster-manifest.mjs" "$manifest" "$(release_for "$cluster")"
     helm_arguments "$cluster"
     fresh=$(helm template "${HELM_ARGS[@]}" --include-crds | openssl dgst -sha256 | awk '{print $NF}')
     test "$fresh" = "$expected" || fail "$cluster no longer renders byte-for-byte like the reviewed plan"

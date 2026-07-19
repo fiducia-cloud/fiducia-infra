@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Foreground-only local access: three vCluster API tunnels followed by node and
-# load-balancer tunnels inside each tenant. No host NodePort is created.
+# Foreground-only local access. `api` starts only the three virtual API tunnels
+# needed for the first deployment; `workloads` adds six application tunnels
+# after that deployment; `all` owns all nine in one process.
 
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 STATE_DIR=${FIDUCIA_HETZNER_E2E_STATE_DIR:-"$HOME/.local/state/fiducia/hetzner-e2e"}
 KUBECONFIG_DIR="$STATE_DIR/kubeconfigs"
 CLUSTERS=(hetzner-fsn1 hetzner-nbg1 hetzner-hel1)
+MODE=${1:-all}
 
 fail() {
   printf 'error: %s\n' "$*" >&2
@@ -16,6 +18,8 @@ fail() {
 
 command -v nc >/dev/null 2>&1 || fail "nc is required"
 command -v kubectl >/dev/null 2>&1 || fail "kubectl is required"
+test "$#" -le 1 || fail "usage: scripts/hetzner-e2e-vcluster-tunnels.sh [api|workloads|all]"
+case "$MODE" in api|workloads|all) ;; *) fail "mode must be api, workloads, or all" ;; esac
 case "$STATE_DIR" in /*) ;; *) fail "state directory must be absolute" ;; esac
 test -d "$STATE_DIR" || fail "state directory does not exist: $STATE_DIR"
 STATE_DIR=$(cd "$STATE_DIR" && pwd -P)
@@ -44,15 +48,17 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-for cluster in "${CLUSTERS[@]}"; do
-  short=${cluster#hetzner-}
-  namespace="fiducia-vc-$short"
-  release="fiducia-$cluster"
-  api_port=$(api_port_for "$cluster")
-  kubectl "${HOST_ARGS[@]}" -n "$namespace" port-forward --address 127.0.0.1 \
-    "service/$release" "$api_port:443" &
-  pids+=("$!")
-done
+if test "$MODE" != workloads; then
+  for cluster in "${CLUSTERS[@]}"; do
+    short=${cluster#hetzner-}
+    namespace="fiducia-vc-$short"
+    release="fiducia-$cluster"
+    api_port=$(api_port_for "$cluster")
+    kubectl "${HOST_ARGS[@]}" -n "$namespace" port-forward --address 127.0.0.1 \
+      "service/$release" "$api_port:443" &
+    pids+=("$!")
+  done
+fi
 
 for cluster in "${CLUSTERS[@]}"; do
   api_port=$(api_port_for "$cluster")
@@ -63,6 +69,12 @@ for cluster in "${CLUSTERS[@]}"; do
   done
   test "$ready" -eq 1 || fail "$cluster virtual API tunnel did not become ready"
 done
+
+if test "$MODE" = api; then
+  printf 'Three loopback-only virtual API forwards are active; press Ctrl-C to stop them.\n'
+  wait "${pids[@]}"
+  exit 0
+fi
 
 uids=''
 for cluster in "${CLUSTERS[@]}"; do
@@ -79,6 +91,10 @@ for cluster in "${CLUSTERS[@]}"; do
   kubeconfig="$KUBECONFIG_DIR/$cluster.kubeconfig"
   node_port=$(node_port_for "$cluster")
   lb_port=$(lb_port_for "$cluster")
+  kubectl --kubeconfig="$kubeconfig" -n fiducia get service/fiducia-node-client >/dev/null ||
+    fail "$cluster is missing service/fiducia-node-client; deploy the release before workload tunnels"
+  kubectl --kubeconfig="$kubeconfig" -n fiducia get service/fiducia-load-balance-internal >/dev/null ||
+    fail "$cluster is missing service/fiducia-load-balance-internal; deploy the release before workload tunnels"
   kubectl --kubeconfig="$kubeconfig" -n fiducia port-forward --address 127.0.0.1 \
     service/fiducia-node-client "$node_port:8090" &
   pids+=("$!")
@@ -89,5 +105,9 @@ for cluster in "${CLUSTERS[@]}"; do
     "$cluster" "$(api_port_for "$cluster")" "$node_port" "$lb_port"
 done
 
-printf 'Nine loopback-only kubectl forwards are active; press Ctrl-C to stop them.\n'
+if test "$MODE" = all; then
+  printf 'Nine loopback-only kubectl forwards are active; press Ctrl-C to stop them.\n'
+else
+  printf 'Six workload forwards are active alongside the existing API forwards; press Ctrl-C to stop them.\n'
+fi
 wait "${pids[@]}"

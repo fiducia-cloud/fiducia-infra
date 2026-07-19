@@ -94,6 +94,8 @@ validate_release() {
     actual=$(openssl dgst -sha256 "$manifest" | awk '{print $NF}')
     test "$actual" = "$expected" || fail "$cluster manifest digest mismatch"
     rg -q '^kind: Secret$' "$manifest" && fail "$cluster release embeds a Secret"
+    test "$(grep -c '^[[:space:]]*- name: fiducia-ghcr-pull$' "$manifest")" -eq 3 ||
+      fail "$cluster release must wire the private GHCR pull Secret to all three workloads"
     rg -n '^\s*type:\s*(NodePort|LoadBalancer)\s*$' "$manifest" >/dev/null &&
       fail "$cluster release exposes a forbidden Service type"
   done
@@ -127,6 +129,9 @@ apply_release() {
     kubectl --kubeconfig="$kubeconfig" -n fiducia get secret fiducia-secrets -o json |
       jq -e '.data["internal-secret"] and .data["brain-raft-secret"]' >/dev/null ||
       fail "$cluster is missing runtime secrets"
+    kubectl --kubeconfig="$kubeconfig" -n fiducia get secret fiducia-ghcr-pull -o json |
+      jq -e '.type == "kubernetes.io/dockerconfigjson" and .data[".dockerconfigjson"]' >/dev/null ||
+      fail "$cluster is missing the private GHCR pull Secret"
   done
   for cluster in "${CLUSTERS[@]}"; do
     kubeconfig=$(kubeconfig_for "$cluster")

@@ -41,6 +41,9 @@ controlPlane:
         enabled: true
         retentionPolicy: Delete
         size: 5Gi
+        # Never inherit the host default. On the current Hetzner cluster that
+        # default is CSI-backed gp3 and provisions a paid 10 GiB cloud Volume.
+        storageClass: local-path
         accessModes: [ReadWriteOnce]
     scheduling:
       tolerations:

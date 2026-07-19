@@ -12,6 +12,7 @@ import {
 } from "./render-vcluster-hetzner-e2e.mjs";
 import { CORE_IMAGES, renderRelease } from "./render-hetzner-e2e-release.mjs";
 import { validateVclusterHost } from "./validate-vcluster-host.mjs";
+import { validateVclusterManifest } from "./validate-vcluster-manifest.mjs";
 
 const root = new URL("../", import.meta.url);
 const read = (relative) => fs.readFileSync(new URL(relative, root), "utf8");
@@ -73,6 +74,36 @@ test("vCluster values pin official images and enable isolation without host expo
   assert.match(values, /services\.nodeports: "0"/);
   assert.match(values, /services\.loadbalancers: "0"/);
   assert.match(values, /podAntiAffinity:\n\s+requiredDuringSchedulingIgnoredDuringExecution:/);
+  assert.match(values, /storageClass: local-path/);
+});
+
+test("rendered vCluster datastore is pinned to local-path with a 5Gi request", () => {
+  const fixture = `
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fiducia-hetzner-fsn1
+spec:
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 5Gi
+        storageClassName: local-path
+`;
+  assert.equal(validateVclusterManifest(fixture, "fiducia-hetzner-fsn1"), true);
+  assert.throws(
+    () => validateVclusterManifest(fixture.replace("local-path", "gp3"), "fiducia-hetzner-fsn1"),
+    /storageClassName: local-path/,
+  );
+  assert.throws(
+    () => validateVclusterManifest(fixture.replace("5Gi", "10Gi"), "fiducia-hetzner-fsn1"),
+    /5Gi storage request/,
+  );
 });
 
 test("service replication defines stable cross-vCluster peer bridges", () => {
@@ -99,6 +130,7 @@ test("release renderer makes all Fiducia workload references immutable", () => {
     const coreLines = manifest.split("\n").filter((line) => line.includes("ghcr.io/fiducia-cloud/"));
     assert.equal(coreLines.length, 5);
     assert.ok(coreLines.every((line) => /@sha256:[0-9a-f]{64}$/.test(line)));
+    assert.equal((manifest.match(/^\s*- name: fiducia-ghcr-pull$/gm) ?? []).length, 3);
   }
 });
 
@@ -234,6 +266,8 @@ test("tenant kubeconfig rewrite selects the source context before renaming it", 
 test("operator scripts fail closed on context, identity, install, and destroy", () => {
   const lifecycle = read("scripts/hetzner-e2e-vclusters.sh");
   const deploy = read("scripts/hetzner-e2e-vcluster-deploy.sh");
+  const secrets = read("scripts/hetzner-e2e-secrets.sh");
+  const tunnels = read("scripts/hetzner-e2e-vcluster-tunnels.sh");
   const hostValidator = read("tools/validate-vcluster-host.mjs");
   assert.match(lifecycle, /current-context fallback is forbidden/);
   assert.match(lifecycle, /install-three-logical-vclusters-no-new-servers/);
@@ -253,4 +287,8 @@ test("operator scripts fail closed on context, identity, install, and destroy", 
   assert.match(deploy, /FIDUCIA_E2E_INFRA_ATTESTATION_FILE/);
   assert.match(deploy, /topology: \{file: "proof-topology\.json", sha256: \$topology_sha\}/);
   assert.match(deploy, /infra_evidence: \{file: "infra-evidence\.json", sha256: \$infra_sha\}/);
+  assert.match(secrets, /FIDUCIA_GHCR_TOKEN is required/);
+  assert.match(secrets, /kubernetes\.io\/dockerconfigjson/);
+  assert.match(tunnels, /api\|workloads\|all/);
+  assert.match(tunnels, /deploy the release before workload tunnels/);
 });

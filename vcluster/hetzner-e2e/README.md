@@ -46,6 +46,9 @@ cloud networks. Use three physical clusters later for that stronger claim.
 - Access is through foreground loopback-only port forwards. No public service is
   created.
 - The install and proof gates require clean, committed source checkouts.
+- The control-plane datastore is explicitly pinned to `local-path` with a 5Gi
+  request. Planning and CI validate the rendered StatefulSet so the host's
+  default cloud-volume class cannot be inherited silently.
 
 ## Prerequisites
 
@@ -118,12 +121,12 @@ FIDUCIA_CONFIRM_VCLUSTER_INSTALL=install-three-logical-vclusters-no-new-servers 
 scripts/hetzner-e2e-vclusters.sh status
 ```
 
-Fetch the three tenant kubeconfigs, then keep the nine loopback port forwards
-open in a dedicated terminal:
+Fetch the three tenant kubeconfigs, then keep the three virtual API forwards
+open in a dedicated terminal for the initial deployment:
 
 ```sh
 scripts/hetzner-e2e-fetch-vcluster-kubeconfigs.sh
-scripts/hetzner-e2e-vcluster-tunnels.sh
+scripts/hetzner-e2e-vcluster-tunnels.sh api
 ```
 
 In a second terminal, create two distinct high-entropy runtime secrets without
@@ -132,6 +135,9 @@ placing them in a manifest. Then render a release using exact GHCR digests:
 ```sh
 export FIDUCIA_INTERNAL_SECRET="$(openssl rand -hex 32)"
 export FIDUCIA_BRAIN_RAFT_SECRET="$(openssl rand -hex 32)"
+# Use a short-lived, read:packages-only credential; do not place it in Git.
+export FIDUCIA_GHCR_USERNAME='<GitHub account>'
+export FIDUCIA_GHCR_TOKEN='<read:packages token>'
 scripts/hetzner-e2e-secrets.sh
 
 export FIDUCIA_NODE_IMAGE='ghcr.io/fiducia-cloud/fiducia-node@sha256:<digest>'
@@ -151,6 +157,18 @@ FIDUCIA_CONFIRM_DEPLOY=deploy-to-three-logical-vclusters \
   scripts/hetzner-e2e-vcluster-deploy.sh apply "$RELEASE_ID"
 scripts/hetzner-e2e-vcluster-deploy.sh verify "$RELEASE_ID"
 export FIDUCIA_E2E_ORG_ID='<dedicated-test-org-id>'
+```
+
+In a third terminal, leave the API tunnel process running and expose the six
+application endpoints required by the strict proof:
+
+```sh
+scripts/hetzner-e2e-vcluster-tunnels.sh workloads
+```
+
+Then run the proof from the operator terminal:
+
+```sh
 scripts/hetzner-e2e-vcluster-deploy.sh proof "$RELEASE_ID"
 ```
 
@@ -183,6 +201,7 @@ policy for the external state directory.
   host-rewrite init image are pinned by immutable registry digest in
   [`values/common.yaml`](values/common.yaml).
 
-CI re-renders all three chart profiles and workload overlays, checks the pinned
-digests, rejects host NodePort/LoadBalancer Services, checks generated topology
-freshness, and syntax-checks every operator script.
+CI re-renders all three chart profiles and workload overlays, verifies the
+local-path/5Gi control-plane claim, checks pinned image digests and private GHCR
+pull-secret wiring, rejects host NodePort/LoadBalancer Services, checks generated
+topology freshness, and syntax-checks every operator script.

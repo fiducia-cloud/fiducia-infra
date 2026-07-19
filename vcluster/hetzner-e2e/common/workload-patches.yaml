@@ -8,6 +8,8 @@ metadata:
 spec:
   template:
     spec:
+      imagePullSecrets:
+        - name: fiducia-ghcr-pull
       containers:
         - name: node
           env:
@@ -26,6 +28,8 @@ metadata:
 spec:
   template:
     spec:
+      imagePullSecrets:
+        - name: fiducia-ghcr-pull
       containers:
         - name: brain
           env:
@@ -44,6 +48,8 @@ metadata:
 spec:
   template:
     spec:
+      imagePullSecrets:
+        - name: fiducia-ghcr-pull
       containers:
         - name: lb
           env:
