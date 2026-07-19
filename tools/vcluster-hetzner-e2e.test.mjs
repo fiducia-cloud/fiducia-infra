@@ -134,6 +134,25 @@ test("release renderer makes all Fiducia workload references immutable", () => {
   }
 });
 
+test("Hetzner proof nodes fit capacity-constrained existing hosts without weakening limits", () => {
+  const workloadPatches = read("vcluster/hetzner-e2e/common/workload-patches.yaml");
+  assert.match(workloadPatches, /name: node[\s\S]*?requests: \{ cpu: "100m", memory: "96Mi" \}/);
+  assert.match(workloadPatches, /name: sidecar[\s\S]*?requests: \{ cpu: "25m", memory: "32Mi" \}/);
+
+  const releases = renderRelease(Object.fromEntries(
+    Object.entries(CORE_IMAGES).map(([key, repository], index) => [
+      key,
+      `${repository}@sha256:${String(index + 1).repeat(64)}`,
+    ]),
+  ), { profile: "vcluster" });
+  for (const manifest of Object.values(releases)) {
+    assert.match(manifest, /name: node[\s\S]*?requests:\n\s+cpu: 100m\n\s+memory: 96Mi/);
+    assert.match(manifest, /name: sidecar[\s\S]*?requests:\n\s+cpu: 25m\n\s+memory: 32Mi/);
+    assert.match(manifest, /name: node[\s\S]*?limits:\n\s+cpu: 1000m\n\s+memory: 1Gi/);
+    assert.match(manifest, /name: sidecar[\s\S]*?limits:\n\s+cpu: 250m\n\s+memory: 256Mi/);
+  }
+});
+
 test("host gate binds three distinct hcloud provider IDs to expected locations", () => {
   const nodes = readJson("tools/fixtures/vcluster-host-nodes.json");
   const hcloudServers = readJson("tools/fixtures/vcluster-host-hcloud-servers.json");

@@ -15,10 +15,18 @@ spec:
           env:
             - name: FIDUCIA_DEPLOYMENT_ENV
               value: e2e
+          # The proof fleet shares existing control-plane hosts with production
+          # workloads. Keep production limits, but reserve only the measured
+          # steady-state floor so a test member remains schedulable on a busy
+          # failure domain without evicting unrelated workloads.
+          resources:
+            requests: { cpu: "100m", memory: "96Mi" }
         - name: sidecar
           env:
             - name: FIDUCIA_DEPLOYMENT_ENV
               value: e2e
+          resources:
+            requests: { cpu: "25m", memory: "32Mi" }
 ---
 apiVersion: apps/v1
 kind: StatefulSet
