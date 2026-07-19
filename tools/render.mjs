@@ -260,7 +260,7 @@ spec:
   template:
     spec:
       containers:
-        - name: fiducia-brain
+        - name: brain
           env:
             - name: FIDUCIA_BRAIN_ID
               value: "http://${c.brain_endpoint}"
