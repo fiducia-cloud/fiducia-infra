@@ -289,6 +289,7 @@ test("operator scripts fail closed on context, identity, install, and destroy", 
   assert.match(deploy, /FIDUCIA_E2E_INFRA_ATTESTATION_FILE/);
   assert.match(deploy, /topology: \{file: "proof-topology\.json", sha256: \$topology_sha\}/);
   assert.match(deploy, /infra_evidence: \{file: "infra-evidence\.json", sha256: \$infra_sha\}/);
+  assert.match(deploy, /release exposes a forbidden Service type"\n\s+done\n\s+return 0/);
   assert.match(secrets, /FIDUCIA_GHCR_TOKEN is required/);
   assert.match(secrets, /kubernetes\.io\/dockerconfigjson/);
   assert.match(tunnels, /api\|workloads\|all/);

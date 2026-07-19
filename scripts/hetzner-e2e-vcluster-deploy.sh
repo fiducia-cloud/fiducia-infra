@@ -99,6 +99,7 @@ validate_release() {
     rg -n '^\s*type:\s*(NodePort|LoadBalancer)\s*$' "$manifest" >/dev/null &&
       fail "$cluster release exposes a forbidden Service type"
   done
+  return 0
 }
 
 render_release() {
