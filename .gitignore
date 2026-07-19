@@ -9,6 +9,21 @@ rendered/
 secrets/
 .env
 
+# Terraform plans/state and local variable files can contain provider credentials,
+# join tokens, and infrastructure identifiers. Provider lock files stay tracked.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+!*.tfvars.example
+crash.log
+*.kubeconfig
+
+# Operator evidence is generated outside the checkout; ignore an accidental
+# repository-local default as a final defense against credential/status leakage.
+/evidence/
+
 # Scratch / git worktrees (tmp/worktrees/*)
 tmp/
 

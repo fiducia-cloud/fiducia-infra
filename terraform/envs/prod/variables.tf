@@ -73,5 +73,5 @@ variable "hetzner_enable_firewall" {
 variable "hetzner_firewall_allowed_cidrs" {
   type        = list(string)
   default     = []
-  description = "Source CIDRs permitted to SSH / :6443 / NodePorts on Hetzner (required when hetzner_enable_firewall = true; world-open is rejected). Include operator + trusted mesh/edge ranges."
+  description = "Source CIDRs permitted to SSH and :6443 on Hetzner (required when hetzner_enable_firewall = true; world-open is rejected). NodePorts remain private unless separately opted in at module level."
 }

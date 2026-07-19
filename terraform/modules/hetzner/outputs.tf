@@ -8,6 +8,16 @@ output "endpoint" {
   description = "k3s API server URL (control-plane public IP)."
 }
 
+output "public_ipv4" {
+  value       = hcloud_server.control_plane.ipv4_address
+  description = "Public IPv4 of the k3s server (operator SSH/API only when the firewall is enabled)."
+}
+
+output "private_ipv4" {
+  value       = one(hcloud_server.control_plane.network).ip
+  description = "Private IPv4 used for k3s node identity and cross-cluster test traffic."
+}
+
 output "ca_certificate" {
   value       = "" # k3s generates its CA on first boot; fetch it with the kubeconfig below.
   description = "Not exported by Terraform for k3s; retrieve via kubeconfig_hint."

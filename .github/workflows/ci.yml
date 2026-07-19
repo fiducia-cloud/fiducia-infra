@@ -34,12 +34,45 @@ jobs:
       - run: node --test tools/*.test.mjs
       # fail if the generated per-cluster inputs are stale vs topology.toml
       - run: node tools/render.mjs --check
-      # every overlay must still build — the real clusters AND the local kind tier
+      - run: node tools/render-vcluster-hetzner-e2e.mjs --check
+      - run: node tools/render-hetzner-e2e.mjs --check
+      # every overlay must still build — production, local kind, and the default
+      # zero-new-server vCluster proof tier.
       - run: |
-          for c in clusters/*/ kind/overlay; do
+          for c in clusters/*/ kind/overlay vcluster/hetzner-e2e/clusters/*/ k3s/hetzner-e2e/clusters/*/; do
             echo "== $c =="
             kubectl kustomize "$c" >/dev/null
           done
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v3.18.6
+      - name: Render pinned vCluster chart profiles
+        run: |
+          set -e
+          chart="$RUNNER_TEMP/vcluster-0.35.1.tgz"
+          curl --proto '=https' --tlsv1.2 --fail --show-error --silent --location \
+            https://charts.loft.sh/charts/vcluster-0.35.1.tgz --output "$chart"
+          test "$(openssl dgst -sha256 "$chart" | awk '{print $NF}')" = \
+            ec1db9e9faf2da674eba5df3594b9d209861ee8e5889be850a9bb60861158c5b
+          for c in hetzner-fsn1 hetzner-nbg1 hetzner-hel1; do
+            short=${c#hetzner-}
+            out="/tmp/$c-vcluster.yaml"
+            helm template "fiducia-$c" "$chart" \
+              --namespace "fiducia-vc-$short" \
+              --values vcluster/hetzner-e2e/values/common.yaml \
+              --values "vcluster/hetzner-e2e/values/$c.yaml" \
+              --set-string 'sync.fromHost.nodes.selector.labels.kubernetes\.io/hostname=dummy-node' \
+              --set-string 'controlPlane.statefulSet.scheduling.nodeSelector.kubernetes\.io/hostname=dummy-node' \
+              --include-crds | tee "$out" | openssl dgst -sha256
+            if grep -nE '^[[:space:]]*type:[[:space:]]*(NodePort|LoadBalancer)[[:space:]]*$' "$out"; then
+              echo "forbidden host-exposed Service in $out" >&2
+              exit 1
+            fi
+            grep -q 'ghcr.io/loft-sh/vcluster-oss:0.35.1@sha256:' "$out"
+            node tools/validate-vcluster-manifest.mjs "$out" "fiducia-$c"
+          done
+      - name: Validate operator scripts
+        run: bash -n scripts/hetzner-e2e-*.sh
       # Dependency advisories are a required supply-chain gate.
       - run: npm audit
 
@@ -58,10 +91,10 @@ jobs:
           terraform_version: "1.9.8"
       - name: fmt
         run: terraform -chdir=terraform fmt -recursive -check -diff
-      - name: validate modules + e2e env
+      - name: validate modules + Terraform environments
         run: |
           set -e
-          for d in terraform/modules/* terraform/envs/e2e; do
+          for d in terraform/modules/*/ terraform/envs/e2e terraform/envs/hetzner-e2e; do
             echo "== validate $d =="
             terraform -chdir="$d" init -backend=false -input=false >/dev/null
             terraform -chdir="$d" validate

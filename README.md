@@ -224,6 +224,9 @@ argocd/                    ApplicationSet fanning out clusters/<name> -> cluster
 kind/                      LOCAL test clusters (no cloud spend)
   multizone.yaml           Tier 1: one cluster, zone-labeled workers
   multicluster/            Tier 2: three kind clusters + cross-cluster Raft + WAN faults
+vcluster/hetzner-e2e/      Tier 4: default 3-tenant proof on existing Hetzner Nodes
+k3s/hetzner-e2e/           disabled future 3-VM physical-isolation profile
+terraform/                 physical cluster/provider provisioning; never applied by CI
 ```
 
 Why these workload types: **node** and **brain** are Raft members → `StatefulSet`
@@ -255,7 +258,11 @@ tests the coordination API across them — see [`docs/e2e.md`](docs/e2e.md):
   kind clusters (hetzner/vultr/civo) wired into cross-cluster Raft groups over a
   shared Docker network, with WAN latency + partition injection — test cross-cluster
   consensus + failover locally, no cloud spend. (Tier 3 = add a cross-cluster CNI.)
-- [`terraform/`](terraform) — **Tier 4**: IaC for the real clusters (Hetzner
+- [`vcluster/hetzner-e2e`](vcluster/hetzner-e2e) — **Tier 4**: three logically
+  isolated, region-pinned vClusters on distinct Nodes of the existing five-node
+  Hetzner kubeadm cluster. This is the zero-new-server locks/leases proof path;
+  all access is through loopback port forwards.
+- [`terraform/`](terraform) — **Tier 5**: IaC for physically independent clusters (Hetzner
   k3s-on-VMs / Vultr VKE / Civo managed k3s — each provider a drop-in module
   swap), each behind an `enable_<cloud>` toggle.
 - [`fiducia-e2e`](https://github.com/fiducia-cloud/fiducia-e2e) — the shared
@@ -275,8 +282,10 @@ kubectl --context civo    apply -k clusters/civo
 For non-production GitOps, register test clusters with ArgoCD and apply
 [`argocd/applicationset.yaml`](argocd/applicationset.yaml). That ApplicationSet
 requires an explicit `fiducia.cloud/environment=nonproduction` cluster label and
-must not be used for production. Production is applied only by the manual,
-protected `fiducia-monorepo` deploy workflow from its exact submodule pins.
+must not be used for production. Production is rendered and digest-pinned by the
+manual, protected `fiducia-monorepo` promotion workflow, then reconciled by that
+repository's restricted Argo CD ApplicationSet. Actions never apply these
+overlays directly to a cluster.
 
 ## Prerequisites
 
@@ -324,6 +333,10 @@ but the intent is:
   out-of-band (see the `kubectl create secret` commands above). The trusted-hop
   and brain-Raft references are `optional: false`, so a production pod **fails to
   schedule** rather than silently starting with authentication disabled. The
+  optional `fiducia-kv-protection` Secret is the provider-neutral contract for a
+  Vault Transit backend or versioned local keyring; partial backend configuration
+  makes `fiducia-node` fail startup. See the
+  [KV protection and rotation runbook](docs/kv-protection.md). The
   otel-agent redacts `authorization`/`cookie`/`password`/`secret` and
   hashes `token`/`api_key` before forwarding telemetry.
 - **Least-privilege RBAC.** The only cluster-scoped grant is the otel-agent
@@ -404,10 +417,10 @@ every overlay):
   egress, kubelet probes). See **NetworkPolicy model** above. Verified to preserve
   edge `:443` ingress, otel egress, and cross-cluster peering with `kubectl
   kustomize` on every overlay.
-- **Terraform prod-hardening wired as opt-in variables** (defaults reproduce the
-  e2e baseline exactly — see **Prod-hardening (opt-in)** in
+- **Terraform provider hardening controls** (see **Provider hardening controls** in
   [`terraform/README.md`](terraform/README.md)): for the prod trio, an
-  `hcloud_firewall` on Hetzner (default-deny inbound except SSH/`:6443`/NodePorts;
+  default-on `hcloud_firewall` on Hetzner (default-deny inbound except restricted
+  SSH/`:6443`; no public NodePorts by default);
   Vultr VKE and Civo are managed control planes). The drop-in hyperscaler swap
   modules keep their own knobs — private VPC/subnets + authorized API CIDRs on
   EKS, `deletion_protection` + private cluster + network-policy on GKE, authorized
@@ -423,9 +436,10 @@ Accepted / known risks (reported, deliberately **not** auto-changed):
   `/v1` is). It is confined to the namespace by the default-deny + brain
   NetworkPolicy; adding a trusted-hop secret on brain `/v1` is the remaining
   defense-in-depth step.
-- **Terraform hardening ships defaulted-off.** The variables above reproduce the
-  e2e-grade baseline (public endpoints, default VPC, no firewall) until an
-  operator opts in. Enable them for any production use.
+- **Some managed-cloud Terraform hardening remains opt-in.** EKS, GKE, and AKS
+  retain public/test-compatible defaults for several provider controls. Hetzner
+  is the exception: its firewall is default-on and requires explicit restricted
+  operator CIDRs. Review every provider input before production use.
 
 ## Related
 

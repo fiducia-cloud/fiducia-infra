@@ -1,6 +1,6 @@
-# NON-PRODUCTION ONLY. Production is deployed from the reviewed, exact submodule
-# pins in fiducia-monorepo's manual deploy workflow. Pointing production ArgoCD at
-# fiducia-infra/main would bypass that promotion boundary.
+# NON-PRODUCTION ONLY. Production Argo CD reads rendered, digest-pinned desired
+# state from fiducia-monorepo. Pointing production directly at fiducia-infra/main
+# would bypass that promotion boundary.
 #
 # One non-production ArgoCD hub registers test clusters and applies each cluster's
 # overlay. A cluster is selected only after it is explicitly labeled both as a

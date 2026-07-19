@@ -1,0 +1,21 @@
+# Keep the real file outside the repository. The operator wrapper defaults to:
+#   ~/.local/state/fiducia/hetzner-e2e/terraform.tfvars
+
+# Keep the Terraform-native gate closed in templates. The guarded wrapper passes
+# both the boolean and exact confirmation only after its own operator opt-in.
+enable_optional_new_servers      = false
+new_server_creation_confirmation = ""
+
+owner_slug = "operator-name"
+expires_on = "2026-08-01"
+
+# Current stable operator/VPN egress only. Re-check before every plan.
+operator_cidrs = ["203.0.113.10/32"]
+
+# Set exactly one. Reusing the key already registered in the isolated test
+# project avoids duplicate-fingerprint errors.
+ssh_key_name = "operator-key"
+# ssh_public_key = "ssh-ed25519 AAAA... operator"
+
+# Verify availability and price in fsn1, nbg1, and hel1 before apply.
+server_type = "cx33"

@@ -1,9 +1,10 @@
-# terraform — provisioning the real managed clusters
+# terraform — provisioning real independent clusters
 
-This is **Tier 2** of the fiducia test/deploy infrastructure: Infrastructure-as-Code
-that stands up the actual managed Kubernetes clusters the multi-cluster topology
+This is the **physical-cluster tier** of the fiducia test/deploy infrastructure: Infrastructure-as-Code
+that stands up the actual Kubernetes clusters the multi-cluster topology
 runs on. (Tier 1 — ephemeral local `kind` clusters for CI conformance/chaos runs
-that need no cloud spend — lives in [`../kind`](../kind).)
+that need no cloud spend — lives in [`../kind`](../kind); the zero-new-server
+Hetzner proof tier lives in [`../vcluster/hetzner-e2e`](../vcluster/hetzner-e2e).)
 
 > **The kustomize overlays in [`../clusters`](../clusters) assume the clusters
 > already exist.** This directory is how they come to exist. `terraform` provisions
@@ -27,6 +28,8 @@ terraform/
                each behind an enable_<cloud> toggle → see envs/prod/README.md
     e2e/       real-hyperscaler TEST fleet (gke/eks/aks/hetzner, node_count 3) for
                the fiducia-e2e suite; emits kubeconfigs + LB endpoints
+    hetzner-e2e/ OPTIONAL FUTURE fleet of three additional single-node Hetzner
+                 k3s clusters; disabled while the existing-host vCluster path is used
 ```
 
 The **prod** fleet mirrors [`../topology.toml`](../topology.toml)
@@ -55,10 +58,11 @@ them uniformly:
 
 ## Cost & safety
 
-- These modules are **e2e/test-grade baselines** by default, not hardened prod.
+- These modules are **e2e/test-grade baselines**, not turnkey hardened prod.
   They favor the smallest footprint that runs fiducia (RF=3 → ≥3 schedulable
-  nodes ideal). Prod-hardening is now **wired as opt-in variables** that default
-  to the e2e behavior — see **Prod-hardening (opt-in)** below. Node
+  nodes ideal). Provider hardening controls are wired below; the Hetzner
+  firewall is secure-by-default while several managed-cloud controls remain
+  opt-in for compatibility. Node
   auto-repair/upgrade and remote state locking remain review items.
 - **`terraform apply` here spends real money and creates real infrastructure.**
   It is never run in CI. CI validates with `terraform fmt -check` + `terraform
@@ -120,13 +124,13 @@ Toggle any subset with the `enable_*` vars — e.g. bring up only GCP+AWS+Hetzne
 a real-hyperscaler test fleet, or add `enable_azure=true` for a 4th failure domain.
 (The real prod trio is hetzner/vultr/civo in `envs/prod`, above.)
 
-## Prod-hardening (opt-in)
+## Provider hardening controls
 
-Each module exposes hardening inputs whose **defaults reproduce the e2e-grade
-behavior exactly**, so existing `terraform apply` runs are unchanged until an
-operator opts in. The `envs/e2e` env threads each one through as a
-`<cloud>_<name>` variable that also defaults to the e2e behavior, so you can
-tighten a fleet cluster without editing modules:
+Each module exposes explicit hardening inputs. The `envs/e2e` environment threads
+them through as `<cloud>_<name>` variables. Hetzner now fails closed with its
+firewall enabled by default, requires restricted operator CIDRs, and exposes no
+public NodePorts. Several managed-cloud inputs retain test-compatible defaults,
+so review the complete plan before production use:
 
 > **In `envs/prod`** the hetzner firewall is the relevant knob and defaults **on**
 > (`hetzner_enable_firewall = true`), so you must pass `hetzner_firewall_allowed_cidrs`
@@ -146,7 +150,7 @@ tighten a fleet cluster without editing modules:
 | `gke` | `enable_network_policy` → `gcp_enable_network_policy` | `false` | `true` (Calico dataplane enforcement) |
 | `aks` | `authorized_api_cidrs` → `azure_authorized_api_cidrs` | `[]` → open | operator/admin CIDRs (`api_server_access_profile`) |
 | `aks` | `enable_network_policy` → `azure_enable_network_policy` | `false` | `true` (`network_plugin=azure`, `network_policy=azure`) |
-| `hetzner` | `enable_firewall` → `hetzner_enable_firewall` | `false` → **unfiltered public IPs** | `true` (attaches an `hcloud_firewall`, default-denies inbound except SSH/`:6443`/NodePorts) |
+| `hetzner` | `enable_firewall` → `hetzner_enable_firewall` | `true` → default-deny public ingress | keep `true`; restricted SSH/`:6443` only |
 | `hetzner` | `firewall_allowed_cidrs` → `hetzner_firewall_allowed_cidrs` | `[]` | **required** when `enable_firewall=true` — explicit restricted operator/mesh CIDRs (world-open `0.0.0.0/0`·`::/0` is rejected) |
 
 Example — a hardened GCP + Hetzner pair from the e2e env:

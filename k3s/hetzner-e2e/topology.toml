@@ -1,0 +1,48 @@
+# Isolated three-region Hetzner test topology. This is independent from the
+# production Hetzner/Civo/Vultr topology.toml and must never rewrite it.
+
+cluster_id = "fiducia-e2e-hetzner"
+shard_count = 16
+replication_factor = 3
+connectivity = "private-network"
+auth_required = true
+
+[raft]
+tick_ms = 50
+heartbeat_ms = 100
+election_min_ms = 600
+election_jitter_ms = 600
+check_quorum = true
+
+[[cluster]]
+name = "hetzner-fsn1"
+platform = "hetzner"
+region = "fsn1"
+storage_class = "local-path"
+node_replicas = 1
+node_api_endpoint = "10.30.0.11:30080"
+node_peer_endpoint = "10.30.0.11:30090"
+brain_endpoint = "10.30.0.11:30095"
+lb_endpoint = "http://127.0.0.1:18103"
+
+[[cluster]]
+name = "hetzner-nbg1"
+platform = "hetzner"
+region = "nbg1"
+storage_class = "local-path"
+node_replicas = 1
+node_api_endpoint = "10.30.0.12:30080"
+node_peer_endpoint = "10.30.0.12:30090"
+brain_endpoint = "10.30.0.12:30095"
+lb_endpoint = "http://127.0.0.1:18104"
+
+[[cluster]]
+name = "hetzner-hel1"
+platform = "hetzner"
+region = "hel1"
+storage_class = "local-path"
+node_replicas = 1
+node_api_endpoint = "10.30.0.13:30080"
+node_peer_endpoint = "10.30.0.13:30090"
+brain_endpoint = "10.30.0.13:30095"
+lb_endpoint = "http://127.0.0.1:18105"

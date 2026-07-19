@@ -1,0 +1,75 @@
+# Adapt the production base to one small member per logical vCluster. Immutable
+# image digests are injected only by the release renderer outside this repo.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fiducia-node
+  namespace: fiducia
+spec:
+  template:
+    spec:
+      imagePullSecrets:
+        - name: fiducia-ghcr-pull
+      containers:
+        - name: node
+          env:
+            - name: FIDUCIA_DEPLOYMENT_ENV
+              value: e2e
+          # The proof fleet shares existing control-plane hosts with production
+          # workloads. Keep production limits, but reserve only the measured
+          # steady-state floor so a test member remains schedulable on a busy
+          # failure domain without evicting unrelated workloads.
+          resources:
+            requests: { cpu: "100m", memory: "96Mi" }
+        - name: sidecar
+          env:
+            - name: FIDUCIA_DEPLOYMENT_ENV
+              value: e2e
+          resources:
+            requests: { cpu: "25m", memory: "32Mi" }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fiducia-brain
+  namespace: fiducia
+spec:
+  template:
+    spec:
+      imagePullSecrets:
+        - name: fiducia-ghcr-pull
+      containers:
+        - name: brain
+          env:
+            - name: FIDUCIA_DEPLOYMENT_ENV
+              value: e2e
+        - name: sidecar
+          env:
+            - name: FIDUCIA_DEPLOYMENT_ENV
+              value: e2e
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fiducia-load-balance
+  namespace: fiducia
+spec:
+  template:
+    spec:
+      imagePullSecrets:
+        - name: fiducia-ghcr-pull
+      containers:
+        - name: lb
+          env:
+            - name: FIDUCIA_TLS_CERT_PATH
+              $patch: delete
+            - name: FIDUCIA_TLS_KEY_PATH
+              $patch: delete
+            - name: FIDUCIA_DEPLOYMENT_ENV
+              value: e2e
+          volumeMounts:
+            - name: tls
+              $patch: delete
+      volumes:
+        - name: tls
+          $patch: delete

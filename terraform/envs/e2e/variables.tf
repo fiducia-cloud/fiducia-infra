@@ -106,11 +106,11 @@ variable "azure_enable_network_policy" {
 
 variable "hetzner_enable_firewall" {
   type        = bool
-  default     = false
-  description = "Attach a default-deny public firewall to Hetzner nodes."
+  default     = true
+  description = "Attach the default-deny public firewall to Hetzner nodes. The explicit legacy opt-out is unsafe."
 }
 variable "hetzner_firewall_allowed_cidrs" {
   type        = list(string)
   default     = []
-  description = "Restricted operator/edge CIDRs allowed to SSH, the k3s API, and NodePorts when the firewall is enabled."
+  description = "Restricted operator CIDRs allowed to SSH and the k3s API when the firewall is enabled. NodePorts remain private."
 }

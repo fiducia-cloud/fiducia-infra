@@ -7,6 +7,7 @@
   "scripts": {
     "render": "node tools/render.mjs",
     "check": "node tools/render.mjs --check",
+    "check:vcluster": "node tools/render-vcluster-hetzner-e2e.mjs --check",
     "test": "node --test tools/*.test.mjs"
   }
 }

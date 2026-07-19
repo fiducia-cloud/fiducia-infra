@@ -1,0 +1,33 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: fiducia
+resources:
+  - ../../../base
+  - nodeports.yaml
+  - networkpolicy.yaml
+components:
+  - ../../../base/components/brain
+patches:
+  - path: workload-patches.yaml
+  - target: { kind: Namespace, name: fiducia }
+    patch: |-
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: fiducia
+        labels:
+          pod-security.kubernetes.io/enforce: restricted
+          pod-security.kubernetes.io/audit: restricted
+          pod-security.kubernetes.io/warn: restricted
+  - target: { kind: Service, name: fiducia-load-balance }
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata: { name: fiducia-load-balance, namespace: fiducia }
+  - target: { kind: DaemonSet, name: fiducia-otel-agent }
+    patch: |-
+      $patch: delete
+      apiVersion: apps/v1
+      kind: DaemonSet
+      metadata: { name: fiducia-otel-agent, namespace: fiducia }

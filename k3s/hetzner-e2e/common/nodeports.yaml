@@ -1,0 +1,49 @@
+# All four NodePorts are reachable across the shared 10.30.0.0/24 private
+# network. The HCloud firewall deliberately exposes none of them publicly.
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-node-api-ext
+  namespace: fiducia
+  labels: { app: fiducia-node, fiducia.cloud/environment: hetzner-e2e }
+spec:
+  type: NodePort
+  selector: { app: fiducia-node }
+  ports:
+    - { name: http, port: 8090, targetPort: 8090, nodePort: 30080, protocol: TCP }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-node-peer-ext
+  namespace: fiducia
+  labels: { app: fiducia-node, fiducia.cloud/environment: hetzner-e2e }
+spec:
+  type: NodePort
+  selector: { app: fiducia-node }
+  ports:
+    - { name: peer, port: 9090, targetPort: 9090, nodePort: 30090, protocol: TCP }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-brain-peer-ext
+  namespace: fiducia
+  labels: { app: fiducia-brain, fiducia.cloud/environment: hetzner-e2e }
+spec:
+  type: NodePort
+  selector: { app: fiducia-brain }
+  ports:
+    - { name: peer, port: 9095, targetPort: 9095, nodePort: 30095, protocol: TCP }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-load-balance-ext
+  namespace: fiducia
+  labels: { app: fiducia-load-balance, fiducia.cloud/environment: hetzner-e2e }
+spec:
+  type: NodePort
+  selector: { app: fiducia-load-balance }
+  ports:
+    - { name: http, port: 8088, targetPort: 8088, nodePort: 30088, protocol: TCP }

@@ -1,0 +1,41 @@
+{
+  "apiVersion": "v1",
+  "items": [
+    {
+      "metadata": {
+        "name": "dd-k8s-fsn1",
+        "uid": "fixture-node-fsn1",
+        "labels": { "kubernetes.io/hostname": "dd-k8s-fsn1" }
+      },
+      "spec": { "providerID": "hcloud://139855460" },
+      "status": { "conditions": [{ "type": "Ready", "status": "True" }] }
+    },
+    {
+      "metadata": {
+        "name": "dd-k8s-nbg1",
+        "uid": "fixture-node-nbg1",
+        "labels": { "kubernetes.io/hostname": "dd-k8s-nbg1" }
+      },
+      "spec": { "providerID": "hcloud://139855544" },
+      "status": { "conditions": [{ "type": "Ready", "status": "True" }] }
+    },
+    {
+      "metadata": {
+        "name": "dd-k8s-hel1",
+        "uid": "fixture-node-hel1",
+        "labels": { "kubernetes.io/hostname": "dd-k8s-hel1" }
+      },
+      "spec": { "providerID": "hcloud://139855672" },
+      "status": { "conditions": [{ "type": "Ready", "status": "True" }] }
+    },
+    {
+      "metadata": {
+        "name": "dd-k8s-control",
+        "uid": "fixture-node-control",
+        "labels": { "kubernetes.io/hostname": "dd-k8s-control" }
+      },
+      "spec": { "providerID": "hcloud://139850001" },
+      "status": { "conditions": [{ "type": "Ready", "status": "True" }] }
+    }
+  ]
+}

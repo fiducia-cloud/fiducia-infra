@@ -1,0 +1,48 @@
+# Three logical Kubernetes failure domains hosted as isolated vCluster tenants
+# on the existing Hetzner kubeadm cluster. Cross-tenant Raft uses replicated
+# ClusterIP services; operator endpoints are loopback kubectl port-forwards.
+cluster_id = "fiducia-e2e-hetzner-vcluster"
+shard_count = 16
+replication_factor = 3
+connectivity = "private-network"
+auth_required = true
+
+[raft]
+tick_ms = 50
+heartbeat_ms = 100
+election_min_ms = 600
+election_jitter_ms = 600
+check_quorum = true
+
+[[cluster]]
+name = "hetzner-fsn1"
+platform = "vcluster"
+region = "fsn1"
+storage_class = "local-path"
+node_replicas = 1
+brain = true
+brain_endpoint = "fiducia-brain-peer-fsn1.fiducia.svc.cluster.local:9095"
+node_peer_endpoint = "fiducia-node-peer-fsn1.fiducia.svc.cluster.local:9090"
+lb_endpoint = "http://127.0.0.1:18103"
+
+[[cluster]]
+name = "hetzner-nbg1"
+platform = "vcluster"
+region = "nbg1"
+storage_class = "local-path"
+node_replicas = 1
+brain = true
+brain_endpoint = "fiducia-brain-peer-nbg1.fiducia.svc.cluster.local:9095"
+node_peer_endpoint = "fiducia-node-peer-nbg1.fiducia.svc.cluster.local:9090"
+lb_endpoint = "http://127.0.0.1:18104"
+
+[[cluster]]
+name = "hetzner-hel1"
+platform = "vcluster"
+region = "hel1"
+storage_class = "local-path"
+node_replicas = 1
+brain = true
+brain_endpoint = "fiducia-brain-peer-hel1.fiducia.svc.cluster.local:9095"
+node_peer_endpoint = "fiducia-node-peer-hel1.fiducia.svc.cluster.local:9090"
+lb_endpoint = "http://127.0.0.1:18105"
