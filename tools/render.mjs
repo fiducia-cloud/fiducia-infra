@@ -239,12 +239,31 @@ ${pvc(c.storage_class, "10Gi")}`];
     // (hand-authored in clusters/<name>/kustomization.yaml); node-only clusters
     // omit both the Component and this patch, so they never join the brain group.
     if (c.brain) {
+      // FIDUCIA_BRAIN_ID doubles as the address the OTHER brains dial: it is the
+      // leader_id gossiped in brain-Raft, and a follower forwards /v1 reads and
+      // writes to `{leader_id}/forward/v1/...` on the peer plane. The base sets a
+      // display-style id (`$(POD_NAME).$(FIDUCIA_CLUSTER)`) which resolves
+      // nowhere, so every follower forward blackholes: /v1/nodes 502s on the two
+      // followers, each LB then fails to refresh its brain node snapshot and
+      // serves 502 on the data path, and the leader only ever learns about nodes
+      // whose sidecars heartbeat it directly (nodes=1, every shard reported
+      // under-replicated). Advertise this member's dialable peer-plane URL —
+      // the same `brain_endpoint` the other clusters already list in
+      // FIDUCIA_BRAIN_PEERS. Container env strategic-merges on `name`, so this
+      // replaces the base entry rather than appending a duplicate.
       patches.push(`apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: fiducia-brain
   namespace: fiducia
 spec:
+  template:
+    spec:
+      containers:
+        - name: brain
+          env:
+            - name: FIDUCIA_BRAIN_ID
+              value: "http://${c.brain_endpoint}"
 ${pvc(c.storage_class, "2Gi")}`);
     }
 
