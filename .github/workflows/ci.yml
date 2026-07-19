@@ -64,11 +64,11 @@ jobs:
               --set-string 'sync.fromHost.nodes.selector.labels.kubernetes\.io/hostname=dummy-node' \
               --set-string 'controlPlane.statefulSet.scheduling.nodeSelector.kubernetes\.io/hostname=dummy-node' \
               --include-crds | tee "$out" | openssl dgst -sha256
-            if rg -n '^\s*type:\s*(NodePort|LoadBalancer)\s*$' "$out"; then
+            if grep -nE '^[[:space:]]*type:[[:space:]]*(NodePort|LoadBalancer)[[:space:]]*$' "$out"; then
               echo "forbidden host-exposed Service in $out" >&2
               exit 1
             fi
-            rg -q 'ghcr.io/loft-sh/vcluster-oss:0.35.1@sha256:' "$out"
+            grep -q 'ghcr.io/loft-sh/vcluster-oss:0.35.1@sha256:' "$out"
           done
       - name: Validate operator scripts
         run: bash -n scripts/hetzner-e2e-*.sh
