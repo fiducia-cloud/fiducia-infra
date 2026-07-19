@@ -29,6 +29,7 @@ usage() {
     '       scripts/hetzner-e2e-vclusters.sh plan <plan-id>' \
     '       scripts/hetzner-e2e-vclusters.sh install <plan-id>' \
     '       scripts/hetzner-e2e-vclusters.sh status' \
+    '       scripts/hetzner-e2e-vclusters.sh reset-incomplete' \
     '       scripts/hetzner-e2e-vclusters.sh destroy'
 }
 
@@ -318,6 +319,45 @@ status_fleet() {
   done
 }
 
+reset_incomplete_fleet() {
+  local cluster namespace release fleet_owner logical_owner tenant_objects
+  test "${FIDUCIA_CONFIRM_INCOMPLETE_VCLUSTER_RESET:-}" = "reset-incomplete-owned-three-vcluster-fleet" ||
+    fail "set FIDUCIA_CONFIRM_INCOMPLETE_VCLUSTER_RESET=reset-incomplete-owned-three-vcluster-fleet"
+  host_preflight
+  for cluster in "${CLUSTERS[@]}"; do
+    namespace=$(namespace_for "$cluster")
+    release=$(release_for "$cluster")
+    if ! host_kubectl get namespace "$namespace" >/dev/null 2>&1; then
+      printf 'skip absent incomplete namespace %s\n' "$namespace"
+      continue
+    fi
+    fleet_owner=$(host_kubectl get namespace "$namespace" -o jsonpath='{.metadata.labels.fiducia\.cloud/vcluster-fleet}')
+    logical_owner=$(host_kubectl get namespace "$namespace" -o jsonpath='{.metadata.labels.fiducia\.cloud/logical-cluster}')
+    test "$fleet_owner" = "hetzner-e2e" && test "$logical_owner" = "$cluster" ||
+      fail "refusing to reset unowned namespace $namespace"
+    tenant_objects=$(host_kubectl -n "$namespace" get all,configmap,secret,pvc -o json | jq '[
+      .items[] |
+      select(
+        (.metadata.labels["vcluster.loft.sh/namespace"] //
+         .metadata.annotations["vcluster.loft.sh/namespace"] //
+         .metadata.annotations["vcluster.loft.sh/object-namespace"] // "") == "fiducia"
+      )
+    ] | length')
+    test "$tenant_objects" -eq 0 ||
+      fail "$namespace contains $tenant_objects synced fiducia object(s); capture evidence and use reviewed teardown instead"
+  done
+  for cluster in "${CLUSTERS[@]}"; do
+    namespace=$(namespace_for "$cluster")
+    release=$(release_for "$cluster")
+    host_kubectl get namespace "$namespace" >/dev/null 2>&1 || continue
+    if helm status "$release" --namespace "$namespace" "${HELM_HOST_ARGS[@]}" >/dev/null 2>&1; then
+      helm uninstall "$release" --namespace "$namespace" "${HELM_HOST_ARGS[@]}" --wait --timeout 10m
+    fi
+    host_kubectl delete namespace "$namespace" --wait=true --timeout=10m
+    printf 'reset incomplete owned logical cluster %s\n' "$cluster"
+  done
+}
+
 destroy_fleet() {
   local cluster namespace release fleet_owner logical_owner
   test "${FIDUCIA_CONFIRM_VCLUSTER_DESTROY:-}" = "destroy-three-logical-vclusters" ||
@@ -349,6 +389,7 @@ case "$command" in
   plan) test -n "$argument" || fail "plan-id is required"; plan_fleet "$argument" ;;
   install) test -n "$argument" || fail "plan-id is required"; install_fleet "$argument" ;;
   status) status_fleet ;;
+  reset-incomplete) reset_incomplete_fleet ;;
   destroy) destroy_fleet ;;
   *) usage >&2; exit 2 ;;
 esac

@@ -177,6 +177,23 @@ exact bytes of `proof-topology.json` and `infra-evidence.json` by SHA-256; the
 strict suite rehashes both before testing. Preserve those files and the proof
 manifest before any teardown.
 
+## Interrupted-install recovery
+
+If chart installation stops before any Fiducia workload is deployed, use the
+separate incomplete-reset guard before creating a replacement plan. It verifies
+the fleet ownership labels and refuses to proceed if any synced object from the
+tenant's `fiducia` namespace exists. This reset deletes the incomplete vCluster
+namespace and its datastore, so review the live inventory and provide the exact
+confirmation only for disposable pre-proof state:
+
+```sh
+FIDUCIA_CONFIRM_INCOMPLETE_VCLUSTER_RESET=reset-incomplete-owned-three-vcluster-fleet \
+  scripts/hetzner-e2e-vclusters.sh reset-incomplete
+```
+
+Do not use this path after workload deployment. Capture evidence and follow the
+reviewed teardown flow instead.
+
 ## Explicit teardown
 
 Teardown removes only Helm releases and namespaces carrying this fleet's

@@ -272,6 +272,8 @@ test("operator scripts fail closed on context, identity, install, and destroy", 
   assert.match(lifecycle, /current-context fallback is forbidden/);
   assert.match(lifecycle, /install-three-logical-vclusters-no-new-servers/);
   assert.match(lifecycle, /destroy-three-logical-vclusters/);
+  assert.match(lifecycle, /reset-incomplete-owned-three-vcluster-fleet/);
+  assert.match(lifecycle, /contains \$tenant_objects synced fiducia object/);
   assert.match(lifecycle, /three distinct Node names/);
   assert.match(hostValidator, /three distinct hcloud:\/\/ provider IDs/);
   assert.match(lifecycle, /expected_failure_domains: \$expected_failure_domains/);
