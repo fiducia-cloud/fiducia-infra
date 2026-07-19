@@ -275,8 +275,10 @@ kubectl --context civo    apply -k clusters/civo
 For non-production GitOps, register test clusters with ArgoCD and apply
 [`argocd/applicationset.yaml`](argocd/applicationset.yaml). That ApplicationSet
 requires an explicit `fiducia.cloud/environment=nonproduction` cluster label and
-must not be used for production. Production is applied only by the manual,
-protected `fiducia-monorepo` deploy workflow from its exact submodule pins.
+must not be used for production. Production is rendered and digest-pinned by the
+manual, protected `fiducia-monorepo` promotion workflow, then reconciled by that
+repository's restricted Argo CD ApplicationSet. Actions never apply these
+overlays directly to a cluster.
 
 ## Prerequisites
 

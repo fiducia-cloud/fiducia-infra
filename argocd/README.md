@@ -1,9 +1,10 @@
 # argocd — non-production GitOps fan-out
 
-This directory is deliberately **non-production only**. Production is deployed
-from a reviewed, exact pin set in `fiducia-monorepo` by its manual `deploy`
-workflow. An ArgoCD application following `fiducia-infra/main` in production
-would bypass that promotion and approval boundary.
+This directory is deliberately **non-production only**. Production is reconciled
+by Argo CD from rendered, digest-pinned state in `fiducia-monorepo`. Its manual
+promotion workflow records the exact infrastructure and component commits in a
+release bill of materials. A production Application following
+`fiducia-infra/main` directly would bypass that approval boundary.
 
 The manifest defines a restricted `fiducia-nonproduction` AppProject plus an
 `ApplicationSet` that fans `clusters/<name>` overlays out to registered test
@@ -18,5 +19,6 @@ fiducia.cloud/environment: nonproduction
 The generated Applications may auto-sync `fiducia-infra/main` because they are
 confined to explicitly non-production clusters and the `fiducia` namespace.
 Do not add the nonproduction label to a production cluster. For production,
-dispatch the monorepo workflow from protected `main`; it applies the pinned infra
-overlay directly.
+dispatch the monorepo workflow from protected `main`; its Argo ApplicationSet
+selects only clusters labeled `fiducia.cloud/environment=production` and
+`fiducia.cloud/plane=data`.
