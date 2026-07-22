@@ -7,10 +7,19 @@ metadata:
   namespace: fiducia
 spec:
   replicas: 4
+  # volumeClaimTemplates has NO strategic-merge key, so kustomize REPLACES the
+  # whole list — a patch carrying only storageClassName drops accessModes and
+  # resources and the API server rejects the StatefulSet ("at least 1 access
+  # mode is required"). Restate the FULL PVC spec, as clusters/*/patches.yaml
+  # and kind/multicluster/common/patches.yaml do. Size mirrors base/ (10Gi).
   volumeClaimTemplates:
     - metadata:
         name: data
       spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 10Gi
         storageClassName: standard
 ---
 # Expose the client HTTP service on a fixed NodePort matching kind's

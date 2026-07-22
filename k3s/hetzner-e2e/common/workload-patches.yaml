@@ -9,6 +9,11 @@ metadata:
 spec:
   template:
     spec:
+      # All four core images live in the private ghcr.io/fiducia-cloud org;
+      # scripts/hetzner-e2e-secrets.sh provisions this pull Secret in every
+      # cluster. Without the reference here every pod ImagePullBackOffs.
+      imagePullSecrets:
+        - name: fiducia-ghcr-pull
       tolerations:
         - key: node-role.kubernetes.io/control-plane
           operator: Exists
@@ -31,6 +36,11 @@ metadata:
 spec:
   template:
     spec:
+      # All four core images live in the private ghcr.io/fiducia-cloud org;
+      # scripts/hetzner-e2e-secrets.sh provisions this pull Secret in every
+      # cluster. Without the reference here every pod ImagePullBackOffs.
+      imagePullSecrets:
+        - name: fiducia-ghcr-pull
       tolerations:
         - key: node-role.kubernetes.io/control-plane
           operator: Exists
@@ -53,6 +63,8 @@ metadata:
 spec:
   template:
     spec:
+      imagePullSecrets:
+        - name: fiducia-ghcr-pull
       containers:
         - name: lb
           env:
@@ -62,8 +74,12 @@ spec:
               $patch: delete
             - name: FIDUCIA_DEPLOYMENT_ENV
               value: e2e
+          # NOTE: volumeMounts strategic-merges on `mountPath`, NOT on `name`.
+          # Keying this delete on `name` matches nothing and kustomize renders
+          # `volumeMounts: []` — silently dropping the writable /tmp mount the
+          # read-only rootfs needs.
           volumeMounts:
-            - name: tls
+            - mountPath: /etc/fiducia/tls
               $patch: delete
       volumes:
         - name: tls

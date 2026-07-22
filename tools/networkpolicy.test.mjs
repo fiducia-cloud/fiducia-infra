@@ -55,6 +55,37 @@ test("service and control traffic remains internal while peer Raft ports remain 
   assert.match(brain, /name:\s*fiducia-brain-peer-egress/);
 });
 
+test("credential-bearing pods never get address-unrestricted HTTPS egress", () => {
+  // The brain holds a projected SA token + the whole placement map, and the
+  // otel-agent mounts one plus every pod's logs. A `ports:`-only egress rule
+  // (no `to:`) would let either dial ANY host on 443 — the same shape the node
+  // is already forbidden from having above. Every 443/6443 rule must carry an
+  // address restriction, and it must be private-range only.
+  const PUBLIC_ROUTABLE = /(?:^|[^0-9.])(?:0\.0\.0\.0\/0|::\/0)/;
+  for (const relativePath of [
+    "base/components/brain/networkpolicy.yaml",
+    "base/observability/networkpolicy.yaml",
+  ]) {
+    const manifest = read(relativePath);
+    for (const document of manifest.split(/\n---\n/)) {
+      if (!/policyTypes:\s*\[Egress\]/.test(document)) continue;
+      for (const rule of document.split(/\n {4}- /).slice(1)) {
+        if (!/port:\s*(?:443|6443)/.test(rule)) continue;
+        assert.match(
+          rule,
+          /to:\s*\n\s+- ipBlock:/,
+          `${relativePath}: an HTTPS/apiserver egress rule must scope its destination`,
+        );
+        assert.doesNotMatch(
+          rule,
+          PUBLIC_ROUTABLE,
+          `${relativePath}: apiserver egress must not admit a public CIDR`,
+        );
+      }
+    }
+  }
+});
+
 test("only the TLS load-balancer port is public and telemetry has required egress", () => {
   const edge = read("base/load-balance/networkpolicy.yaml");
   assert.match(edge, /protocol:\s*TCP, port:\s*8443/);

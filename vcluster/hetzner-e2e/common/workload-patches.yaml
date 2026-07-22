@@ -67,8 +67,12 @@ spec:
               $patch: delete
             - name: FIDUCIA_DEPLOYMENT_ENV
               value: e2e
+          # NOTE: volumeMounts strategic-merges on `mountPath`, NOT on `name`.
+          # Keying this delete on `name` matches nothing and kustomize renders
+          # `volumeMounts: []` — silently dropping the writable /tmp mount the
+          # read-only rootfs needs.
           volumeMounts:
-            - name: tls
+            - mountPath: /etc/fiducia/tls
               $patch: delete
       volumes:
         - name: tls

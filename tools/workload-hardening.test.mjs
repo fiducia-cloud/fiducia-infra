@@ -1,122 +1,119 @@
 // Contract tests for the workload security baseline, applied to EVERY container
-// in EVERY workload manifest under base/ (including kustomize components).
-// Cluster-free: parses the YAML sources directly, complementing kustomize
-// validation in CI. If a new container is added anywhere, these assertions
-// cover it automatically — the baseline cannot silently regress per-workload.
+// in EVERY workload — both the hand-authored sources under base/ AND the fully
+// rendered output of every overlay, so an overlay cannot patch the baseline away.
+//
+// These assertions parse structured manifests (tools/manifests.mjs) rather than
+// regex-matching YAML text: the previous regex form accepted `resources: {}` for
+// "resource bounds required" and a container carrying only ONE probe for
+// "probe-covered", and it never looked past base/.
 
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+import {
+  podSpecsOf,
+  readManifests,
+  renderOverlay,
+  root,
+  workloadFiles,
+} from "./manifests.mjs";
 
-/** Every YAML file under base/ holding a Deployment/StatefulSet/DaemonSet. */
-function workloadFiles() {
-  const files = [];
-  const walk = (dir) => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else if (/\.ya?ml$/.test(entry.name)) files.push(full);
-    }
-  };
-  walk(path.join(root, "base"));
-  return files.filter((file) =>
-    /kind:\s*(Deployment|StatefulSet|DaemonSet)/.test(fs.readFileSync(file, "utf8")),
-  );
+// Every overlay CI builds (.github/workflows/ci.yml) plus the local kind tiers.
+const OVERLAYS = [
+  "clusters/hetzner",
+  "clusters/vultr",
+  "clusters/civo",
+  "kind/overlay",
+  "kind/multicluster/hetzner-fsn1",
+  "k3s/hetzner-e2e/clusters/hetzner-fsn1",
+  "vcluster/hetzner-e2e/clusters/hetzner-fsn1",
+];
+
+/** A CPU/memory quantity must be present and non-empty. */
+function assertQuantity(value, where) {
+  assert.equal(typeof value, "string", `${where} must be set`);
+  assert.match(value, /^\d+(\.\d+)?[a-zA-Z]*$/, `${where} must be a Kubernetes quantity`);
 }
 
-/** Split a manifest into per-container blocks (name + following indented body). */
-function containerBlocks(source) {
-  const blocks = [];
-  const lines = source.split("\n");
-  for (let i = 0; i < lines.length; i += 1) {
-    if (!/^\s+containers:\s*$/.test(lines[i])) continue;
-    // Collect each "- name:" item until dedent below the containers key.
-    const baseIndent = lines[i].match(/^(\s+)/)[1].length;
-    let current = null;
-    let itemIndent = null; // the container items' own indent — env lists also
-    // use "- name:" but sit DEEPER; only same-indent dashes start a container.
-    for (let j = i + 1; j < lines.length; j += 1) {
-      const line = lines[j];
-      const indent = line.match(/^(\s*)/)[1].length;
-      if (line.trim() && indent <= baseIndent) break;
-      const item = /^(\s*)-\s+name:\s*(\S+)/.exec(line);
-      if (item && (itemIndent === null || item[1].length === itemIndent)) {
-        itemIndent = item[1].length;
-        if (current) blocks.push(current);
-        current = { name: item[2], body: "" };
-      } else if (current) {
-        current.body += `${line}\n`;
-      }
-    }
-    if (current) blocks.push(current);
+function assertHardenedPodSpec({ where, spec }) {
+  const podSecurity = spec.securityContext ?? {};
+  const containers = [...(spec.containers ?? []), ...(spec.initContainers ?? [])];
+  assert.ok(containers.length > 0, `${where}: has at least one container`);
+
+  // Pod-level runAsNonRoot must be declared — OR the workload runs as root under
+  // the fleet's documented-exception pattern (the otel-agent reading root-owned
+  // /var/log/pods), whose inline justification is asserted separately below.
+  const runsAsRoot = podSecurity.runAsUser === 0
+    || containers.some((container) => container.securityContext?.runAsUser === 0);
+  if (!runsAsRoot) {
+    assert.equal(podSecurity.runAsNonRoot, true, `${where}: runAsNonRoot missing`);
   }
-  return blocks;
+
+  for (const container of containers) {
+    const at = `${where} container '${container.name}'`;
+    const security = container.securityContext ?? {};
+    assert.equal(security.readOnlyRootFilesystem, true, `${at}: rootfs must be read-only`);
+    assert.deepEqual(security.capabilities?.drop, ["ALL"], `${at}: capabilities must drop ALL`);
+    assert.equal(security.allowPrivilegeEscalation, false, `${at}: privilege escalation must be off`);
+
+    // BOTH probes: readiness alone leaves a wedged process running forever;
+    // liveness alone routes traffic at a process that is up but not ready.
+    assert.ok(container.readinessProbe, `${at}: readinessProbe required`);
+    assert.ok(container.livenessProbe, `${at}: livenessProbe required`);
+
+    // Limits, not merely a `resources:` key — an unbounded container can starve
+    // the Raft member sharing its machine.
+    const resources = container.resources ?? {};
+    assertQuantity(resources.limits?.cpu, `${at}: resources.limits.cpu`);
+    assertQuantity(resources.limits?.memory, `${at}: resources.limits.memory`);
+    assertQuantity(resources.requests?.cpu, `${at}: resources.requests.cpu`);
+    assertQuantity(resources.requests?.memory, `${at}: resources.requests.memory`);
+  }
 }
 
-test("every base workload container is non-root, read-only, and probe-covered", () => {
-  const files = workloadFiles();
+test("every base workload container is non-root, read-only, probed and bounded", () => {
+  const files = workloadFiles("base");
   assert.ok(files.length >= 3, `expected node/LB/otel/brain workloads, found ${files.length}`);
   for (const file of files) {
-    const source = fs.readFileSync(file, "utf8");
-    const rel = path.relative(root, file);
-    // Pod-level runAsNonRoot must be declared — OR the workload runs as root
-    // under the fleet's documented-exception pattern (e.g. otel-agent reading
-    // root-owned /var/log/pods), which requires an inline justification
-    // comment so the exception is reviewable, never accidental.
-    if (/runAsUser:\s*0(\s|$)/m.test(source)) {
-      assert.match(
-        source,
-        /#.*root only/i,
-        `${rel}: runs as root without a documented "root only" justification`,
-      );
-    } else {
-      assert.match(source, /runAsNonRoot:\s*true/, `${rel}: runAsNonRoot missing`);
-    }
-    for (const container of containerBlocks(source)) {
-      const where = `${rel} container '${container.name}'`;
-      assert.match(
-        container.body,
-        /readOnlyRootFilesystem:\s*true/,
-        `${where}: rootfs must be read-only`,
-      );
-      assert.match(
-        container.body,
-        /drop:\s*\["?ALL"?\]/,
-        `${where}: capabilities must drop ALL`,
-      );
-      assert.match(
-        container.body,
-        /allowPrivilegeEscalation:\s*false/,
-        `${where}: privilege escalation must be off`,
-      );
-      assert.match(
-        container.body,
-        /(readinessProbe|livenessProbe):/,
-        `${where}: at least one probe required`,
-      );
-      assert.match(container.body, /resources:/, `${where}: resource bounds required`);
-    }
+    for (const podSpec of podSpecsOf(readManifests(file), file)) assertHardenedPodSpec(podSpec);
+  }
+});
+
+test("every rendered overlay keeps the hardening baseline it inherits", () => {
+  for (const overlay of OVERLAYS) {
+    const podSpecs = podSpecsOf(renderOverlay(overlay), overlay);
+    assert.ok(podSpecs.length >= 3, `${overlay}: expected node + brain + LB workloads`);
+    for (const podSpec of podSpecs) assertHardenedPodSpec(podSpec);
+  }
+});
+
+test("a root workload keeps its reviewable inline justification", () => {
+  for (const file of workloadFiles("base")) {
+    const source = fs.readFileSync(path.join(root, file), "utf8");
+    if (!/runAsUser:\s*0(\s|$)/m.test(source)) continue;
+    assert.match(
+      source,
+      /#.*root only/i,
+      `${file}: runs as root without a documented "root only" justification`,
+    );
   }
 });
 
 test("no base workload consumes a mutable image tag", () => {
-  for (const file of workloadFiles()) {
-    const rel = path.relative(root, file);
-    const source = fs.readFileSync(file, "utf8");
+  for (const file of workloadFiles("base")) {
+    const source = fs.readFileSync(path.join(root, file), "utf8");
     for (const match of source.matchAll(/image:\s*(\S+)/g)) {
       const image = match[1].replace(/["']/g, "");
       assert.ok(
         !/(:latest|:main|:edge)$/.test(image),
-        `${rel}: mutable tag on ${image}`,
+        `${file}: mutable tag on ${image}`,
       );
       assert.match(
         image,
         /(:v[0-9][\w.-]*|@sha256:[0-9a-f]{64})$/,
-        `${rel}: ${image} must be version- or digest-pinned`,
+        `${file}: ${image} must be version- or digest-pinned`,
       );
     }
   }

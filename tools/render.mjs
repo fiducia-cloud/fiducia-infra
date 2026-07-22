@@ -234,6 +234,25 @@ spec:
   replicas: ${c.node_replicas}
 ${pvc(c.storage_class, "10Gi")}`];
 
+    // Voluntary-disruption guard, sized to THIS cluster's node count.
+    // base/node/pdb.yaml carries maxUnavailable: 1, which is correct only for the
+    // >= 3-replica shape base assumes. With one or two nodes per cluster — and a
+    // shard's 3 replicas spread ONE PER CLUSTER — maxUnavailable: 1 permits
+    // evicting 100% of this cluster's Raft member, and each cluster's PDB is
+    // blind to the other two, so two concurrent drains take every shard below
+    // write quorum. Block voluntary eviction outright instead: a drain must be
+    // consciously overridden by an operator who has checked the other clusters
+    // (identical reasoning to base/components/brain/pdb.yaml).
+    if (c.node_replicas <= 2) {
+      patches.push(`apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: fiducia-node
+  namespace: fiducia
+spec:
+  maxUnavailable: 0`);
+    }
+
     // Brain storage patch only on brain clusters. Whether a cluster RUNS a brain
     // is decided by its overlay including the `base/components/brain` Component
     // (hand-authored in clusters/<name>/kustomization.yaml); node-only clusters

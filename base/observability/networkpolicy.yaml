@@ -30,6 +30,16 @@ spec:
         - { protocol: TCP, port: 4318 }
     # (b) Kubernetes API server (k8sattributes enrichment). 443 = in-cluster
     #     `kubernetes.default` ClusterIP; 6443 = k3s / kubeadm apiserver port.
-    - ports:
+    #     Scoped to the private / in-cluster ranges an API server or Service
+    #     ClusterIP can live in — port-only would give this DaemonSet (which
+    #     mounts a SA token and every pod's logs) egress to any host on 443.
+    #     Overlays SHOULD narrow `to:` to the exact API server address; see the
+    #     worked patch in components/brain/networkpolicy.yaml.
+    - to:
+        - ipBlock: { cidr: 10.0.0.0/8 }
+        - ipBlock: { cidr: 172.16.0.0/12 }
+        - ipBlock: { cidr: 192.168.0.0/16 }
+        - ipBlock: { cidr: 100.64.0.0/10 }
+      ports:
         - { protocol: TCP, port: 443 }
         - { protocol: TCP, port: 6443 }

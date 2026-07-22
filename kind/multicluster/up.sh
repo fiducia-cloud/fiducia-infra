@@ -85,13 +85,23 @@ for c in "${CLUSTERS[@]}"; do
 done
 
 # 5. wait for readiness ------------------------------------------------------------
+# A failed rollout must be FATAL. Swallowing it (`|| warn`) also defeats `set -e`,
+# so the READY banner below printed unconditionally and a broken deploy surfaced
+# downstream only as opaque 90s `eventually` timeouts in fiducia-e2e.
 to="${FIDUCIA_ROLLOUT_TIMEOUT:-180s}"
+not_ready=0
 for c in "${CLUSTERS[@]}"; do
   log "waiting for $c node + brain + load balance (timeout $to)…"
-  kc "$c" -n "$NAMESPACE" rollout status statefulset/fiducia-node  --timeout="$to" || warn "$c node not Ready in time (check: kubectl --context $(kube_ctx "$c") -n $NAMESPACE get pods)"
-  kc "$c" -n "$NAMESPACE" rollout status statefulset/fiducia-brain --timeout="$to" || warn "$c brain not Ready in time"
-  kc "$c" -n "$NAMESPACE" rollout status deployment/fiducia-load-balance --timeout="$to" || warn "$c load balance not Ready in time"
+  for workload in statefulset/fiducia-node statefulset/fiducia-brain deployment/fiducia-load-balance; do
+    if ! kc "$c" -n "$NAMESPACE" rollout status "$workload" --timeout="$to"; then
+      warn "$c $workload not Ready in time (check: kubectl --context $(kube_ctx "$c") -n $NAMESPACE get pods)"
+      not_ready=$((not_ready + 1))
+    fi
+  done
 done
+if (( not_ready > 0 )); then
+  die "$not_ready workload rollout(s) did not become Ready — the emulation is NOT usable"
+fi
 
 # 6. summary -----------------------------------------------------------------------
 echo

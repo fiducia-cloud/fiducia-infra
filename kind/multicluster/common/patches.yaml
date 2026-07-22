@@ -5,6 +5,13 @@
 #     cluster group directly addressable and three clusters light — see README.)
 #   * kind storage class `standard` (rancher local-path, shipped with kind).
 #   * tolerate the control-plane taint so pods run on the single-node clusters.
+#   * addressable, cross-cluster-routable node identity (see below).
+#
+# Everything here is a STRATEGIC-MERGE patch keyed on `name:` — never JSON6902
+# with a pinned array index. Container env lists carry patchMergeKey `name`, so
+# these entries replace the base's by name; an index-pinned `/env/4` would
+# silently rewrite or DELETE the wrong variable the moment anyone inserts an env
+# var into base/. tools/render.test.mjs asserts the resulting env by name.
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -18,6 +25,35 @@ spec:
         - key: node-role.kubernetes.io/control-plane
           operator: Exists
           effect: NoSchedule
+      # Base sets FIDUCIA_NODE_ID = <pod>.<cluster> (symbolic) and the sidecar's
+      # FIDUCIA_NODE_ADDRESS = http://$(POD_IP):8090 (pod IP — NOT routable between
+      # kind clusters). Both break cross-cluster LB routing here: the node id
+      # doubles as the LB redirect target (a NotLeader hint the LB must be able to
+      # route to), and the advertised address is what the brain hands to remote
+      # LBs. Point BOTH at FIDUCIA_SELF_ADDR (= <own-cp-ip>:30080, the node-API
+      # NodePort), which up.sh writes into the fiducia-cluster ConfigMap per
+      # cluster. Using a ConfigMap value (not $(HOST_IP) interpolation) keeps this
+      # independent of env ordering.
+      # `value: null` deletes the base's literal — an env entry may not carry
+      # both `value` and `valueFrom`, and strategic merge would otherwise keep
+      # both and the API server would reject the pod spec.
+      containers:
+        - name: node
+          env:
+            - name: FIDUCIA_NODE_ID
+              value: null
+              valueFrom:
+                configMapKeyRef: { name: fiducia-cluster, key: FIDUCIA_SELF_ADDR }
+        - name: sidecar
+          env:
+            - name: FIDUCIA_NODE_ID
+              value: null
+              valueFrom:
+                configMapKeyRef: { name: fiducia-cluster, key: FIDUCIA_SELF_ADDR }
+            - name: FIDUCIA_NODE_ADDRESS
+              value: null
+              valueFrom:
+                configMapKeyRef: { name: fiducia-cluster, key: FIDUCIA_SELF_ADDR }
   volumeClaimTemplates:
     - metadata:
         name: data
@@ -27,6 +63,19 @@ spec:
           requests:
             storage: 10Gi
         storageClassName: standard
+---
+# One node per cluster ⇒ base/node/pdb.yaml's maxUnavailable: 1 would allow
+# evicting 100% of this cluster's Raft member, and this PDB cannot see the other
+# two clusters' members, so two concurrent drains take every shard below write
+# quorum. Same reasoning (and same answer) as base/components/brain/pdb.yaml and
+# the generated clusters/*/patches.yaml.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: fiducia-node
+  namespace: fiducia
+spec:
+  maxUnavailable: 0
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -40,6 +89,24 @@ spec:
         - key: node-role.kubernetes.io/control-plane
           operator: Exists
           effect: NoSchedule
+      # A brain member's id doubles as the address other members dial it at: it is
+      # the leader_id gossiped in brain-Raft messages, and a follower forwards /v1
+      # writes (sidecar heartbeats, drain, scale) and /v1/nodes reads to
+      # {leader_id}/forward/v1/... on the peer plane. With the base's name-style id
+      # (fiducia-brain-0.<cloud>) every forward blackholes — only the leader's own
+      # cluster ever registers its node, so remote LBs see an empty fleet and 502
+      # cross-cluster requests. Advertise the kind-node IP + brain-peer NodePort,
+      # routable from every cluster (same trick as the node sidecar above).
+      # HOST_IP is a NEW entry, so strategic merge puts it ahead of the base's
+      # entries — which is what k8s $(VAR) interpolation requires.
+      containers:
+        - name: brain
+          env:
+            - name: HOST_IP
+              valueFrom:
+                fieldRef: { fieldPath: status.hostIP }
+            - name: FIDUCIA_BRAIN_ID
+              value: "http://$(HOST_IP):30095"
   volumeClaimTemplates:
     - metadata:
         name: data
@@ -49,3 +116,33 @@ spec:
           requests:
             storage: 2Gi
         storageClassName: standard
+---
+# LB: plaintext for the local tier. Remove the TLS env pair (set ⇒ TLS mode ⇒
+# :8088 refuses to proxy) and the non-optional cert Secret volume (would block
+# scheduling). `$patch: delete` keyed on `name:` — the same idiom the k3s and
+# vCluster overlays use, and index-free.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fiducia-load-balance
+  namespace: fiducia
+spec:
+  template:
+    spec:
+      containers:
+        - name: lb
+          env:
+            - name: FIDUCIA_TLS_CERT_PATH
+              $patch: delete
+            - name: FIDUCIA_TLS_KEY_PATH
+              $patch: delete
+          # NOTE: volumeMounts strategic-merges on `mountPath`, NOT on `name`.
+          # Keying this delete on `name` matches nothing and kustomize renders
+          # `volumeMounts: []` — silently dropping the writable /tmp mount the
+          # read-only rootfs needs.
+          volumeMounts:
+            - mountPath: /etc/fiducia/tls
+              $patch: delete
+      volumes:
+        - name: tls
+          $patch: delete

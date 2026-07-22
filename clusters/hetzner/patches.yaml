@@ -16,6 +16,14 @@ spec:
             storage: 10Gi
         storageClassName: hcloud-volumes
 ---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: fiducia-node
+  namespace: fiducia
+spec:
+  maxUnavailable: 0
+---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:

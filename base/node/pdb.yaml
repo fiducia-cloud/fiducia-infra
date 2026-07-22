@@ -1,5 +1,15 @@
 # PodDisruptionBudget capping voluntary disruptions (drains/upgrades) to one
 # fiducia-node at a time so shard Raft quorum is preserved during maintenance.
+#
+# maxUnavailable: 1 is only correct for the >= 3-replica shape this base assumes
+# (replicas: 3 in statefulset.yaml). Every overlay that runs 1-2 nodes per
+# cluster MUST override it to maxUnavailable: 0: a shard's 3 replicas are spread
+# ONE PER CLUSTER, so on a 1-replica set this budget would permit evicting 100%
+# of that cluster's Raft member, and a per-cluster PDB is blind to the other two
+# — overlapping drains would drop write quorum for every shard. tools/render.mjs
+# emits that override automatically when node_replicas <= 2; the hand-authored
+# kind/multicluster overlay carries it in common/patches.yaml. See
+# base/components/brain/pdb.yaml for the same argument on the single brain member.
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:

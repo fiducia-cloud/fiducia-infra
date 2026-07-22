@@ -80,11 +80,25 @@ spec:
 # Egress for the KubeOracle (statefulset.yaml / rbac.yaml): under the namespace
 # default-deny the brain must be allowed to dial the Kubernetes API server, or
 # every oracle poll times out and the failure detector silently degrades to
-# timeouts-only. The API server is not selectable by namespace/pod labels, so
-# scope by destination port only (443 = in-cluster `kubernetes.default`
-# ClusterIP; 6443 = k3s / kubeadm apiserver) — same shape as the otel-agent's
-# rule (b) in observability/networkpolicy.yaml; kube RBAC (list pods only) is
-# the real authz. Ships only with the brain Component.
+# timeouts-only. The API server is not selectable by namespace/pod labels (its
+# ClusterIP lives in `default`), so it must be scoped by destination ADDRESS.
+#
+# Port-only (no `to:`) would grant this pod egress to ANY host on 443 — the
+# exact shape tools/networkpolicy.test.mjs already forbids for the node, and the
+# worst pod to grant it to: the brain holds a projected Kubernetes SA token and
+# the full placement map. So the destination set is pinned to the private /
+# in-cluster ranges an API server or Service ClusterIP can actually live in;
+# the public internet is not reachable on 443 from here.
+#
+# This is the fleet-wide FLOOR, not the tightest possible rule. Each overlay
+# SHOULD narrow it to that cluster's exact API server address, e.g.
+#   - target: { kind: NetworkPolicy, name: fiducia-brain-oracle-egress }
+#     patch: |-
+#       - op: replace
+#         path: /spec/egress/0/to
+#         value: [{ ipBlock: { cidr: 10.43.0.1/32 } }]
+# kube RBAC (list pods only) remains the real authz. Ships only with the brain
+# Component.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -96,6 +110,15 @@ spec:
       app: fiducia-brain
   policyTypes: [Egress]
   egress:
-    - ports:
+    # 443 = in-cluster `kubernetes.default` ClusterIP; 6443 = k3s / kubeadm
+    # apiserver on the node's private address. Both are always RFC1918 (or the
+    # CGNAT range some managed control planes and vCluster tiers use); no
+    # Service CIDR or private node network falls outside this set.
+    - to:
+        - ipBlock: { cidr: 10.0.0.0/8 }
+        - ipBlock: { cidr: 172.16.0.0/12 }
+        - ipBlock: { cidr: 192.168.0.0/16 }
+        - ipBlock: { cidr: 100.64.0.0/10 }
+      ports:
         - { protocol: TCP, port: 443 }
         - { protocol: TCP, port: 6443 }
