@@ -1,0 +1,33 @@
+# Headless service: stable per-pod DNS for the fiducia-nats StatefulSet
+# (fiducia-nats-0.fiducia-nats-headless.fiducia.svc.cluster.local) — same
+# pattern as the node/brain StatefulSets. Clients should use the ClusterIP
+# service below, not this.
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-nats-headless
+  namespace: fiducia
+spec:
+  clusterIP: None
+  selector:
+    app: fiducia-nats
+  ports:
+    - { name: client, port: 4222 }
+    - { name: monitor, port: 8222 }
+---
+# Regular client service: in-namespace clients (relay, lambda, agent-manager)
+# connect at nats://fiducia-nats.fiducia.svc.cluster.local:4222; the otel-agent
+# scrapes the exporter on :7777 (by pod discovery) and :8222 serves monitoring.
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-nats
+  namespace: fiducia
+spec:
+  type: ClusterIP
+  selector:
+    app: fiducia-nats
+  ports:
+    - { name: client, port: 4222, targetPort: 4222 }
+    - { name: monitor, port: 8222, targetPort: 8222 }
+    - { name: metrics, port: 7777, targetPort: 7777 }

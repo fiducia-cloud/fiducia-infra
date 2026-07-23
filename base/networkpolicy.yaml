@@ -2,7 +2,8 @@
 # (ingress + egress) plus the minimal explicit allows every workload needs. This
 # is the "belt" behind the per-component "suspenders" policies in
 # node/networkpolicy.yaml, components/brain/networkpolicy.yaml,
-# load-balance/networkpolicy.yaml and observability/networkpolicy.yaml.
+# load-balance/networkpolicy.yaml, observability/networkpolicy.yaml and
+# messaging/networkpolicy.yaml.
 #
 # NetworkPolicies are ADDITIVE (a flow is permitted if ANY policy allows it), so
 # these documents compose with the per-component ones — the default-deny only
@@ -16,6 +17,7 @@
 #   brain <-> brain         :9095  intra-cluster  (east-west) + cross-cluster (brain policy)
 #   sidecar                -> brain :8095, brain -> sidecar :8091     (east-west)
 #   all fiducia pods       -> otel-agent :4317 OTLP (east-west)
+#   messaging clients      -> nats :4222, otel-agent -> nats exporter :7777 (east-west)
 #   otel-agent             -> OTLP gateway :4318 + k8s API           (observability policy)
 #   every pod              -> kube-dns :53                            (allow-dns-egress)
 #   kubelet                -> pod probe ports                         (allow-kubelet-probes)

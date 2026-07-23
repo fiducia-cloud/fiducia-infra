@@ -140,8 +140,20 @@ test("private-registry overlays wire the ghcr pull secret onto every pod", () =>
   // vcluster-hetzner-e2e.test.mjs asserts it for the vCluster tier.
   for (const overlay of [...K3S, ...VCLUSTER]) {
     const podSpecs = podSpecsOf(renderOverlay(overlay), overlay);
-    assert.equal(podSpecs.length, 3, `${overlay}: node + brain + LB`);
+    assert.equal(podSpecs.length, 4, `${overlay}: node + brain + LB + nats`);
     for (const { where, spec } of podSpecs) {
+      const images = [...(spec.containers ?? []), ...(spec.initContainers ?? [])]
+        .map((container) => container.image ?? "");
+      if (images.every((image) => !image.startsWith("ghcr.io/"))) {
+        // Public-registry workloads (the digest-pinned NATS broker + exporter)
+        // must NOT reference the ghcr credential they cannot use.
+        assert.equal(
+          spec.imagePullSecrets,
+          undefined,
+          `${where}: public-registry pod must not carry the ghcr pull secret`,
+        );
+        continue;
+      }
       assert.deepEqual(
         spec.imagePullSecrets,
         [{ name: "fiducia-ghcr-pull" }],

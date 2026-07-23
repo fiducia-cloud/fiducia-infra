@@ -1,0 +1,40 @@
+# fiducia-nats server configuration. JetStream is enabled with FILE storage on
+# the per-pod PVC (store_dir below); streams themselves are NOT provisioned
+# here — the fiducia-messaging relay creates/verifies the FIDUCIA_MESSAGES
+# stream (subjects fiducia.>) at startup and fails closed unless its
+# duplicate_window is >= 600s. The broker only has to exist, persist, and
+# authenticate.
+#
+# Authorization deliberately lives OUTSIDE this ConfigMap: the trailing include
+# pulls /etc/nats/auth/auth.conf from the fiducia-nats-auth Secret, which is
+# provisioned out-of-band (like fiducia-secrets — see base/node/statefulset.yaml
+# and base/messaging/README.md). Without the Secret the pod cannot start, so a
+# cluster can never come up as an unauthenticated open bus.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fiducia-nats-config
+  namespace: fiducia
+data:
+  nats.conf: |
+    server_name: fiducia-nats
+    port: 4222        # client plane (in-namespace only; see networkpolicy.yaml)
+    http: 8222        # monitoring: /healthz probes + exporter sidecar scrape
+
+    max_payload: 8MB
+    ping_interval: "20s"
+    write_deadline: "10s"
+
+    jetstream {
+      store_dir: "/data/jetstream"
+      # Sized to fit the 10Gi `data` PVC with headroom for stream metadata,
+      # compaction and recovery scratch. Memory streams are capped well under
+      # the container's 1Gi memory limit.
+      max_mem_store: 512MB
+      max_file_store: 8GB
+    }
+
+    # Accounts/users/permissions from the out-of-band fiducia-nats-auth Secret,
+    # mounted at /etc/nats/auth (include paths resolve relative to this file's
+    # directory, /etc/nats). Expected shape: base/messaging/README.md.
+    include ./auth/auth.conf

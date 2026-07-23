@@ -1,0 +1,126 @@
+# fiducia-nats: the JetStream messaging broker (delivery tier of the
+# coordination substrate — JetStream delivers, the node authorizes, Postgres
+# stores). StatefulSet because JetStream's file store must survive pod
+# rescheduling with a stable identity; single replica — the relay's Postgres
+# outbox (not yet deployed here) covers publish gaps, so broker HA is not the
+# durability story.
+#
+# Modeled on the dd-nats reference deployment (probes, exporter sidecar,
+# config shape) with its documented hardening backlog fixed: PVC instead of
+# hostPath, REQUIRED out-of-band auth Secret instead of an open bus, a
+# NetworkPolicy (see networkpolicy.yaml), and this fleet's full security
+# baseline (tools/workload-hardening.test.mjs).
+#
+# storageClassName is injected per-cluster by the GENERATED overlay patches
+# (tools/render.mjs), same mechanism as node/brain.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fiducia-nats
+  namespace: fiducia
+spec:
+  serviceName: fiducia-nats-headless   # headless service for stable per-pod DNS
+  replicas: 1
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      partition: 0
+  selector:
+    matchLabels:
+      app: fiducia-nats
+  template:
+    metadata:
+      labels:
+        app: fiducia-nats
+    spec:
+      # Neither container calls the Kubernetes API — don't mount a
+      # ServiceAccount token (CIS 5.1.6; same stance as node/brain).
+      automountServiceAccountToken: false
+      # Give JetStream time to flush and close its file store cleanly on
+      # shutdown instead of recovering from a hard kill on the next boot.
+      terminationGracePeriodSeconds: 60
+      # Hardened baseline for both containers: unprivileged, no added Linux
+      # capabilities, no privilege escalation, read-only rootfs. JetStream
+      # state lives only on the per-pod PVC, made writable via fsGroup.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: nats
+          # Third-party image, digest-pinned (base/README.md "Image pinning").
+          image: nats:2.11.17-alpine@sha256:e4bf19f15fd3218814a4e3c9e0064e1334bd8aa20d5984b9f1a0afd084f8cc00
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          command: ["nats-server"]
+          args: ["-c", "/etc/nats/nats.conf"]
+          ports:
+            - { containerPort: 4222, name: client }
+            - { containerPort: 8222, name: monitor }
+          # startupProbe gates liveness/readiness while JetStream replays its
+          # file store on boot (can be slow after an unclean stop with a large
+          # store) — same rationale as the node's Raft log replay gate.
+          # Allows up to 60×2s = 120s to start.
+          startupProbe:   { httpGet: { path: /healthz, port: 8222 }, periodSeconds: 2, failureThreshold: 60 }
+          readinessProbe: { httpGet: { path: /healthz, port: 8222 }, initialDelaySeconds: 5, periodSeconds: 10, timeoutSeconds: 2, failureThreshold: 6 }
+          livenessProbe:  { httpGet: { path: /healthz, port: 8222 }, periodSeconds: 20, timeoutSeconds: 3 }
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits: { cpu: "1000m", memory: "1Gi" }
+          volumeMounts:
+            - { name: config, mountPath: /etc/nats, readOnly: true }
+            # Mounted INSIDE the config mount so `include ./auth/auth.conf`
+            # resolves. secretName is REQUIRED (optional defaults to false):
+            # no fiducia-nats-auth Secret -> the pod never starts -> the bus
+            # can never run unauthenticated. Fail-closed by construction.
+            - { name: auth, mountPath: /etc/nats/auth, readOnly: true }
+            - { name: data, mountPath: /data }
+
+        # --- sidecar: prometheus-nats-exporter (varz/connz/jsz -> :7777) ---
+        - name: exporter
+          # Third-party image, digest-pinned (base/README.md "Image pinning").
+          image: natsio/prometheus-nats-exporter:0.19.2@sha256:5387a5923572d154c9d609b3588397ca6b09b6004464cc4a80fc9e16c7b059b3
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          args:
+            - -varz
+            - -connz
+            - -routez
+            - -subz
+            - -jsz=all
+            - http://127.0.0.1:8222
+          ports:
+            - { containerPort: 7777, name: metrics }
+          readinessProbe: { httpGet: { path: /metrics, port: 7777 }, initialDelaySeconds: 10, periodSeconds: 10, timeoutSeconds: 2, failureThreshold: 6 }
+          # A wedged exporter silently blinds the broker's metrics — restart it.
+          livenessProbe:  { httpGet: { path: /metrics, port: 7777 }, periodSeconds: 20, timeoutSeconds: 3 }
+          resources:
+            requests: { cpu: "50m", memory: "64Mi" }
+            limits: { cpu: "500m", memory: "256Mi" }
+      volumes:
+        - name: config
+          configMap:
+            name: fiducia-nats-config
+        - name: auth
+          secret:
+            secretName: fiducia-nats-auth   # out-of-band; see README.md
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 10Gi
+        # storageClassName is set per-cluster by the overlay (hetzner/vultr/civo).

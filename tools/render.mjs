@@ -234,6 +234,18 @@ spec:
   replicas: ${c.node_replicas}
 ${pvc(c.storage_class, "10Gi")}`];
 
+    // Messaging broker storage patch applies to every cluster: fiducia-nats is
+    // always-on in base/ (base/messaging/), and like node/brain its base PVC
+    // template deliberately omits storageClassName. Size mirrors
+    // base/messaging/nats.statefulset.yaml (10Gi).
+    patches.push(`apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fiducia-nats
+  namespace: fiducia
+spec:
+${pvc(c.storage_class, "10Gi")}`);
+
     // Voluntary-disruption guard, sized to THIS cluster's node count.
     // base/node/pdb.yaml carries maxUnavailable: 1, which is correct only for the
     // >= 3-replica shape base assumes. With one or two nodes per cluster — and a

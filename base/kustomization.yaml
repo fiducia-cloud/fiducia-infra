@@ -22,3 +22,7 @@ resources:
   - load-balance/service.yaml
   - load-balance/pdb.yaml                # keep >=1 LB replica through drains
   - load-balance/networkpolicy.yaml     # LB edge (:8443) ingress
+  - messaging/nats.configmap.yaml
+  - messaging/nats.statefulset.yaml
+  - messaging/nats.service.yaml
+  - messaging/networkpolicy.yaml        # broker (:4222/:8222/:7777) in-namespace ingress

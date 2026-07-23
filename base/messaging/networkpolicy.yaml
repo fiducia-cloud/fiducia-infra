@@ -1,0 +1,42 @@
+# NetworkPolicy — L3/L4 belt-and-suspenders for the messaging broker, BEHIND
+# the L7 NATS authorization (accounts/users from the fiducia-nats-auth Secret).
+#
+# Goal: nothing outside the fiducia namespace may reach the broker. Unlike the
+# node/brain there is NO cross-cluster plane here — every legitimate caller
+# (relay, lambda, agent-manager clients on :4222; the otel-agent scraping the
+# exporter on :7777; anything reading monitoring on :8222) is an in-namespace
+# pod, so ingress is scoped to the namespace and to exactly those three ports.
+# Selecting the pod with an Ingress policy makes any other ingress rely on the
+# additive base allows only; if the base allow-namespace-internal policy were
+# ever narrowed, this document still grants the broker's intended flows
+# (the "suspenders" — base/networkpolicy.yaml is the "belt").
+#
+# The broker dials nobody (clients connect in; streams are provisioned by the
+# relay over the same client connection), so no egress policy is declared —
+# under the namespace default-deny the broker's only egress is DNS via the
+# base allow-dns-egress policy.
+#
+# Kubelet liveness/readiness probes (to :8222/:7777) are exempted by the CNI's
+# health-check failsafe — true for Cilium (this topology's declared CNI) and
+# Calico. On a CNI that subjects kubelet traffic to NetworkPolicy, add an
+# ipBlock allow for the node/pod CIDRs in each cluster overlay (same escape
+# hatch as node/networkpolicy.yaml).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fiducia-nats-ingress
+  namespace: fiducia
+spec:
+  podSelector:
+    matchLabels:
+      app: fiducia-nats
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: fiducia
+      ports:
+        - { protocol: TCP, port: 4222 }   # client plane (relay/lambda/agent-manager)
+        - { protocol: TCP, port: 8222 }   # monitoring (varz/jsz; also probe target)
+        - { protocol: TCP, port: 7777 }   # prometheus-nats-exporter -> otel-agent scrape

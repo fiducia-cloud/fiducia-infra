@@ -16,6 +16,22 @@ spec:
             storage: 10Gi
         storageClassName: vultr-block-storage-hdd
 ---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fiducia-nats
+  namespace: fiducia
+spec:
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 10Gi
+        storageClassName: vultr-block-storage-hdd
+---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:

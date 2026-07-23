@@ -10,6 +10,8 @@ storage class, and replica counts on top.
 - `node/` — the `fiducia-node` data plane (StatefulSet + sidecar) and its services.
 - `load-balance/` — the stateless per-cluster router (Deployment + LoadBalancer).
 - `observability/` — the per-cluster OpenTelemetry agent.
+- `messaging/` — the hardened NATS/JetStream broker (`fiducia-nats`) with a
+  fail-closed out-of-band auth Secret; see `messaging/README.md`.
 - `components/brain/` — the control-plane brain as an **optional** Kustomize Component,
   included only by clusters that are members of the brain Raft group.
 - `kustomization.yaml` — wires the always-on pieces together (brain is deliberately
@@ -27,5 +29,6 @@ files.
 Digest-pinned today: each service's *build inputs* — every service Dockerfile
 pins its Rust builder and distroless runtime base images by digest, kept current
 by the weekly Dependabot `docker`-ecosystem bumps in each service repo and the
-monorepo — and the one third-party image deployed directly from this repo, the
-otel-agent collector (`observability/otel-agent.yaml`).
+monorepo — and the third-party images deployed directly from this repo: the
+otel-agent collector (`observability/otel-agent.yaml`) and the NATS broker +
+exporter (`messaging/nats.statefulset.yaml`).

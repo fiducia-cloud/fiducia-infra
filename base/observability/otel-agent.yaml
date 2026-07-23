@@ -80,6 +80,22 @@ data:
                 - source_labels: [__meta_kubernetes_pod_container_port_name]
                   regex: sidecar
                   action: keep
+            # NATS broker metrics via its prometheus-nats-exporter sidecar
+            # (base/messaging/, port name `metrics` = :7777). Same in-namespace
+            # scrape path as the node/brain sidecars.
+            - job_name: fiducia-nats-exporter
+              scrape_interval: 15s
+              kubernetes_sd_configs:
+                - role: pod
+                  namespaces:
+                    names: [fiducia]
+              relabel_configs:
+                - source_labels: [__meta_kubernetes_pod_label_app]
+                  regex: fiducia-nats
+                  action: keep
+                - source_labels: [__meta_kubernetes_pod_container_port_name]
+                  regex: metrics
+                  action: keep
 
     processors:
       memory_limiter:
