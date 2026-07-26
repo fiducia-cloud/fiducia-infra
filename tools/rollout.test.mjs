@@ -65,18 +65,19 @@ test("load balancer rollout uses a zero-downtime Deployment strategy", () => {
   assert.match(deployment, /livenessProbe:\s*\{\s*httpGet:\s*\{\s*path:\s*\/healthz/);
 });
 
-test("node rollout limits disruption and preserves StatefulSet canary mechanics", () => {
+test("node rollout is fail-closed until a quorum-aware controller approves each pod", () => {
   const doc = read("docs/ROLLOUT.md");
   const statefulSet = read("base/node/statefulset.yaml");
   const pdb = read("base/node/pdb.yaml");
   const kustomization = read("base/kustomization.yaml");
 
-  assert.match(doc, /PodDisruptionBudget present \(`maxUnavailable: 1` per cluster\)/);
-  assert.match(doc, /StatefulSet `updateStrategy\.rollingUpdate\.partition`/);
+  assert.match(doc, /Raft StatefulSets still use `updateStrategy: OnDelete`/);
+  assert.match(doc, /workload-controller pod replacement bypasses PDB\s+enforcement/);
   assert.match(statefulSet, /kind:\s*StatefulSet/);
   assert.match(statefulSet, /name:\s*fiducia-node/);
   assert.match(statefulSet, /replicas:\s*3/);
-  assert.match(statefulSet, /updateStrategy:\s*\n\s+type:\s*RollingUpdate\s*\n\s+rollingUpdate:\s*\n\s+partition:\s*0/);
+  assert.match(statefulSet, /updateStrategy:\s*\n\s+type:\s*OnDelete/);
+  assert.doesNotMatch(statefulSet, /rollingUpdate:/);
   assert.match(statefulSet, /readinessProbe:\s*\{\s*httpGet:\s*\{\s*path:\s*\/readyz/);
   assert.match(statefulSet, /livenessProbe:\s*\{\s*httpGet:\s*\{\s*path:\s*\/healthz/);
   assert.match(pdb, /kind:\s*PodDisruptionBudget/);
@@ -85,7 +86,7 @@ test("node rollout limits disruption and preserves StatefulSet canary mechanics"
   assert.match(kustomization, /node\/pdb\.yaml/);
 });
 
-test("brain rollout uses one rolling StatefulSet member per cluster", () => {
+test("brain rollout requires an explicit quorum-checked deletion per cluster", () => {
   const doc = read("docs/ROLLOUT.md");
   const statefulSet = read("base/components/brain/statefulset.yaml");
 
@@ -93,7 +94,8 @@ test("brain rollout uses one rolling StatefulSet member per cluster", () => {
   assert.match(statefulSet, /kind:\s*StatefulSet/);
   assert.match(statefulSet, /name:\s*fiducia-brain/);
   assert.match(statefulSet, /replicas:\s*1/);
-  assert.match(statefulSet, /updateStrategy:\s*\n\s+type:\s*RollingUpdate\s*\n\s+rollingUpdate:\s*\n\s+partition:\s*0/);
+  assert.match(statefulSet, /updateStrategy:\s*\n\s+type:\s*OnDelete/);
+  assert.doesNotMatch(statefulSet, /rollingUpdate:/);
   assert.match(statefulSet, /readinessProbe:\s*\{\s*httpGet:\s*\{\s*path:\s*\/readyz/);
   assert.match(statefulSet, /livenessProbe:\s*\{\s*httpGet:\s*\{\s*path:\s*\/healthz/);
 });

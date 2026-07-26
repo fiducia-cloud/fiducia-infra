@@ -7,8 +7,11 @@ must be **drained of leadership** before it stops.
 
 > Status: this runbook describes the target procedure. Gate data-plane rolls on
 > the required drain and transfer controls being available in the deployed
-> services. The stateless tiers (edge, load-balance, backend) can already roll
-> today.
+> services. The node and brain StatefulSets use `OnDelete`, so applying a new
+> template cannot silently begin an unsafe rollout. A human owns the explicit
+> deletion protocol today; `fiducia-operator` will automate it after the service
+> gates below exist. The stateless tiers (edge, load-balance, backend) can
+> already roll today.
 
 ## Invariants (never violate)
 
@@ -63,8 +66,13 @@ The cluster is **mixed-version** during the roll, so N and N+1 must interoperate
 - [ ] No in-progress rebalance / scale change.
 - [ ] New image built, signed, and smoke-tested in staging; **previous image tag
       recorded for rollback**.
-- [ ] PodDisruptionBudget present (`maxUnavailable: 1` per cluster).
-- [ ] Canary partition ready (StatefulSet `updateStrategy.rollingUpdate.partition`).
+- [ ] PodDisruptionBudget present for eviction-based maintenance. Do not treat
+      it as a rollout lock: workload-controller pod replacement bypasses PDB
+      enforcement.
+- [ ] Raft StatefulSets still use `updateStrategy: OnDelete`; no pod is deleted
+      until this checklist passes.
+- [ ] One explicit canary pod and cluster selected; every other Raft pod remains
+      untouched.
 
 ## Order of operations (top level)
 
@@ -102,7 +110,9 @@ For each node, in ascending pod ordinal, **one at a time**:
 4. **Drain in-flight** — `preStop` hook waits `≥ (LB refresh interval ~5s + max
    long-poll/watch window)` so open long-poll lock-acquires and KV watches
    finish or fail over. Set `terminationGracePeriodSeconds ≥ preStop + slack`.
-5. **Replace the pod** with the new image (StatefulSet `RollingUpdate`, ordered).
+5. **Replace the pod** with the new image by deleting only this pod after the
+   StatefulSet template has been updated. `OnDelete` recreates it with the new
+   template while preserving its stable identity and PVC.
 6. **Rejoin** — the new pod rejoins each shard's Raft group as a follower and
    replays log / installs snapshot until caught up.
 7. **Catch-up gate** — `/readyz` goes green only when, for **every** hosted
@@ -128,10 +138,13 @@ per node:  brain drain → transfer leaderships → LB off → preStop drain
 
 ## k8s mechanics (where these settings live)
 
-- **StatefulSet `updateStrategy: RollingUpdate`** with `partition` for canary:
-  set `partition = replicas - 1`, upgrade the top ordinal, bake, then lower the
-  partition to roll the rest.
-- **PodDisruptionBudget** `maxUnavailable: 1` (only one node down per cluster).
+- **StatefulSet `updateStrategy: OnDelete`** for node and brain: applying a new
+  template does not replace a Raft member. The current human procedure, and
+  later the operator, deletes exactly one approved pod at a time.
+- **PodDisruptionBudget** protects eviction-based maintenance such as a
+  well-behaved node drain. It does **not** stop a StatefulSet controller rollout
+  or a direct pod deletion, so it is defense-in-depth rather than the
+  cross-cluster maintenance lock.
 - **`preStop` hook** → local drain (cordon + leadership transfer), then sleep;
   **`terminationGracePeriodSeconds`** ≥ preStop + in-flight window.
 - **`readinessProbe` → `/readyz`** (caught-up gate) and **`livenessProbe` →
@@ -154,13 +167,15 @@ Verify which mechanism is active before rolling. Prefer the explicit cordon.
 
 ## Canary & rollback
 
-- **Canary:** upgrade one node (top ordinal) in one cluster; bake for T minutes
-  watching the signals below.
+- **Canary:** explicitly select and delete one node (top ordinal) in one cluster;
+  bake for T minutes watching the signals below. `OnDelete` leaves every other
+  member on the previous revision.
 - **Abort if:** any shard drops below quorum, election storm, readiness
   flapping, or write-latency / error-rate regression past threshold.
-- **Rollback:** because N/N+1 interoperate, set the image back to N (raise the
-  StatefulSet `partition` / revert the tag). If you followed expand/contract
-  there is no data migration to undo.
+- **Rollback:** because N/N+1 interoperate, set the template image back to N and
+  explicitly replace only members that reached N+1, one at a time through the
+  same gates. If you followed expand/contract there is no data migration to
+  undo.
 
 ## Watch during the roll (sidecar → Prometheus / Tempo / Loki)
 
@@ -172,5 +187,7 @@ Verify which mechanism is active before rolling. Prefer the explicit cordon.
 
 ## Related
 
+- Operator decision and reconciliation contract:
+  [`operator-architecture.md`](operator-architecture.md).
 - Architecture diagram: `fiducia-backend` `/docs/diagram` (section 4 shows this flow).
 - Zero-downtime Deployment strategy: `maxSurge: 1 / maxUnavailable: 0`.

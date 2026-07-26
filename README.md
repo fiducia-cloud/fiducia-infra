@@ -234,6 +234,14 @@ Why these workload types: **node** and **brain** are Raft members → `StatefulS
 stateless cache → `Deployment`. The **sidecar** is a second container in the node
 pod (its bridge to brain + telemetry).
 
+The StatefulSets deliberately use `updateStrategy: OnDelete`. A StatefulSet is
+necessary for stable identity and PVC ownership, but it is not a Raft lifecycle
+manager: Kubernetes cannot see cross-cluster quorum, leadership, follower lag,
+or protocol compatibility, and a PDB does not constrain a StatefulSet
+controller's own rolling update. Pod replacement therefore remains an explicit,
+quorum-checked operation until the proposed Rust
+[`fiducia-operator`](docs/operator-architecture.md) implements that protocol.
+
 > **Want a 4th platform?** The kustomize model is N-cluster already — `render.mjs`
 > fans out to every `[[cluster]]` block, so a 4th cluster adds a spare failure
 > domain + capacity and does **not** change the "survive losing 1 cluster"

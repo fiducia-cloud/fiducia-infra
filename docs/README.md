@@ -17,6 +17,11 @@ Longer-form documentation that doesn't belong in a manifest comment.
   write-path sequence). Render with `plantuml docs/architecture.puml`.
 - `ROLLOUT.md` — production rollout / upgrade runbook (shipping code without dropping
   client requests or losing quorum).
+- `operator-architecture.md` — decision and implementation contract for the
+  Fiducia-specific Rust Kubernetes operator: what remains native Kubernetes,
+  what requires Raft-aware reconciliation, the CRD/status model, safety gates,
+  and the staged path from observation to upgrades, backup/restore, and dynamic
+  membership.
 - `e2e.md` — the two-tier test infrastructure (local kind vs real managed clusters) and
   how the `fiducia-e2e` suite runs against it.
 - `observability.md` — the collector-first observability MVP.

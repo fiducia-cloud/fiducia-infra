@@ -10,10 +10,12 @@ metadata:
 spec:
   serviceName: fiducia-brain
   replicas: 1                         # one brain member per cluster
+  # Each cluster contains one member of a cross-cluster 3-member Raft group.
+  # A normal StatefulSet rollout is not aware of the other clusters and PDBs do
+  # not constrain workload-controller rolling updates. Require an explicit,
+  # quorum-checked deletion until fiducia-operator owns the protocol.
   updateStrategy:
-    type: RollingUpdate
-    rollingUpdate:
-      partition: 0
+    type: OnDelete
   selector:
     matchLabels:
       app: fiducia-brain
