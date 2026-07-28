@@ -1,0 +1,318 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fiducia-grafana-provisioning
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    deleteDatasources:
+      - name: Prometheus
+        orgId: 1
+      - name: Loki
+        orgId: 1
+      - name: Tempo
+        orgId: 1
+    datasources:
+      - name: Prometheus
+        uid: prometheus
+        type: prometheus
+        access: proxy
+        url: http://fiducia-prometheus:9090
+        isDefault: true
+        editable: false
+        jsonData:
+          httpMethod: POST
+          exemplarTraceIdDestinations:
+            - name: trace_id
+              datasourceUid: tempo
+      - name: Loki
+        uid: loki
+        type: loki
+        access: proxy
+        url: http://fiducia-loki:3100
+        editable: false
+        jsonData:
+          derivedFields:
+            - name: TraceID
+              matcherRegex: '"trace_id"[=: ]+"?([a-fA-F0-9]{32})'
+              datasourceUid: tempo
+              url: '$${__value.raw}'
+      - name: Tempo
+        uid: tempo
+        type: tempo
+        access: proxy
+        url: http://fiducia-tempo:3200
+        editable: false
+        jsonData:
+          httpMethod: GET
+          nodeGraph:
+            enabled: true
+          serviceMap:
+            datasourceUid: prometheus
+          tracesToLogsV2:
+            datasourceUid: loki
+            spanStartTimeShift: -5m
+            spanEndTimeShift: 5m
+            filterByTraceID: true
+            filterBySpanID: false
+            customQuery: false
+          tracesToMetrics:
+            datasourceUid: prometheus
+            spanStartTimeShift: -5m
+            spanEndTimeShift: 5m
+            tags:
+              - key: service.name
+                value: service_name
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: Fiducia cron operations
+        orgId: 1
+        folder: Fiducia
+        type: file
+        disableDeletion: true
+        allowUiUpdates: false
+        updateIntervalSeconds: 30
+        options:
+          path: /var/lib/grafana/dashboards
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fiducia-grafana-cron-dashboard
+data:
+  cron-operations.json: |
+    {
+      "annotations": {"list": []},
+      "editable": false,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+          "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0},
+          "id": 1,
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}},
+          "targets": [
+            {"expr": "sum by (result) (rate(fiducia_cron_deliveries_total[$__rate_interval]))", "legendFormat": "{{result}}", "refId": "A"}
+          ],
+          "title": "Cron delivery results",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+          "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0},
+          "id": 2,
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}},
+          "targets": [
+            {"expr": "sum(rate(fiducia_cron_delivery_retries_total[$__rate_interval]))", "legendFormat": "retries", "refId": "A"},
+            {"expr": "sum(rate(fiducia_cron_delivery_deferred_total[$__rate_interval]))", "legendFormat": "deferred", "refId": "B"}
+          ],
+          "title": "Retries and deferred claims",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "ms"}, "overrides": []},
+          "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0},
+          "id": 3,
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}},
+          "targets": [
+            {"expr": "fiducia:cron_delivery_duration:p95_5m", "legendFormat": "p95", "refId": "A"}
+          ],
+          "title": "Cron delivery p95 latency",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+          "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8},
+          "id": 4,
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}},
+          "targets": [
+            {"expr": "sum(fiducia_cron_delivery_in_flight)", "legendFormat": "cron deliveries", "refId": "A"},
+            {"expr": "sum(dd_lambda_runner_active_workers)", "legendFormat": "lambda workers", "refId": "B"}
+          ],
+          "title": "Work in flight",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+          "gridPos": {"h": 8, "w": 8, "x": 8, "y": 8},
+          "id": 5,
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}},
+          "targets": [
+            {"expr": "sum(rate(fiducia_lambda_function_definition_check_failures_total[$__rate_interval]))", "legendFormat": "check failures", "refId": "A"},
+            {"expr": "sum(rate(fiducia_lambda_tenant_auth_rejections_total[$__rate_interval]))", "legendFormat": "tenant auth rejected", "refId": "B"},
+            {"expr": "sum(rate(fiducia_lambda_function_invocation_failures_total[$__rate_interval]))", "legendFormat": "invocation failures", "refId": "C"}
+          ],
+          "title": "Managed function safety failures",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+          "gridPos": {"h": 8, "w": 8, "x": 16, "y": 8},
+          "id": 6,
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}},
+          "targets": [
+            {"expr": "sum(rate(otelcol_exporter_send_failed_spans_total[$__rate_interval]))", "legendFormat": "spans", "refId": "A"},
+            {"expr": "sum(rate(otelcol_exporter_send_failed_log_records_total[$__rate_interval]))", "legendFormat": "logs", "refId": "B"},
+            {"expr": "sum(rate(otelcol_exporter_send_failed_metric_points_total[$__rate_interval]))", "legendFormat": "metrics", "refId": "C"}
+          ],
+          "title": "Telemetry export failures",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "gridPos": {"h": 11, "w": 24, "x": 0, "y": 16},
+          "id": 7,
+          "options": {"dedupStrategy": "exact", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true},
+          "targets": [
+            {"expr": "{service_name=~\"fiducia-node|fiducia-lambda-service\"} |~ \"cron|schedule|function\"", "refId": "A"}
+          ],
+          "title": "Correlated cron logs",
+          "type": "logs"
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 39,
+      "tags": ["fiducia", "cron", "otel"],
+      "templating": {"list": []},
+      "time": {"from": "now-6h", "to": "now"},
+      "timezone": "browser",
+      "title": "Fiducia cron operations",
+      "uid": "fiducia-cron-operations",
+      "version": 2
+    }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: fiducia-grafana-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fiducia-grafana
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fiducia-grafana
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fiducia-grafana
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 472
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: grafana
+          image: grafana/grafana:11.4.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: fiducia-grafana-admin
+                  key: username
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fiducia-grafana-admin
+                  key: password
+            - name: GF_USERS_ALLOW_SIGN_UP
+              value: "false"
+            - name: GF_AUTH_ANONYMOUS_ENABLED
+              value: "false"
+            - name: GF_SECURITY_COOKIE_SECURE
+              value: "true"
+            - name: GF_SECURITY_COOKIE_SAMESITE
+              value: strict
+            - name: GF_SECURITY_DISABLE_GRAVATAR
+              value: "true"
+            - name: GF_ANALYTICS_REPORTING_ENABLED
+              value: "false"
+            - name: GF_ANALYTICS_CHECK_FOR_UPDATES
+              value: "false"
+            - name: GF_SERVER_ROOT_URL
+              value: "%(protocol)s://%(domain)s/"
+          ports:
+            - name: http
+              containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: provisioning
+              mountPath: /etc/grafana/provisioning/datasources/datasources.yaml
+              subPath: datasources.yaml
+              readOnly: true
+            - name: provisioning
+              mountPath: /etc/grafana/provisioning/dashboards/dashboards.yaml
+              subPath: dashboards.yaml
+              readOnly: true
+            - name: dashboard
+              mountPath: /var/lib/grafana/dashboards/cron-operations.json
+              subPath: cron-operations.json
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/grafana
+      volumes:
+        - name: provisioning
+          configMap:
+            name: fiducia-grafana-provisioning
+        - name: dashboard
+          configMap:
+            name: fiducia-grafana-cron-dashboard
+        - name: data
+          persistentVolumeClaim:
+            claimName: fiducia-grafana-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-grafana
+spec:
+  selector:
+    app.kubernetes.io/name: fiducia-grafana
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http

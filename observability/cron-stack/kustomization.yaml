@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: fiducia-observability
+resources:
+  - namespace.yaml
+  - otel-gateway.yaml
+  - prometheus.yaml
+  - loki.yaml
+  - tempo.yaml
+  - grafana.yaml
+  - networkpolicy.yaml
+commonLabels:
+  app.kubernetes.io/part-of: fiducia-cron-observability
