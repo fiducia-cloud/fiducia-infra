@@ -1,0 +1,211 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fiducia-otel-gateway-config
+data:
+  collector.yaml: |
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 768
+        spike_limit_mib: 192
+      attributes/redact:
+        actions:
+          - key: authorization
+            action: delete
+          - key: http.request.header.authorization
+            action: delete
+          - key: http.request.header.cookie
+            action: delete
+          - key: http.response.header.set-cookie
+            action: delete
+          - key: db.connection_string
+            action: delete
+          - key: fiducia.secret
+            action: delete
+          - key: function.source
+            action: delete
+          - key: request.body
+            action: delete
+          - key: payload
+            action: delete
+          - key: environment
+            action: delete
+      tail_sampling:
+        decision_wait: 10s
+        num_traces: 50000
+        expected_new_traces_per_sec: 200
+        policies:
+          - name: errors
+            type: status_code
+            status_code:
+              status_codes: [ERROR]
+          - name: slow-cron-runs
+            type: latency
+            latency:
+              threshold_ms: 1000
+          - name: baseline
+            type: probabilistic
+            probabilistic:
+              sampling_percentage: 10
+      batch:
+        send_batch_size: 1024
+        timeout: 2s
+
+    exporters:
+      prometheus:
+        endpoint: 0.0.0.0:8889
+        enable_open_metrics: true
+        resource_to_telemetry_conversion:
+          enabled: true
+      otlp/tempo:
+        endpoint: fiducia-tempo:4317
+        tls:
+          insecure: true
+        sending_queue:
+          enabled: true
+          queue_size: 4096
+        retry_on_failure:
+          enabled: true
+      otlphttp/loki:
+        endpoint: http://fiducia-loki:3100/otlp
+        sending_queue:
+          enabled: true
+          queue_size: 4096
+        retry_on_failure:
+          enabled: true
+
+    service:
+      extensions: [health_check]
+      telemetry:
+        logs:
+          encoding: json
+        metrics:
+          readers:
+            - pull:
+                exporter:
+                  prometheus:
+                    host: 0.0.0.0
+                    port: 8888
+      pipelines:
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [prometheus]
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, attributes/redact, tail_sampling, batch]
+          exporters: [otlp/tempo]
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, attributes/redact, batch]
+          exporters: [otlphttp/loki]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fiducia-otel-gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fiducia-otel-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fiducia-otel-gateway
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: fiducia-otel-gateway
+      containers:
+        - name: collector
+          image: otel/opentelemetry-collector-contrib:0.155.0@sha256:99c06e30a4b3f99f601b635a9f47261223fff33110c51dc0badc6970eb276e15
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config=/etc/otelcol/collector.yaml
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317
+            - name: otlp-http
+              containerPort: 4318
+            - name: health
+              containerPort: 13133
+            - name: telemetry
+              containerPort: 8888
+            - name: prometheus
+              containerPort: 8889
+          readinessProbe:
+            httpGet:
+              path: /
+              port: health
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: health
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otelcol
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: fiducia-otel-gateway-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-otel-gateway
+spec:
+  selector:
+    app.kubernetes.io/name: fiducia-otel-gateway
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http
+    - name: telemetry
+      port: 8888
+      targetPort: telemetry
+    - name: prometheus
+      port: 8889
+      targetPort: prometheus
