@@ -7,7 +7,7 @@ and retention requirements and must be an explicit environment decision.
 
 The package installs:
 
-- a two-replica OpenTelemetry Collector gateway accepting OTLP gRPC/HTTP;
+- a single trace-consistent OpenTelemetry tail-sampling gateway accepting OTLP gRPC/HTTP;
 - Prometheus with cron recording rules and operational alerts;
 - Loki with seven-day local log retention;
 - Tempo with seven-day local trace retention;
@@ -49,6 +49,13 @@ http://fiducia-otel-gateway.fiducia-observability.svc:4318
 For direct OTLP gRPC exporters, use port `4317`. The network policy accepts OTLP
 only from the `fiducia` namespace. Patch the source namespace in an overlay when
 services run elsewhere.
+
+Fiducia Rust services emit structured JSON logs to container stdout. The gateway's
+OTLP logs receiver does **not** tail pod logs by itself. The cluster must run an
+authorized log agent that parses those stdout records and sends OTLP logs to this
+gateway or writes them directly to Loki. Patch the network policy for that agent's
+namespace. Treat an empty Loki data source as a deployment failure rather than as
+proof that the services emitted no logs.
 
 Recommended service configuration:
 
@@ -132,6 +139,10 @@ Before relying on the stack for regulated or high-volume production use:
 7. Pin every image by digest through the environment overlay and admit only
    signed images.
 
-The OTel gateway itself is stateless and already runs two replicas with bounded
-memory, queues, retries, and topology spreading. It can be scaled horizontally
-without changing the service endpoint.
+The supplied OTel gateway deliberately runs one replica because the tail-sampling
+processor is stateful per trace. Do not scale that Deployment directly: a normal
+Kubernetes Service can split one distributed trace across workers and produce partial
+or contradictory sampling decisions. Production HA requires a stateless OTLP receiver
+tier with the Collector load-balancing exporter (or an equivalent consistent-hash
+layer) that routes every span for a trace to the same sampling worker. Only that
+trace-ID-aware topology may scale the sampling workers horizontally.

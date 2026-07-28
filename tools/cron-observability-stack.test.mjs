@@ -78,6 +78,12 @@ test("collector retains every cron trace and generates correlated metrics", asyn
   assert.match(config, /exporters: \[otlp\/tempo, spanmetrics\/cron, servicegraph\]/);
 });
 
+test("tail sampling uses one trace-consistent worker until load balancing exists", async () => {
+  const config = await read(gatewayPath);
+  assert.match(config, /replicas: 1/);
+  assert.doesNotMatch(config, /replicas: 2/);
+});
+
 test("collector has a second fail-closed sensitive-data boundary", async () => {
   const config = await read(gatewayPath);
   for (const key of [

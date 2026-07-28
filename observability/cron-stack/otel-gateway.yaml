@@ -182,7 +182,10 @@ kind: Deployment
 metadata:
   name: fiducia-otel-gateway
 spec:
-  replicas: 2
+  # Tail sampling keeps per-trace state. A single worker guarantees that
+  # every span for a trace reaches the same decision maker. Production HA
+  # must add a trace-ID-aware load-balancing tier before scaling workers.
+  replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: fiducia-otel-gateway
