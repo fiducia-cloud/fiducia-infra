@@ -43,6 +43,25 @@ jobs:
             echo "== $c =="
             kubectl kustomize "$c" >/dev/null
           done
+      - name: Render opt-in cron observability stack
+        run: |
+          set -euo pipefail
+          rendered="$RUNNER_TEMP/fiducia-cron-observability.yaml"
+          kubectl kustomize observability/cron-stack > "$rendered"
+          grep -q 'name: fiducia-otel-gateway' "$rendered"
+          grep -q 'name: fiducia-prometheus' "$rendered"
+          grep -q 'name: fiducia-loki' "$rendered"
+          grep -q 'name: fiducia-tempo' "$rendered"
+          grep -q 'name: fiducia-grafana' "$rendered"
+          grep -q 'secretKeyRef:' "$rendered"
+          if grep -nE 'image: .*:latest([[:space:]]|$)' "$rendered"; then
+            echo 'cron observability stack must not use latest image tags' >&2
+            exit 1
+          fi
+          if grep -niE '(password|secret):[[:space:]]+(admin|changeme|password)' "$rendered"; then
+            echo 'literal bootstrap credentials are forbidden' >&2
+            exit 1
+          fi
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
           version: v3.18.6
