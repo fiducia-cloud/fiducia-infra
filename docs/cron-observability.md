@@ -62,13 +62,23 @@ FIDUCIA_LOG_FORMAT=json
 Do not add organization IDs, schedule names, function UUIDs, source code,
 request bodies, credentials, or arbitrary errors as Prometheus labels. Run,
 trace, and span IDs belong in structured log/trace fields and in the bounded
-customer/admin run trail, not metric dimensions.
+customer/admin run trail, not metric dimensions. The supplied Prometheus and
+Grafana expressions use only the emitted low-cardinality `result`, `trigger`,
+`target.kind`, `status.class`, `operation`, `outcome`, `runtime`, and `service`
+dimensions.
 
 ## Correlation
 
-The gateway deletes common credential, source, request-body, payload, database,
-and environment attributes before export. It tail-samples all error traces,
-traces slower than one second, and ten percent of the remaining baseline.
+The gateway deletes common credential, source, request-body, response-body,
+payload, database-statement, and environment attributes before export. It keeps
+every trace containing `cron.schedule`, all error traces, traces slower than one
+second, and ten percent of the remaining baseline. This guarantees that a trace
+ID committed to the bounded cron run trail resolves in Tempo while preserving a
+bounded sample of unrelated service traffic.
+
+The span-metrics and service-graph connectors generate low-cardinality RED and
+edge metrics. OpenMetrics exemplars preserve the exact trace pivot for histogram
+samples.
 
 Grafana provisioning enables:
 
@@ -86,11 +96,16 @@ credentials.
 Prometheus evaluates alerts for:
 
 - sustained cron delivery failures;
+- elevated p95 delivery latency;
 - retry and deferred-claim saturation;
 - repeated managed-function check failures;
 - tenant-authorization rejection;
-- collector export failures;
-- unavailable OTel, Loki, or Tempo targets.
+- collector span, log, or metric export failures;
+- unavailable Prometheus, OTel, Loki, or Tempo targets.
+
+The scheduler exports `result="delivered"` and `result="failed"`; rules and
+dashboards intentionally use that exact contract. The repository test suite
+rejects the obsolete `outcome` label and other metric-name drift.
 
 Alert annotations are intentionally generic. Investigators should follow the
 trace ID into the admin debugger, Tempo, and Loki rather than copying customer
