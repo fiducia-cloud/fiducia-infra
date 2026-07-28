@@ -96,9 +96,9 @@ data:
           "id": 1,
           "options": {"legend": {"displayMode": "table", "placement": "bottom"}},
           "targets": [
-            {"expr": "sum by (outcome) (rate(fiducia_cron_deliveries_total[$__rate_interval]))", "legendFormat": "{{outcome}}", "refId": "A"}
+            {"expr": "sum by (result) (rate(fiducia_cron_deliveries_total[$__rate_interval]))", "legendFormat": "{{result}}", "refId": "A"}
           ],
-          "title": "Cron delivery outcomes",
+          "title": "Cron delivery results",
           "type": "timeseries"
         },
         {
@@ -116,13 +116,25 @@ data:
         },
         {
           "datasource": {"type": "prometheus", "uid": "prometheus"},
-          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+          "fieldConfig": {"defaults": {"unit": "ms"}, "overrides": []},
           "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0},
           "id": 3,
           "options": {"legend": {"displayMode": "table", "placement": "bottom"}},
           "targets": [
-            {"expr": "sum(fiducia_cron_deliveries_in_flight)", "legendFormat": "deliveries", "refId": "A"},
-            {"expr": "sum(fiducia_lambda_function_invocations_in_flight)", "legendFormat": "functions", "refId": "B"}
+            {"expr": "fiducia:cron_delivery_duration:p95_5m", "legendFormat": "p95", "refId": "A"}
+          ],
+          "title": "Cron delivery p95 latency",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+          "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8},
+          "id": 4,
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}},
+          "targets": [
+            {"expr": "sum(fiducia_cron_delivery_in_flight)", "legendFormat": "cron deliveries", "refId": "A"},
+            {"expr": "sum(dd_lambda_runner_active_workers)", "legendFormat": "lambda workers", "refId": "B"}
           ],
           "title": "Work in flight",
           "type": "timeseries"
@@ -130,12 +142,13 @@ data:
         {
           "datasource": {"type": "prometheus", "uid": "prometheus"},
           "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
-          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
-          "id": 4,
+          "gridPos": {"h": 8, "w": 8, "x": 8, "y": 8},
+          "id": 5,
           "options": {"legend": {"displayMode": "table", "placement": "bottom"}},
           "targets": [
             {"expr": "sum(rate(fiducia_lambda_function_definition_check_failures_total[$__rate_interval]))", "legendFormat": "check failures", "refId": "A"},
-            {"expr": "sum(rate(fiducia_lambda_tenant_auth_rejections_total[$__rate_interval]))", "legendFormat": "tenant auth rejected", "refId": "B"}
+            {"expr": "sum(rate(fiducia_lambda_tenant_auth_rejections_total[$__rate_interval]))", "legendFormat": "tenant auth rejected", "refId": "B"},
+            {"expr": "sum(rate(fiducia_lambda_function_invocation_failures_total[$__rate_interval]))", "legendFormat": "invocation failures", "refId": "C"}
           ],
           "title": "Managed function safety failures",
           "type": "timeseries"
@@ -143,8 +156,8 @@ data:
         {
           "datasource": {"type": "prometheus", "uid": "prometheus"},
           "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
-          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
-          "id": 5,
+          "gridPos": {"h": 8, "w": 8, "x": 16, "y": 8},
+          "id": 6,
           "options": {"legend": {"displayMode": "table", "placement": "bottom"}},
           "targets": [
             {"expr": "sum(rate(otelcol_exporter_send_failed_spans_total[$__rate_interval]))", "legendFormat": "spans", "refId": "A"},
@@ -157,7 +170,7 @@ data:
         {
           "datasource": {"type": "loki", "uid": "loki"},
           "gridPos": {"h": 11, "w": 24, "x": 0, "y": 16},
-          "id": 6,
+          "id": 7,
           "options": {"dedupStrategy": "exact", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true},
           "targets": [
             {"expr": "{service_name=~\"fiducia-node|fiducia-lambda-service\"} |~ \"cron|schedule|function\"", "refId": "A"}
@@ -174,7 +187,7 @@ data:
       "timezone": "browser",
       "title": "Fiducia cron operations",
       "uid": "fiducia-cron-operations",
-      "version": 1
+      "version": 2
     }
 ---
 apiVersion: v1
