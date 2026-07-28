@@ -8,6 +8,7 @@ const read = (path) => readFile(new URL(path, root), "utf8");
 const gatewayPath = "observability/cron-stack/otel-gateway.yaml";
 const prometheusPath = "observability/cron-stack/prometheus.yaml";
 const grafanaPath = "observability/cron-stack/grafana.yaml";
+const docsPath = "docs/cron-observability.md";
 
 function embeddedDashboard(yaml) {
   const match = yaml.match(/  cron-operations\.json: \|\n([\s\S]*?)\n---\n/);
@@ -82,6 +83,14 @@ test("tail sampling uses one trace-consistent worker until load balancing exists
   const config = await read(gatewayPath);
   assert.match(config, /replicas: 1/);
   assert.doesNotMatch(config, /replicas: 2/);
+});
+
+test("documentation requires a stdout log collector and trace-aware HA", async () => {
+  const docs = await read(docsPath);
+  assert.match(docs, /does \*\*not\*\* tail pod logs by itself/);
+  assert.match(docs, /authorized log agent/);
+  assert.match(docs, /trace-ID-aware topology/);
+  assert.match(docs, /Do not scale that Deployment directly/);
 });
 
 test("collector has a second fail-closed sensitive-data boundary", async () => {
