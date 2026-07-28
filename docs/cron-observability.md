@@ -146,3 +146,6 @@ or contradictory sampling decisions. Production HA requires a stateless OTLP rec
 tier with the Collector load-balancing exporter (or an equivalent consistent-hash
 layer) that routes every span for a trace to the same sampling worker. Only that
 trace-ID-aware topology may scale the sampling workers horizontally.
+
+Before promoting an HA topology, capture a distributed multi-span trace proving that
+all spans with the same trace ID reach one sampler and receive one sampling decision.
