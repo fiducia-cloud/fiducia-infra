@@ -3,18 +3,18 @@ name: funding-catalog
 on:
   pull_request:
     paths:
-      - 'funding/**'
-      - 'tools/validate-funding.mjs'
-      - 'tools/validate-funding.test.mjs'
-      - '.github/workflows/funding-catalog.yml'
+      - "funding/**"
+      - "tools/validate-funding.mjs"
+      - "tools/validate-funding.test.mjs"
+      - ".github/workflows/funding-catalog.yml"
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
-      - 'funding/**'
-      - 'tools/validate-funding.mjs'
-      - 'tools/validate-funding.test.mjs'
-      - '.github/workflows/funding-catalog.yml'
+      - "funding/**"
+      - "tools/validate-funding.mjs"
+      - "tools/validate-funding.test.mjs"
+      - ".github/workflows/funding-catalog.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -25,15 +25,14 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          node-version: '22'
-
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22.22.1"
       - name: Validate provider catalog
         run: node tools/validate-funding.mjs
-
       - name: Run validator tests
         run: node --test tools/validate-funding.test.mjs
