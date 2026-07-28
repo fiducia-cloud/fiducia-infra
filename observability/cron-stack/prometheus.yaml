@@ -38,11 +38,26 @@ data:
           - record: fiducia:cron_delivery_total:rate5m
             expr: sum(rate(fiducia_cron_deliveries_total[5m]))
           - record: fiducia:cron_delivery_failure:rate5m
-            expr: sum(rate(fiducia_cron_deliveries_total{outcome!="success"}[5m]))
+            expr: sum(rate(fiducia_cron_deliveries_total{result="failed"}[5m]))
+          - record: fiducia:cron_delivery_success_ratio:rate5m
+            expr: |
+              sum(rate(fiducia_cron_deliveries_total{result="delivered"}[5m]))
+                / clamp_min(sum(rate(fiducia_cron_deliveries_total[5m])), 0.001)
           - record: fiducia:cron_retry:rate5m
             expr: sum(rate(fiducia_cron_delivery_retries_total[5m]))
           - record: fiducia:cron_deferred:rate5m
             expr: sum(rate(fiducia_cron_delivery_deferred_total[5m]))
+          - record: fiducia:cron_delivery_duration:p95_5m
+            expr: |
+              histogram_quantile(
+                0.95,
+                sum by (le) (rate(fiducia_cron_delivery_duration_milliseconds_bucket[5m]))
+              )
+              or
+              histogram_quantile(
+                0.95,
+                sum by (le) (rate(fiducia_cron_delivery_duration_bucket[5m]))
+              )
 
       - name: fiducia-cron-alerts
         rules:
@@ -57,6 +72,15 @@ data:
             annotations:
               summary: Cron delivery failure rate exceeds 10%
               description: Inspect the run trail and correlated Tempo/Loki data before retrying or changing a schedule.
+          - alert: FiduciaCronDeliveryLatencyHigh
+            expr: fiducia:cron_delivery_duration:p95_5m > 5000
+            for: 10m
+            labels:
+              severity: warning
+              service: fiducia-cron
+            annotations:
+              summary: Cron p95 delivery latency exceeds five seconds
+              description: Check downstream latency, retries, and the exact exemplar-linked Tempo traces.
           - alert: FiduciaCronRetriesSaturated
             expr: fiducia:cron_retry:rate5m > 1
             for: 10m
@@ -74,7 +98,7 @@ data:
               service: fiducia-cron
             annotations:
               summary: Cron deliveries are being deferred
-              description: Check the bounded scheduler concurrency and downstream latency.
+              description: Check bounded scheduler concurrency and downstream latency.
           - alert: FiduciaCronFunctionChecksFailing
             expr: increase(fiducia_lambda_function_definition_check_failures_total[15m]) > 5
             for: 5m
@@ -95,7 +119,8 @@ data:
           - alert: FiduciaOtelGatewayExportFailure
             expr: |
               sum(increase(otelcol_exporter_send_failed_spans_total[10m]))
-                + sum(increase(otelcol_exporter_send_failed_log_records_total[10m])) > 0
+                + sum(increase(otelcol_exporter_send_failed_log_records_total[10m]))
+                + sum(increase(otelcol_exporter_send_failed_metric_points_total[10m])) > 0
             for: 5m
             labels:
               severity: critical
@@ -104,7 +129,7 @@ data:
               summary: The cron telemetry gateway is dropping exported telemetry
               description: Check Tempo and Loki availability plus gateway queue pressure.
           - alert: FiduciaCronObservabilityTargetDown
-            expr: up{job=~"otel-gateway-.*|loki|tempo"} == 0
+            expr: up{job=~"prometheus|otel-gateway-.*|loki|tempo"} == 0
             for: 5m
             labels:
               severity: critical
@@ -179,6 +204,7 @@ spec:
               memory: 2Gi
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
           volumeMounts:
