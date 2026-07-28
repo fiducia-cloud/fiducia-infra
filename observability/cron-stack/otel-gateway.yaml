@@ -21,38 +21,79 @@ data:
         check_interval: 1s
         limit_mib: 768
         spike_limit_mib: 192
+      # Services already avoid sensitive attributes. This is a second, central
+      # fail-closed boundary in case future instrumentation regresses.
       attributes/redact:
         actions:
           - key: authorization
+            action: delete
+          - key: cookie
+            action: delete
+          - key: password
+            action: delete
+          - key: secret
+            action: delete
+          - key: token
+            action: delete
+          - key: api_key
             action: delete
           - key: http.request.header.authorization
             action: delete
           - key: http.request.header.cookie
             action: delete
+          - key: http.request.header.x-server-auth
+            action: delete
+          - key: http.request.header.x-fiducia-internal-auth
+            action: delete
           - key: http.response.header.set-cookie
             action: delete
           - key: db.connection_string
             action: delete
+          - key: db.statement
+            action: delete
           - key: fiducia.secret
+            action: delete
+          - key: function.body
             action: delete
           - key: function.source
             action: delete
+          - key: function.env
+            action: delete
+          - key: http.request.body
+            action: delete
+          - key: http.response.body
+            action: delete
           - key: request.body
+            action: delete
+          - key: response.body
+            action: delete
+          - key: cron.payload
+            action: delete
+          - key: cron.source
             action: delete
           - key: payload
             action: delete
           - key: environment
             action: delete
+      # Run history stores trace ids, so every trace containing the cron.schedule
+      # attribute is retained. Errors and slow non-cron traces are also retained,
+      # with a small baseline sample for general dependency context.
       tail_sampling:
         decision_wait: 10s
         num_traces: 50000
         expected_new_traces_per_sec: 200
         policies:
+          - name: cron-traces
+            type: string_attribute
+            string_attribute:
+              key: cron.schedule
+              values: [".+"]
+              enabled_regex_matching: true
           - name: errors
             type: status_code
             status_code:
               status_codes: [ERROR]
-          - name: slow-cron-runs
+          - name: slow-traces
             type: latency
             latency:
               threshold_ms: 1000
@@ -63,6 +104,29 @@ data:
       batch:
         send_batch_size: 1024
         timeout: 2s
+
+    connectors:
+      # RED metrics with exemplars make Prometheus panels pivot to the exact
+      # Tempo trace. Dimensions stay deliberately low-cardinality.
+      spanmetrics/cron:
+        namespace: fiducia_span
+        histogram:
+          explicit:
+            buckets: [5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2s, 5s, 10s, 30s]
+        exemplars:
+          enabled: true
+        dimensions:
+          - name: service.name
+          - name: cron.target.kind
+          - name: cron.trigger
+          - name: cron.delivered
+        dimensions_cache_size: 1000
+        aggregation_temporality: AGGREGATION_TEMPORALITY_CUMULATIVE
+      servicegraph:
+        latency_histogram_buckets: [100ms, 250ms, 500ms, 1s, 2s, 5s, 10s]
+        store:
+          ttl: 2s
+          max_items: 10000
 
     exporters:
       prometheus:
@@ -101,13 +165,13 @@ data:
                     port: 8888
       pipelines:
         metrics:
-          receivers: [otlp]
-          processors: [memory_limiter, batch]
+          receivers: [otlp, spanmetrics/cron, servicegraph]
+          processors: [memory_limiter, attributes/redact, batch]
           exporters: [prometheus]
         traces:
           receivers: [otlp]
           processors: [memory_limiter, attributes/redact, tail_sampling, batch]
-          exporters: [otlp/tempo]
+          exporters: [otlp/tempo, spanmetrics/cron, servicegraph]
         logs:
           receivers: [otlp]
           processors: [memory_limiter, attributes/redact, batch]
