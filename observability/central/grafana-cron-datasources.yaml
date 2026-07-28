@@ -1,0 +1,79 @@
+# Grafana datasource provisioning for cron metrics, logs, and traces. Deploy this
+# ConfigMap in the central observability cluster and mount provisioning.yaml under
+# /etc/grafana/provisioning/datasources/. The fixed UIDs are referenced by the
+# cron dashboard ConfigMap.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fiducia-grafana-cron-datasources
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/component: datasource-provisioning
+    app.kubernetes.io/part-of: fiducia-cloud
+data:
+  provisioning.yaml: |
+    apiVersion: 1
+    deleteDatasources: []
+    prune: false
+    datasources:
+      - name: Prometheus
+        uid: prometheus
+        type: prometheus
+        access: proxy
+        url: ${PROMETHEUS_URL}
+        isDefault: true
+        editable: false
+        jsonData:
+          httpMethod: POST
+          exemplarTraceIdDestinations:
+            - name: trace_id
+              datasourceUid: tempo
+
+      - name: Loki
+        uid: loki
+        type: loki
+        access: proxy
+        url: ${LOKI_URL}
+        editable: false
+        jsonData:
+          maxLines: 2000
+          derivedFields:
+            - name: TraceID
+              matcherRegex: '"trace_id"[=: ]+"?([0-9a-fA-F]{32})'
+              datasourceUid: tempo
+              url: '$${__value.raw}'
+              urlDisplayLabel: View trace
+
+      - name: Tempo
+        uid: tempo
+        type: tempo
+        access: proxy
+        url: ${TEMPO_URL}
+        editable: false
+        jsonData:
+          nodeGraph:
+            enabled: true
+          serviceMap:
+            datasourceUid: prometheus
+          tracesToLogsV2:
+            datasourceUid: loki
+            spanStartTimeShift: -5m
+            spanEndTimeShift: 5m
+            filterByTraceID: true
+            filterBySpanID: true
+            customQuery: false
+            tags:
+              - { key: service.name, value: service_name }
+              - { key: fiducia.cluster, value: fiducia_cluster }
+          tracesToMetrics:
+            datasourceUid: prometheus
+            spanStartTimeShift: -5m
+            spanEndTimeShift: 5m
+            tags:
+              - { key: service.name, value: service_name }
+              - { key: cron.target.kind, value: cron_target_kind }
+            queries:
+              - name: Cron delivery rate
+                query: sum(rate(fiducia_cron_deliveries_total{$$__tags}[5m]))
+              - name: Cron delivery p95
+                query: histogram_quantile(0.95, sum by (le) (rate(fiducia_cron_delivery_duration_milliseconds_bucket{$$__tags}[5m])))
