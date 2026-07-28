@@ -1,0 +1,39 @@
+name: funding-catalog
+
+on:
+  pull_request:
+    paths:
+      - 'funding/**'
+      - 'tools/validate-funding.mjs'
+      - 'tools/validate-funding.test.mjs'
+      - '.github/workflows/funding-catalog.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'funding/**'
+      - 'tools/validate-funding.mjs'
+      - 'tools/validate-funding.test.mjs'
+      - '.github/workflows/funding-catalog.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Validate provider catalog
+        run: node tools/validate-funding.mjs
+
+      - name: Run validator tests
+        run: node --test tools/validate-funding.test.mjs
