@@ -1,0 +1,234 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fiducia-prometheus-config
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+      external_labels:
+        stack: fiducia-cron
+
+    rule_files:
+      - /etc/prometheus/cron-rules.yml
+
+    scrape_configs:
+      - job_name: prometheus
+        static_configs:
+          - targets: ["127.0.0.1:9090"]
+      - job_name: otel-gateway-cron-metrics
+        static_configs:
+          - targets: ["fiducia-otel-gateway:8889"]
+      - job_name: otel-gateway-self
+        static_configs:
+          - targets: ["fiducia-otel-gateway:8888"]
+      - job_name: loki
+        static_configs:
+          - targets: ["fiducia-loki:3100"]
+      - job_name: tempo
+        static_configs:
+          - targets: ["fiducia-tempo:3200"]
+
+  cron-rules.yml: |
+    groups:
+      - name: fiducia-cron-recording
+        interval: 30s
+        rules:
+          - record: fiducia:cron_delivery_total:rate5m
+            expr: sum(rate(fiducia_cron_deliveries_total[5m]))
+          - record: fiducia:cron_delivery_failure:rate5m
+            expr: sum(rate(fiducia_cron_deliveries_total{result="failed"}[5m]))
+          - record: fiducia:cron_delivery_success_ratio:rate5m
+            expr: |
+              sum(rate(fiducia_cron_deliveries_total{result="delivered"}[5m]))
+                / clamp_min(sum(rate(fiducia_cron_deliveries_total[5m])), 0.001)
+          - record: fiducia:cron_retry:rate5m
+            expr: sum(rate(fiducia_cron_delivery_retries_total[5m]))
+          - record: fiducia:cron_deferred:rate5m
+            expr: sum(rate(fiducia_cron_delivery_deferred_total[5m]))
+          - record: fiducia:cron_delivery_duration:p95_5m
+            expr: |
+              histogram_quantile(
+                0.95,
+                sum by (le) (rate(fiducia_cron_delivery_duration_milliseconds_bucket[5m]))
+              )
+              or
+              histogram_quantile(
+                0.95,
+                sum by (le) (rate(fiducia_cron_delivery_duration_bucket[5m]))
+              )
+
+      - name: fiducia-cron-alerts
+        rules:
+          - alert: FiduciaCronDeliveryFailureRateHigh
+            expr: |
+              fiducia:cron_delivery_failure:rate5m
+                / clamp_min(fiducia:cron_delivery_total:rate5m, 0.001) > 0.10
+            for: 10m
+            labels:
+              severity: warning
+              service: fiducia-cron
+            annotations:
+              summary: Cron delivery failure rate exceeds 10%
+              description: Inspect the run trail and correlated Tempo/Loki data before retrying or changing a schedule.
+          - alert: FiduciaCronDeliveryLatencyHigh
+            expr: fiducia:cron_delivery_duration:p95_5m > 5000
+            for: 10m
+            labels:
+              severity: warning
+              service: fiducia-cron
+            annotations:
+              summary: Cron p95 delivery latency exceeds five seconds
+              description: Check downstream latency, retries, and the exact exemplar-linked Tempo traces.
+          - alert: FiduciaCronRetriesSaturated
+            expr: fiducia:cron_retry:rate5m > 1
+            for: 10m
+            labels:
+              severity: warning
+              service: fiducia-cron
+            annotations:
+              summary: Cron retries exceed one per second
+              description: Delivery dependencies or customer targets are persistently failing.
+          - alert: FiduciaCronClaimsDeferred
+            expr: fiducia:cron_deferred:rate5m > 0.25
+            for: 10m
+            labels:
+              severity: warning
+              service: fiducia-cron
+            annotations:
+              summary: Cron deliveries are being deferred
+              description: Check bounded scheduler concurrency and downstream latency.
+          - alert: FiduciaCronFunctionChecksFailing
+            expr: increase(fiducia_lambda_function_definition_check_failures_total[15m]) > 5
+            for: 5m
+            labels:
+              severity: warning
+              service: fiducia-lambda-service
+            annotations:
+              summary: Managed cron function checks are repeatedly failing
+              description: Review sanitized check errors; function source must not be copied into alert annotations.
+          - alert: FiduciaCronTenantAuthRejected
+            expr: increase(fiducia_lambda_tenant_auth_rejections_total[10m]) > 0
+            labels:
+              severity: critical
+              service: fiducia-lambda-service
+            annotations:
+              summary: Cron function tenant authorization was rejected
+              description: Verify canonical organization propagation and service credentials.
+          - alert: FiduciaOtelGatewayExportFailure
+            expr: |
+              sum(increase(otelcol_exporter_send_failed_spans_total[10m]))
+                + sum(increase(otelcol_exporter_send_failed_log_records_total[10m]))
+                + sum(increase(otelcol_exporter_send_failed_metric_points_total[10m])) > 0
+            for: 5m
+            labels:
+              severity: critical
+              service: fiducia-otel-gateway
+            annotations:
+              summary: The cron telemetry gateway is dropping exported telemetry
+              description: Check Tempo and Loki availability plus gateway queue pressure.
+          - alert: FiduciaCronObservabilityTargetDown
+            expr: up{job=~"prometheus|otel-gateway-.*|loki|tempo"} == 0
+            for: 5m
+            labels:
+              severity: critical
+              service: fiducia-observability
+            annotations:
+              summary: A cron observability target is down
+              description: Restore the telemetry path before relying on run-debugging links.
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: fiducia-prometheus-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fiducia-prometheus
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fiducia-prometheus
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fiducia-prometheus
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v2.55.1
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --storage.tsdb.retention.time=15d
+            - --storage.tsdb.retention.size=18GB
+            - --web.enable-remote-write-receiver
+          ports:
+            - name: http
+              containerPort: 9090
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+              readOnly: true
+            - name: data
+              mountPath: /prometheus
+      volumes:
+        - name: config
+          configMap:
+            name: fiducia-prometheus-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: fiducia-prometheus-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-prometheus
+spec:
+  selector:
+    app.kubernetes.io/name: fiducia-prometheus
+  ports:
+    - name: http
+      port: 9090
+      targetPort: http

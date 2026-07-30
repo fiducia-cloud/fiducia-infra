@@ -1,0 +1,278 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fiducia-otel-gateway-config
+data:
+  collector.yaml: |
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 768
+        spike_limit_mib: 192
+      # Services already avoid sensitive attributes. This is a second, central
+      # fail-closed boundary in case future instrumentation regresses.
+      attributes/redact:
+        actions:
+          - key: authorization
+            action: delete
+          - key: cookie
+            action: delete
+          - key: password
+            action: delete
+          - key: secret
+            action: delete
+          - key: token
+            action: delete
+          - key: api_key
+            action: delete
+          - key: http.request.header.authorization
+            action: delete
+          - key: http.request.header.cookie
+            action: delete
+          - key: http.request.header.x-server-auth
+            action: delete
+          - key: http.request.header.x-fiducia-internal-auth
+            action: delete
+          - key: http.response.header.set-cookie
+            action: delete
+          - key: db.connection_string
+            action: delete
+          - key: db.statement
+            action: delete
+          - key: fiducia.secret
+            action: delete
+          - key: function.body
+            action: delete
+          - key: function.source
+            action: delete
+          - key: function.env
+            action: delete
+          - key: http.request.body
+            action: delete
+          - key: http.response.body
+            action: delete
+          - key: request.body
+            action: delete
+          - key: response.body
+            action: delete
+          - key: cron.payload
+            action: delete
+          - key: cron.source
+            action: delete
+          - key: payload
+            action: delete
+          - key: environment
+            action: delete
+      # Run history stores trace ids, so every trace containing the cron.schedule
+      # attribute is retained. Errors and slow non-cron traces are also retained,
+      # with a small baseline sample for general dependency context.
+      tail_sampling:
+        decision_wait: 10s
+        num_traces: 50000
+        expected_new_traces_per_sec: 200
+        policies:
+          - name: cron-traces
+            type: string_attribute
+            string_attribute:
+              key: cron.schedule
+              values: [".+"]
+              enabled_regex_matching: true
+          - name: errors
+            type: status_code
+            status_code:
+              status_codes: [ERROR]
+          - name: slow-traces
+            type: latency
+            latency:
+              threshold_ms: 1000
+          - name: baseline
+            type: probabilistic
+            probabilistic:
+              sampling_percentage: 10
+      batch:
+        send_batch_size: 1024
+        timeout: 2s
+
+    connectors:
+      # RED metrics with exemplars make Prometheus panels pivot to the exact
+      # Tempo trace. Dimensions stay deliberately low-cardinality.
+      spanmetrics/cron:
+        namespace: fiducia_span
+        histogram:
+          explicit:
+            buckets: [5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2s, 5s, 10s, 30s]
+        exemplars:
+          enabled: true
+        dimensions:
+          - name: service.name
+          - name: cron.target.kind
+          - name: cron.trigger
+          - name: cron.delivered
+        dimensions_cache_size: 1000
+        aggregation_temporality: AGGREGATION_TEMPORALITY_CUMULATIVE
+      servicegraph:
+        latency_histogram_buckets: [100ms, 250ms, 500ms, 1s, 2s, 5s, 10s]
+        store:
+          ttl: 2s
+          max_items: 10000
+
+    exporters:
+      prometheus:
+        endpoint: 0.0.0.0:8889
+        enable_open_metrics: true
+        resource_to_telemetry_conversion:
+          enabled: true
+      otlp/tempo:
+        endpoint: fiducia-tempo:4317
+        tls:
+          insecure: true
+        sending_queue:
+          enabled: true
+          queue_size: 4096
+        retry_on_failure:
+          enabled: true
+      otlphttp/loki:
+        endpoint: http://fiducia-loki:3100/otlp
+        sending_queue:
+          enabled: true
+          queue_size: 4096
+        retry_on_failure:
+          enabled: true
+
+    service:
+      extensions: [health_check]
+      telemetry:
+        logs:
+          encoding: json
+        metrics:
+          readers:
+            - pull:
+                exporter:
+                  prometheus:
+                    host: 0.0.0.0
+                    port: 8888
+      pipelines:
+        metrics:
+          receivers: [otlp, spanmetrics/cron, servicegraph]
+          processors: [memory_limiter, attributes/redact, batch]
+          exporters: [prometheus]
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, attributes/redact, tail_sampling, batch]
+          exporters: [otlp/tempo, spanmetrics/cron, servicegraph]
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, attributes/redact, batch]
+          exporters: [otlphttp/loki]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fiducia-otel-gateway
+spec:
+  # Tail sampling keeps per-trace state. A single worker guarantees that
+  # every span for a trace reaches the same decision maker. Production HA
+  # must add a trace-ID-aware load-balancing tier before scaling workers.
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fiducia-otel-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fiducia-otel-gateway
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: fiducia-otel-gateway
+      containers:
+        - name: collector
+          image: otel/opentelemetry-collector-contrib:0.155.0@sha256:99c06e30a4b3f99f601b635a9f47261223fff33110c51dc0badc6970eb276e15
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config=/etc/otelcol/collector.yaml
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317
+            - name: otlp-http
+              containerPort: 4318
+            - name: health
+              containerPort: 13133
+            - name: telemetry
+              containerPort: 8888
+            - name: prometheus
+              containerPort: 8889
+          readinessProbe:
+            httpGet:
+              path: /
+              port: health
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: health
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otelcol
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: fiducia-otel-gateway-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-otel-gateway
+spec:
+  selector:
+    app.kubernetes.io/name: fiducia-otel-gateway
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http
+    - name: telemetry
+      port: 8888
+      targetPort: telemetry
+    - name: prometheus
+      port: 8889
+      targetPort: prometheus
