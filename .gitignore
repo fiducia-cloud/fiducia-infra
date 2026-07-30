@@ -38,6 +38,7 @@ dist/
 .astro/
 .cache/
 coverage/
+**/target/
 *.tsbuildinfo
 pkg/
 pkg-node/

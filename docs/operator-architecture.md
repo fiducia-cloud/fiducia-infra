@@ -1,6 +1,7 @@
 # Fiducia Kubernetes operator architecture
 
-Status: **accepted design; Phase 0 guardrails implemented**
+Status: **accepted design; Phase 0 guardrails implemented; Phase 1 observer
+prototype implemented but not deployed**
 
 This document answers a narrow question: which parts of running Fiducia need a
 custom Kubernetes operator, and which parts should remain ordinary Kubernetes
@@ -15,9 +16,12 @@ or make the first version a general-purpose database operator.
   probes, Secrets, NetworkPolicies, and ordinary restart-after-crash behavior.
 - `fiducia-node` and `fiducia-brain` remain StatefulSets with stable identities
   and per-pod PVCs.
-- A future `fiducia-operator.rs` controller owns only operations that require
-  distributed-system knowledge: quorum-gated upgrades, leadership drain,
-  catch-up verification, coordinated snapshots, restore, and eventually
+- The Phase 1 prototype in `operator/` observes the Kubernetes durability
+  contract and patches only `FiduciaCluster.status`. It stays in this repository
+  until the dedicated `fiducia-operator.rs` repository is created.
+- A future mutating `fiducia-operator.rs` controller owns only operations that
+  require distributed-system knowledge: quorum-gated upgrades, leadership
+  drain, catch-up verification, coordinated snapshots, restore, and eventually
   membership/placement changes.
 - `fiducia-infra` owns the CRDs, RBAC, deployment manifests, examples, and
   GitOps wiring. The Rust controller should live in its own
@@ -94,9 +98,12 @@ not enough control to let an automated controller replace or resize the fleet:
   plus matching Raft metadata), but there is not yet an operator-safe,
   idempotent export/restore API.
 
-Therefore an initial controller must be read-only except for its own CR status
-and Events. Pod deletion, membership changes, and restore stay disabled until
-the following service contracts exist and have failure-injection tests:
+Therefore the initial controller is read-only except for its own CR status.
+The prototype implements that boundary with namespace-scoped RBAC and
+`mutationEnabled: false`; Events can be added after rate-limit/deduplication
+semantics are defined. Pod deletion, membership changes, and restore stay
+disabled until the following service contracts exist and have
+failure-injection tests:
 
 1. Idempotent node and brain cordon/uncordon operations with operation IDs.
 2. Leadership transfer to a named, in-sync voter for both shard Raft and brain
@@ -304,7 +311,7 @@ separately; old key IDs remain available while any retained backup needs them.
 | Phase | Controller permissions | Exit criterion |
 |---|---|---|
 | **0 — now** | no controller; `OnDelete` guardrail | manifests/tests prevent automatic node/brain rolls |
-| **1 — observer** | read workloads/services; patch CR status + Events | reports quorum/storage/version blockers without mutating workloads |
+| **1 — observer** | read StatefulSets/PVCs; patch CR status | prototype reports Kubernetes rollout/storage blockers; quorum/version API observations and deployment remain |
 | **2 — safe restart/upgrade** | add StatefulSet patch + targeted Pod delete | drain, leadership transfer, strict catch-up, fencing, and mixed-version tests are green |
 | **3 — backup/restore** | create snapshot/export/verification Jobs; no PVC delete | automated restore drill proves checksums, metadata, keys, and token monotonicity |
 | **4 — elastic membership** | invoke fenced service APIs; Kubernetes scale follows committed placement | learner/promote/transfer/remove is implemented end-to-end and chaos-tested |

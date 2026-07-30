@@ -1,0 +1,32 @@
+[package]
+name = "fiducia-operator"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+license = "Apache-2.0"
+description = "Observer-only Kubernetes operator for Fiducia Raft workloads"
+
+[dependencies]
+anyhow = "1.0.100"
+axum = "0.8.8"
+futures = "0.3.31"
+k8s-openapi = { version = "0.28.0", features = ["v1_32", "schemars"] }
+kube = { version = "4.2.0", features = ["derive", "runtime"] }
+schemars = "1.2.0"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+serde_yaml = "0.9.34"
+thiserror = "2.0.18"
+tokio = { version = "1.49.0", features = ["macros", "net", "rt-multi-thread", "signal"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt", "json"] }
+
+[dev-dependencies]
+pretty_assertions = "1.4.1"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "deny"
+pedantic = "deny"

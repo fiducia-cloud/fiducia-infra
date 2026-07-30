@@ -1,0 +1,9 @@
+apiVersion: operator.fiducia.cloud/v1alpha1
+kind: FiduciaCluster
+metadata:
+  name: fiducia
+  namespace: fiducia
+spec:
+  nodeStatefulSet: fiducia-node
+  brainStatefulSet: fiducia-brain
+  requeueSeconds: 30

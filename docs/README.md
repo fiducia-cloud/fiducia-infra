@@ -22,6 +22,9 @@ Longer-form documentation that doesn't belong in a manifest comment.
   what requires Raft-aware reconciliation, the CRD/status model, safety gates,
   and the staged path from observation to upgrades, backup/restore, and dynamic
   membership.
+- `raft-durability.md` — the implemented PVC-retention contract, safe
+  one-member migration gates, required backup artifact, and clean-room restore
+  acceptance criteria.
 - `e2e.md` — the two-tier test infrastructure (local kind vs real managed clusters) and
   how the `fiducia-e2e` suite runs against it.
 - `observability.md` — the collector-first observability MVP.

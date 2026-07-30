@@ -239,8 +239,11 @@ necessary for stable identity and PVC ownership, but it is not a Raft lifecycle
 manager: Kubernetes cannot see cross-cluster quorum, leadership, follower lag,
 or protocol compatibility, and a PDB does not constrain a StatefulSet
 controller's own rolling update. Pod replacement therefore remains an explicit,
-quorum-checked operation until the proposed Rust
-[`fiducia-operator`](docs/operator-architecture.md) implements that protocol.
+quorum-checked operation. The Rust
+[`fiducia-operator`](operator/README.md) now implements the observer-only first
+phase; the mutating protocol remains disabled until the service safety APIs and
+failure tests in the [operator architecture](docs/operator-architecture.md)
+exist.
 
 > **Want a 4th platform?** The kustomize model is N-cluster already — `render.mjs`
 > fans out to every `[[cluster]]` block, so a 4th cluster adds a spare failure

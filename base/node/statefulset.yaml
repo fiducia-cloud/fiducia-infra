@@ -22,6 +22,12 @@ spec:
   # fiducia-operator will take over that same fail-closed protocol.
   updateStrategy:
     type: OnDelete
+  # Kubernetes v1.32 makes this policy stable. Spell the data-safety default out
+  # so a future chart/generator change cannot silently couple PVC deletion to a
+  # StatefulSet delete or scale-down.
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
   selector:
     matchLabels:
       app: fiducia-node

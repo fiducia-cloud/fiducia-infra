@@ -16,6 +16,11 @@ spec:
   # quorum-checked deletion until fiducia-operator owns the protocol.
   updateStrategy:
     type: OnDelete
+  # The placement/scale Raft log is recovery state. Retain its PVC even if the
+  # StatefulSet is deleted or scaled while an operator is diagnosing a failure.
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
   selector:
     matchLabels:
       app: fiducia-brain

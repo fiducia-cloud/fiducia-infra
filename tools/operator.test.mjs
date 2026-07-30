@@ -7,6 +7,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
+import { readManifests } from "./manifests.mjs";
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
 const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8");
@@ -23,7 +25,7 @@ test("Raft workloads cannot roll automatically before the operator safety gates 
   }
 
   assert.match(architecture, /Phase 0 guardrails implemented/);
-  assert.match(architecture, /initial controller must be read-only/);
+  assert.match(architecture, /initial controller is read-only/);
   assert.match(architecture, /fixed membership/);
   assert.match(architecture, /must never simulate these contracts by editing `FIDUCIA_PEERS`/);
   assert.match(rollout, /no pod is deleted\s+until this checklist passes/);
@@ -49,4 +51,60 @@ test("future mutating phases require fencing, service capabilities, and restore 
   assert.match(architecture, /\*\*2 — safe restart\/upgrade\*\*/);
   assert.match(architecture, /\*\*3 — backup\/restore\*\*/);
   assert.match(architecture, /\*\*4 — elastic membership\*\*/);
+});
+
+test("Phase 1 operator RBAC can observe workloads and patch only its own status", () => {
+  const documents = readManifests("operator/config/rbac.yaml");
+  const role = documents.find((document) => document.kind === "Role");
+  assert.ok(role, "operator Role must exist");
+
+  const rules = role.rules ?? [];
+  const statusRule = rules.find((rule) =>
+    (rule.resources ?? []).includes("fiduciaclusters/status"),
+  );
+  assert.deepEqual(statusRule?.verbs, ["get", "patch", "update"]);
+
+  const statefulSetRule = rules.find((rule) =>
+    (rule.resources ?? []).includes("statefulsets"),
+  );
+  assert.deepEqual(statefulSetRule?.verbs, ["get", "list", "watch"]);
+
+  const pvcRule = rules.find((rule) =>
+    (rule.resources ?? []).includes("persistentvolumeclaims"),
+  );
+  assert.deepEqual(pvcRule?.verbs, ["get", "list", "watch"]);
+
+  const forbiddenResources = new Set(["pods", "secrets", "jobs", "volumesnapshots"]);
+  const forbiddenVerbs = new Set(["create", "delete", "deletecollection"]);
+  for (const rule of rules) {
+    for (const resource of rule.resources ?? []) {
+      assert.ok(!forbiddenResources.has(resource), `unexpected runtime permission for ${resource}`);
+    }
+    for (const verb of rule.verbs ?? []) {
+      assert.ok(!forbiddenVerbs.has(verb), `unexpected runtime verb ${verb}`);
+    }
+    if (!(rule.resources ?? []).includes("fiduciaclusters/status")) {
+      assert.ok(!(rule.verbs ?? []).includes("patch"), "only CR status may be patched");
+      assert.ok(!(rule.verbs ?? []).includes("update"), "only CR status may be updated");
+    }
+  }
+});
+
+test("Phase 1 controller has no workload mutation client and stays single-replica", () => {
+  const source = read("operator/src/lib.rs");
+  assert.doesNotMatch(source, /Api<\s*Pod\s*>/);
+  assert.doesNotMatch(source, /Api<\s*Secret\s*>/);
+  assert.doesNotMatch(source, /\.delete(?:_collection)?\s*\(/);
+  assert.doesNotMatch(source, /\.patch\s*\(\s*&cluster\.spec\.(?:node|brain)_stateful_set/);
+  assert.match(source, /mutation_enabled:\s*false/);
+
+  const documents = readManifests("operator/config/deployment.yaml");
+  const deployment = documents.find((document) => document.kind === "Deployment");
+  assert.ok(deployment, "operator Deployment must exist");
+  assert.equal(deployment.spec?.replicas, 1);
+  assert.equal(deployment.spec?.strategy?.type, "Recreate");
+  assert.equal(
+    deployment.spec?.template?.spec?.serviceAccountName,
+    "fiducia-operator",
+  );
 });
