@@ -1,0 +1,16 @@
+# Laptop-only substrate behavior. The public Cloudflare connector runs inside
+# each cluster, so the application Service must remain private and must not ask
+# K3s ServiceLB to publish host ports.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+  - target:
+      group: ""
+      version: v1
+      kind: Service
+      name: fiducia-load-balance
+      namespace: fiducia
+    patch: |-
+      - op: replace
+        path: /spec/type
+        value: ClusterIP
