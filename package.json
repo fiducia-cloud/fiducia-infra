@@ -7,8 +7,10 @@
   "scripts": {
     "render": "node tools/render.mjs",
     "render:laptop": "node tools/render-laptop-fleet.mjs",
+    "render:laptop:gitops": "node tools/render-laptop-gitops.mjs",
     "check": "node tools/render.mjs --check",
     "check:laptop": "node tools/render-laptop-fleet.mjs --check",
+    "check:laptop:gitops": "node --test tools/laptop-gitops.test.mjs && bash -n scripts/bootstrap-laptop-gitops.sh scripts/promote-laptop-cluster.sh",
     "check:vcluster": "node tools/render-vcluster-hetzner-e2e.mjs --check",
     "test": "node --test tools/*.test.mjs"
   }
