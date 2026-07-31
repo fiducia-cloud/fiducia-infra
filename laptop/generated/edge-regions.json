@@ -1,0 +1,14 @@
+[
+  {
+    "name": "laptop-aws-sim",
+    "url": "https://aws-sim.laptop.fiducia.cloud"
+  },
+  {
+    "name": "laptop-gcp-sim",
+    "url": "https://gcp-sim.laptop.fiducia.cloud"
+  },
+  {
+    "name": "laptop-azure-sim",
+    "url": "https://azure-sim.laptop.fiducia.cloud"
+  }
+]
