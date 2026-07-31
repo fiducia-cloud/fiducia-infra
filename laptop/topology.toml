@@ -1,0 +1,72 @@
+# Pre-funding production profile: three dedicated laptops, one independent
+# single-node K3s cluster per laptop. The provider names are simulation labels,
+# never claims that these machines run inside AWS, GCP, or Azure.
+#
+# Render with:
+#   node tools/render-laptop-fleet.mjs
+# Validate checked-in output with:
+#   node tools/render-laptop-fleet.mjs --check
+
+cluster_id = "fiducia-prod"
+shard_count = 256
+replication_factor = 3
+connectivity = "wireguard"
+auth_required = true
+
+# Residential/business WAN timings. These intentionally trade faster elections
+# for stability under ordinary internet jitter. Re-tune only from measured RTT,
+# loss, and election evidence across the actual three sites.
+[raft]
+tick_ms = 100
+heartbeat_ms = 500
+election_min_ms = 5000
+election_jitter_ms = 5000
+check_quorum = true
+
+[[cluster]]
+name = "laptop-aws-sim"
+platform = "local-laptop"
+synthetic_provider = "aws"
+site = "site-a"
+pod_cidr = "10.41.0.0/16"
+service_cidr = "10.81.0.0/16"
+kubernetes_api_hostname = "k8s.laptop-aws-sim.fiducia.internal"
+storage_class = "local-path"
+node_replicas = 1
+brain = true
+brain_endpoint = "brain.laptop-aws-sim.fiducia.internal:9095"
+node_peer_endpoint = "node.laptop-aws-sim.fiducia.internal:9090"
+node_api_endpoint = "node.laptop-aws-sim.fiducia.internal:8090"
+lb_endpoint = "https://aws-sim.laptop.fiducia.cloud"
+
+[[cluster]]
+name = "laptop-gcp-sim"
+platform = "local-laptop"
+synthetic_provider = "gcp"
+site = "site-b"
+pod_cidr = "10.42.0.0/16"
+service_cidr = "10.82.0.0/16"
+kubernetes_api_hostname = "k8s.laptop-gcp-sim.fiducia.internal"
+storage_class = "local-path"
+node_replicas = 1
+brain = true
+brain_endpoint = "brain.laptop-gcp-sim.fiducia.internal:9095"
+node_peer_endpoint = "node.laptop-gcp-sim.fiducia.internal:9090"
+node_api_endpoint = "node.laptop-gcp-sim.fiducia.internal:8090"
+lb_endpoint = "https://gcp-sim.laptop.fiducia.cloud"
+
+[[cluster]]
+name = "laptop-azure-sim"
+platform = "local-laptop"
+synthetic_provider = "azure"
+site = "site-c"
+pod_cidr = "10.43.0.0/16"
+service_cidr = "10.83.0.0/16"
+kubernetes_api_hostname = "k8s.laptop-azure-sim.fiducia.internal"
+storage_class = "local-path"
+node_replicas = 1
+brain = true
+brain_endpoint = "brain.laptop-azure-sim.fiducia.internal:9095"
+node_peer_endpoint = "node.laptop-azure-sim.fiducia.internal:9090"
+node_api_endpoint = "node.laptop-azure-sim.fiducia.internal:8090"
+lb_endpoint = "https://azure-sim.laptop.fiducia.cloud"
