@@ -1,0 +1,77 @@
+{
+  "evidenceMode": "example",
+  "observedAt": "2026-07-31T05:45:00Z",
+  "pinnedRevision": "1111111111111111111111111111111111111111",
+  "rollbackRevision": "0000000000000000000000000000000000000000",
+  "fiduciaLeader": "laptop-azure-sim",
+  "jetstreamLeaders": [
+    "laptop-gcp-sim"
+  ],
+  "healthyFiduciaVoters": [
+    "laptop-aws-sim",
+    "laptop-gcp-sim",
+    "laptop-azure-sim"
+  ],
+  "healthyJetStreamMembers": [
+    "laptop-aws-sim",
+    "laptop-gcp-sim",
+    "laptop-azure-sim"
+  ],
+  "externalProbeRegions": [
+    "us-east",
+    "eu-west"
+  ],
+  "gates": {
+    "bridgeNetwork": true,
+    "privateDns": true,
+    "mtlsTrust": true,
+    "secretBootstrap": true,
+    "externalBackups": true,
+    "telemetry": true,
+    "targetStorage": true,
+    "databaseReachability": true,
+    "objectStorageReachability": true,
+    "fencing": true,
+    "outboxReplay": true,
+    "dynamicMembershipApi": true,
+    "jetstreamReconfiguration": true,
+    "membershipLease": true,
+    "externalHealthChecks": true
+  },
+  "backupProof": {
+    "fiduciaSnapshot": "example-fiducia-snapshot",
+    "databaseBackup": "example-database-backup",
+    "jetstreamSnapshot": "example-jetstream-snapshot",
+    "objectStoreProbe": "example-object-store-probe",
+    "recoveryKeyCustody": "example-offline-recovery-custody"
+  },
+  "targetReadiness": {
+    "hetzner": {
+      "kubernetes": true,
+      "gitops": true,
+      "storage": true,
+      "mesh": true,
+      "tls": true,
+      "telemetry": true,
+      "backups": true
+    },
+    "vultr": {
+      "kubernetes": true,
+      "gitops": true,
+      "storage": true,
+      "mesh": true,
+      "tls": true,
+      "telemetry": true,
+      "backups": true
+    },
+    "civo": {
+      "kubernetes": true,
+      "gitops": true,
+      "storage": true,
+      "mesh": true,
+      "tls": true,
+      "telemetry": true,
+      "backups": true
+    }
+  }
+}
