@@ -1,0 +1,31 @@
+# Static policy for replacing the three temporary laptop voters with the three
+# canonical cloud voters. Live roles, backup IDs, health, and readiness evidence
+# are supplied separately and must be fresh at execution time.
+
+migration_id = "den-947-laptop-to-cloud-v1"
+source_topology = "laptop/topology.toml"
+target_topology = "topology.toml"
+bridge_connectivity = "wireguard"
+max_parallel_replacements = 1
+minimum_stable_voters = 3
+rollback_window_hours = 24
+catchup_stable_seconds = 300
+max_raft_lag_entries = 0
+max_jetstream_lag_messages = 0
+traffic_steps = "1,10,25,50,100"
+require_joint_consensus = true
+require_external_backups = true
+require_fencing = true
+require_outbox_replay = true
+
+[[replacement]]
+source = "laptop-aws-sim"
+target = "hetzner"
+
+[[replacement]]
+source = "laptop-gcp-sim"
+target = "vultr"
+
+[[replacement]]
+source = "laptop-azure-sim"
+target = "civo"
