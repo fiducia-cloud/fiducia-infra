@@ -1,0 +1,176 @@
+# Central OpenTelemetry Collector configuration for Fiducia cron telemetry.
+#
+# This is intentionally not part of base/kustomization.yaml: the central gateway
+# is deployed once, not once per Fiducia data-plane cluster. Mount collector.yaml
+# into the central otelcol-contrib Deployment and provide the three backend URLs.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fiducia-otel-gateway-cron
+  labels:
+    app.kubernetes.io/name: fiducia-otel-gateway
+    app.kubernetes.io/component: observability
+    app.kubernetes.io/part-of: fiducia-cloud
+data:
+  collector.yaml: |
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+      file_storage/queues:
+        directory: /var/lib/otelcol/queues
+        timeout: 10s
+
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_percentage: 75
+        spike_limit_percentage: 20
+
+      # A second redaction boundary at the central convergence point. Services are
+      # expected not to emit these fields; deleting them here limits blast radius
+      # if a future instrumentation change violates that contract.
+      attributes/redact:
+        actions:
+          - { key: authorization, action: delete }
+          - { key: cookie, action: delete }
+          - { key: password, action: delete }
+          - { key: secret, action: delete }
+          - { key: api_key, action: hash }
+          - { key: token, action: hash }
+          - { key: http.request.header.authorization, action: delete }
+          - { key: http.request.header.cookie, action: delete }
+          - { key: http.request.header.x-server-auth, action: delete }
+          - { key: http.request.header.x-fiducia-internal-auth, action: delete }
+          - { key: http.response.header.set-cookie, action: delete }
+          - { key: http.request.body, action: delete }
+          - { key: http.response.body, action: delete }
+          - { key: request.body, action: delete }
+          - { key: response.body, action: delete }
+          - { key: function.body, action: delete }
+          - { key: function.source, action: delete }
+          - { key: function.env, action: delete }
+          - { key: cron.payload, action: delete }
+          - { key: cron.source, action: delete }
+
+      # Keep all cron traces (the run trail links directly to their ids), all
+      # errors and slow traces, plus a low-cost baseline sample of ordinary traffic.
+      tail_sampling:
+        decision_wait: 10s
+        num_traces: 100000
+        expected_new_traces_per_sec: 1000
+        policies:
+          - name: cron-traces
+            type: string_attribute
+            string_attribute:
+              key: cron.schedule
+              values: [".+"]
+              enabled_regex_matching: true
+          - name: errors
+            type: status_code
+            status_code:
+              status_codes: [ERROR]
+          - name: slow
+            type: latency
+            latency:
+              threshold_ms: 2000
+          - name: baseline
+            type: probabilistic
+            probabilistic:
+              sampling_percentage: 10
+
+      batch:
+        send_batch_size: 2048
+        timeout: 5s
+
+    connectors:
+      # Produces RED metrics from spans and carries exemplars so a Grafana panel
+      # can jump from a latency/error datapoint to the exact Tempo trace.
+      spanmetrics/cron:
+        namespace: fiducia_span
+        histogram:
+          explicit:
+            buckets: [5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2s, 5s, 10s, 30s]
+        exemplars:
+          enabled: true
+        dimensions:
+          - { name: service.name }
+          - { name: cron.target.kind }
+          - { name: cron.trigger }
+          - { name: cron.delivered }
+        dimensions_cache_size: 1000
+        aggregation_temporality: AGGREGATION_TEMPORALITY_CUMULATIVE
+
+    exporters:
+      otlphttp/tempo:
+        endpoint: ${env:TEMPO_OTLP_HTTP_ENDPOINT}
+        compression: gzip
+        timeout: 10s
+        retry_on_failure:
+          enabled: true
+          initial_interval: 1s
+          max_interval: 30s
+          max_elapsed_time: 0s
+        sending_queue:
+          enabled: true
+          queue_size: 10000
+          storage: file_storage/queues
+
+      # Loki accepts native OTLP logs at an endpoint ending in /otlp; the exporter
+      # appends /v1/logs. Use a tenant/auth gateway URL here when multi-tenancy is on.
+      otlphttp/loki:
+        endpoint: ${env:LOKI_OTLP_HTTP_ENDPOINT}
+        compression: gzip
+        timeout: 10s
+        retry_on_failure:
+          enabled: true
+          initial_interval: 1s
+          max_interval: 30s
+          max_elapsed_time: 0s
+        sending_queue:
+          enabled: true
+          queue_size: 20000
+          storage: file_storage/queues
+
+      prometheusremotewrite/metrics:
+        endpoint: ${env:PROMETHEUS_REMOTE_WRITE_ENDPOINT}
+        timeout: 10s
+        resource_to_telemetry_conversion:
+          enabled: true
+        retry_on_failure:
+          enabled: true
+          initial_interval: 1s
+          max_interval: 30s
+          max_elapsed_time: 0s
+        remote_write_queue:
+          enabled: true
+          queue_size: 10000
+          storage: file_storage/queues
+
+    service:
+      extensions: [health_check, file_storage/queues]
+      telemetry:
+        logs:
+          level: info
+        metrics:
+          address: 0.0.0.0:8888
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, attributes/redact, tail_sampling, batch]
+          exporters: [otlphttp/tempo, spanmetrics/cron]
+        metrics:
+          receivers: [otlp, spanmetrics/cron]
+          processors: [memory_limiter, attributes/redact, batch]
+          exporters: [prometheusremotewrite/metrics]
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, attributes/redact, batch]
+          exporters: [otlphttp/loki]

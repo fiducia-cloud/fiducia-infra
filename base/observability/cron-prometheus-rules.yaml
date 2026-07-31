@@ -1,0 +1,129 @@
+# Backend-neutral Prometheus rule bundle. The central Prometheus/Mimir sidecar can
+# select ConfigMaps with fiducia.cloud/prometheus-rules=true and load rules.yaml.
+# Keeping this as a core ConfigMap avoids requiring a Prometheus Operator CRD in
+# every data-plane cluster.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fiducia-cron-prometheus-rules
+  namespace: fiducia
+  labels:
+    app.kubernetes.io/name: fiducia-cron-observability
+    app.kubernetes.io/component: prometheus-rules
+    app.kubernetes.io/part-of: fiducia-cloud
+    fiducia.cloud/prometheus-rules: "true"
+data:
+  rules.yaml: |
+    groups:
+      - name: fiducia-cron-recording
+        interval: 30s
+        rules:
+          - record: fiducia:cron_delivery_failure_ratio:rate5m
+            expr: |
+              sum(rate(fiducia_cron_deliveries_total{result="failed"}[5m]))
+              /
+              clamp_min(sum(rate(fiducia_cron_deliveries_total[5m])), 0.001)
+          - record: fiducia:cron_delivery_success_ratio:rate5m
+            expr: |
+              sum(rate(fiducia_cron_deliveries_total{result="delivered"}[5m]))
+              /
+              clamp_min(sum(rate(fiducia_cron_deliveries_total[5m])), 0.001)
+          - record: fiducia:cron_delivery_p95_milliseconds:rate5m
+            expr: |
+              histogram_quantile(
+                0.95,
+                sum by (le) (
+                  rate(fiducia_cron_delivery_duration_milliseconds_bucket[5m])
+                )
+              )
+          - record: fiducia:cron_claim_delivery_gap:increase15m
+            expr: |
+              clamp_min(
+                sum(increase(fiducia_cron_claims_total[15m]))
+                - sum(increase(fiducia_cron_deliveries_total[15m])),
+                0
+              )
+
+      - name: fiducia-cron-alerts
+        interval: 30s
+        rules:
+          - alert: FiduciaCronDeliveryFailureRateHigh
+            expr: fiducia:cron_delivery_failure_ratio:rate5m > 0.05
+            for: 15m
+            labels:
+              severity: warning
+              service: fiducia-cron
+            annotations:
+              summary: Cron delivery failure ratio is above 5%
+              description: Inspect the operator cron run trail, then pivot by trace id into Tempo and Loki.
+              runbook_url: https://github.com/fiducia-cloud/fiducia-infra/blob/main/docs/cron-observability.md#delivery-failures
+
+          - alert: FiduciaCronClaimDeliveryGap
+            expr: fiducia:cron_claim_delivery_gap:increase15m > 5
+            for: 10m
+            labels:
+              severity: warning
+              service: fiducia-cron
+            annotations:
+              summary: Raft-committed cron claims are not reaching terminal delivery records
+              description: This can indicate delivery saturation, a crashing runner, or result-commit failures. Idempotent redelivery is expected, but the gap must converge.
+              runbook_url: https://github.com/fiducia-cloud/fiducia-infra/blob/main/docs/cron-observability.md#claimdelivery-gap
+
+          - alert: FiduciaCronDeliveryDeferred
+            expr: sum(rate(fiducia_cron_delivery_deferred_total{reason="concurrency_limit"}[5m])) > 0
+            for: 10m
+            labels:
+              severity: warning
+              service: fiducia-cron
+            annotations:
+              summary: Cron delivery is persistently deferred by the concurrency guard
+              description: Check in-flight deliveries, downstream latency, and FIDUCIA_CRON_MAX_IN_FLIGHT before increasing capacity.
+              runbook_url: https://github.com/fiducia-cloud/fiducia-infra/blob/main/docs/cron-observability.md#concurrency-deferrals
+
+          - alert: FiduciaCronRetryStorm
+            expr: sum(rate(fiducia_cron_delivery_retries_total[10m])) > 0.5
+            for: 10m
+            labels:
+              severity: warning
+              service: fiducia-cron
+            annotations:
+              summary: Cron targets are causing a sustained retry storm
+              description: Break down the dashboard by status.class and target.kind; permanent customer errors should never retry.
+              runbook_url: https://github.com/fiducia-cloud/fiducia-infra/blob/main/docs/cron-observability.md#retry-storms
+
+          - alert: FiduciaCronLambdaCheckFailuresHigh
+            expr: |
+              sum(rate(fiducia_lambda_function_definition_check_failures_total[10m]))
+              /
+              clamp_min(sum(rate(fiducia_lambda_function_definition_checks_total[10m])), 0.001)
+              > 0.10
+            for: 15m
+            labels:
+              severity: warning
+              service: fiducia-lambda-service
+            annotations:
+              summary: More than 10% of customer function checks are failing
+              description: Review sandbox rejection classes without logging or exposing customer source.
+              runbook_url: https://github.com/fiducia-cloud/fiducia-infra/blob/main/docs/cron-observability.md#function-check-failures
+
+          - alert: FiduciaCronLambdaInvocationFailures
+            expr: sum(rate(fiducia_lambda_function_invocation_failures_total[5m])) > 0
+            for: 10m
+            labels:
+              severity: warning
+              service: fiducia-lambda-service
+            annotations:
+              summary: Tenant function invocations are failing
+              description: Correlate the cron fire id and trace id across the node delivery and sandbox invocation spans.
+              runbook_url: https://github.com/fiducia-cloud/fiducia-infra/blob/main/docs/cron-observability.md#function-invocation-failures
+
+          - alert: FiduciaCronTenantAuthRejections
+            expr: sum(rate(fiducia_lambda_tenant_auth_rejections_total[5m])) > 0
+            for: 5m
+            labels:
+              severity: critical
+              service: fiducia-lambda-service
+            annotations:
+              summary: Lambda-service requests are missing valid service authentication or tenant scope
+              description: Treat this as a deployment/security regression. The scheduler must forward x-fiducia-org-id and internal service auth on every function invocation.
+              runbook_url: https://github.com/fiducia-cloud/fiducia-infra/blob/main/docs/cron-observability.md#tenant-auth-rejections
