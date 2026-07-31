@@ -1,0 +1,56 @@
+name: laptop-fleet
+on:
+  pull_request:
+    paths:
+      - "laptop/**"
+      - "docs/laptop-k3s-production.md"
+      - "tools/render-laptop-fleet.mjs"
+      - "tools/laptop-fleet.test.mjs"
+      - "tools/render.mjs"
+      - "package.json"
+      - ".github/workflows/laptop-fleet.yml"
+  push:
+    branches: [main]
+    paths:
+      - "laptop/**"
+      - "docs/laptop-k3s-production.md"
+      - "tools/render-laptop-fleet.mjs"
+      - "tools/laptop-fleet.test.mjs"
+      - "tools/render.mjs"
+      - "package.json"
+      - ".github/workflows/laptop-fleet.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Validate workflow
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: ./.github/workflows/laptop-fleet.yml
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22.22.1"
+      - name: Verify generated laptop profile
+        run: npm run check:laptop
+      - name: Test laptop topology contracts
+        run: node --test tools/laptop-fleet.test.mjs
+      - name: Build all laptop overlays
+        run: |
+          set -euo pipefail
+          for cluster in laptop/clusters/*/; do
+            echo "== $cluster =="
+            kubectl kustomize "$cluster" >/dev/null
+          done
