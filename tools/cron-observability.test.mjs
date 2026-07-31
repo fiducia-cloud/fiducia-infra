@@ -10,12 +10,18 @@ const gatewayPath = 'observability/central/cron-otel-gateway.yaml';
 const datasourcePath = 'observability/central/grafana-cron-datasources.yaml';
 const rulesPath = 'base/observability/cron-prometheus-rules.yaml';
 
-function collectPromExpressions(dashboard) {
-  return dashboard.panels
-    .flatMap((panel) => panel.targets ?? [])
-    .map((target) => target.expr)
-    .filter((expr) => typeof expr === 'string');
+function collectExpressions(dashboard, datasourceType) {
+  return dashboard.panels.flatMap((panel) => {
+    const panelDatasource = panel.datasource?.type;
+    return (panel.targets ?? [])
+      .filter((target) => (target.datasource?.type ?? panelDatasource) === datasourceType)
+      .map((target) => target.expr ?? target.query)
+      .filter((expression) => typeof expression === 'string');
+  });
 }
+
+const collectPromExpressions = (dashboard) => collectExpressions(dashboard, 'prometheus');
+const collectLokiExpressions = (dashboard) => collectExpressions(dashboard, 'loki');
 
 test('cron dashboard is valid JSON with all three signal backends', async () => {
   const dashboard = JSON.parse(await read(dashboardPath));
@@ -32,7 +38,7 @@ test('cron dashboard is valid JSON with all three signal backends', async () => 
   assert.match(expressions, /fiducia_lambda_tenant_auth_rejections_total/);
 });
 
-test('dashboard metric dimensions remain bounded', async () => {
+test('Prometheus dashboard dimensions remain bounded', async () => {
   const dashboard = JSON.parse(await read(dashboardPath));
   const expressions = collectPromExpressions(dashboard).join('\n').toLowerCase();
   for (const forbidden of [
@@ -51,6 +57,16 @@ test('dashboard metric dimensions remain bounded', async () => {
       `high-cardinality dimension leaked into PromQL: ${forbidden}`,
     );
   }
+});
+
+test('Loki preserves exact run correlation without turning identifiers into metric labels', async () => {
+  const dashboard = JSON.parse(await read(dashboardPath));
+  const logQueries = collectLokiExpressions(dashboard).join('\n');
+  const promQueries = collectPromExpressions(dashboard).join('\n');
+
+  assert.match(logQueries, /cron_fire_id/);
+  assert.match(logQueries, /trace_id/);
+  assert.doesNotMatch(promQueries, /fire_id|trace_id/);
 });
 
 test('central collector keeps cron traces and fans out every signal', async () => {
