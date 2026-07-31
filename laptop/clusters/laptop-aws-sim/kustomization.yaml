@@ -1,0 +1,22 @@
+# Dedicated single-node K3s cluster overlay. aws is a synthetic provider
+# label used for multi-cloud behavior tests; this machine is not hosted by aws.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: fiducia
+resources:
+  - ../../../base
+components:
+  - ../../../base/components/brain
+  - ../../components/substrate
+configMapGenerator:
+  - name: fiducia-cluster
+    envs:
+      - topology.env
+generatorOptions:
+  disableNameSuffixHash: true
+commonAnnotations:
+  fiducia.cloud/substrate: laptop-k3s
+  fiducia.cloud/synthetic-provider: aws
+  fiducia.cloud/site: site-a
+patches:
+  - path: patches.yaml
