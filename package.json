@@ -6,7 +6,9 @@
   "description": "Multi-cluster Kubernetes config for fiducia.cloud. topology.toml is the source of truth; tools/render.mjs fans it out into per-cluster kustomize inputs.",
   "scripts": {
     "render": "node tools/render.mjs",
+    "render:laptop": "node tools/render-laptop-fleet.mjs",
     "check": "node tools/render.mjs --check",
+    "check:laptop": "node tools/render-laptop-fleet.mjs --check",
     "check:vcluster": "node tools/render-vcluster-hetzner-e2e.mjs --check",
     "test": "node --test tools/*.test.mjs"
   }
