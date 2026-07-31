@@ -52,6 +52,7 @@ done
 [[ -n "$cluster" ]] || fail "--cluster is required"
 [[ "$revision" =~ ^[0-9a-fA-F]{40}$ ]] || fail "--revision must be an exact 40-character Git commit SHA"
 command -v node >/dev/null || fail "node is required"
+command -v sha256sum >/dev/null || fail "sha256sum is required"
 
 bundle="$(mktemp)"
 trap 'rm -f "$bundle"' EXIT
@@ -67,7 +68,6 @@ if [[ "$mode" == "plan" ]]; then
 fi
 
 command -v kubectl >/dev/null || fail "kubectl is required for --apply"
-command -v sha256sum >/dev/null || fail "sha256sum is required for --apply"
 [[ -n "$context" ]] || fail "--context is required for --apply"
 [[ -f "$argocd_install" ]] || fail "--argocd-install must name an existing pinned local manifest"
 [[ "$argocd_sha256" =~ ^[0-9a-fA-F]{64}$ ]] || fail "--argocd-sha256 must be a 64-character SHA-256"
@@ -76,7 +76,7 @@ command -v sha256sum >/dev/null || fail "sha256sum is required for --apply"
 actual_install_sha="$(sha256sum "$argocd_install" | awk '{print $1}')"
 [[ "$actual_install_sha" == "${argocd_sha256,,}" ]] || fail "Argo CD install bundle checksum mismatch"
 
-grep -Eq 'argocd\.argoproj\.io/secret-type:[[:space:]]*["'"']?repository["'"']?' "$repo_secret" \
+grep -Eq "argocd\\.argoproj\\.io/secret-type:[[:space:]]*['\"]?repository['\"]?" "$repo_secret" \
   || fail "repository Secret lacks argocd.argoproj.io/secret-type=repository"
 grep -Fq 'https://github.com/fiducia-cloud/fiducia-infra.git' "$repo_secret" \
   || fail "repository Secret is not scoped to fiducia-cloud/fiducia-infra"
