@@ -9,6 +9,11 @@
   "servers": [
     {
       "name": "fiducia-nats-laptop-aws-sim",
+      "serverTags": [
+        "site:site-a",
+        "cluster:laptop-aws-sim",
+        "substrate:laptop-k3s"
+      ],
       "routeTls": true,
       "routeCount": 2,
       "routePeers": [
@@ -24,6 +29,11 @@
     },
     {
       "name": "fiducia-nats-laptop-gcp-sim",
+      "serverTags": [
+        "site:site-b",
+        "cluster:laptop-gcp-sim",
+        "substrate:laptop-k3s"
+      ],
       "routeTls": true,
       "routeCount": 2,
       "routePeers": [
@@ -39,6 +49,11 @@
     },
     {
       "name": "fiducia-nats-laptop-azure-sim",
+      "serverTags": [
+        "site:site-c",
+        "cluster:laptop-azure-sim",
+        "substrate:laptop-k3s"
+      ],
       "routeTls": true,
       "routeCount": 2,
       "routePeers": [
