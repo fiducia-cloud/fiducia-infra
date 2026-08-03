@@ -1,0 +1,109 @@
+name: laptop-acceptance
+on:
+  pull_request:
+    paths:
+      - "laptop/acceptance/**"
+      - "docs/laptop-acceptance-campaign.md"
+      - "scripts/capture-laptop-cluster-snapshot.sh"
+      - "scripts/run-laptop-software-fault.sh"
+      - "tools/plan-laptop-acceptance-campaign.mjs"
+      - "tools/validate-laptop-acceptance-results.mjs"
+      - "tools/laptop-acceptance-campaign.test.mjs"
+      - ".github/workflows/laptop-acceptance.yml"
+  push:
+    branches: [main]
+    paths:
+      - "laptop/acceptance/**"
+      - "docs/laptop-acceptance-campaign.md"
+      - "scripts/capture-laptop-cluster-snapshot.sh"
+      - "scripts/run-laptop-software-fault.sh"
+      - "tools/plan-laptop-acceptance-campaign.mjs"
+      - "tools/validate-laptop-acceptance-results.mjs"
+      - "tools/laptop-acceptance-campaign.test.mjs"
+      - ".github/workflows/laptop-acceptance.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rehearse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Validate workflow
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: ./.github/workflows/laptop-acceptance.yml
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22.22.1"
+      - name: Validate shell syntax
+        run: |
+          bash -n \
+            scripts/capture-laptop-cluster-snapshot.sh \
+            scripts/run-laptop-software-fault.sh
+      - name: Test campaign, ordering, evidence, and runner contracts
+        run: node --test tools/laptop-acceptance-campaign.test.mjs
+      - name: Build deterministic example plan and rehearsal
+        run: |
+          set -euo pipefail
+          node tools/plan-laptop-acceptance-campaign.mjs \
+            --preflight laptop/acceptance/preflight.example.json \
+            --allow-example \
+            --now 2026-08-03T18:11:00Z \
+            >/tmp/den-946-plan-and-report.json
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const result = JSON.parse(fs.readFileSync("/tmp/den-946-plan-and-report.json", "utf8"));
+          if (result.report.status !== "passed") process.exit(1);
+          if (!result.report.softwareOnly) process.exit(1);
+          if (!result.report.everyDegradedCheckpointPreservesTwoOfThree) process.exit(1);
+          if (!result.report.allStepsRecoveredBeforeNextFault) process.exit(1);
+          if (result.report.maxConcurrentFaultsObserved !== 1) process.exit(1);
+          if (result.report.finalStep !== "seven-day-soak@fleet") process.exit(1);
+          fs.writeFileSync("/tmp/den-946-plan.json", `${JSON.stringify(result.plan, null, 2)}\n`);
+          NODE
+      - name: Rehearse strict completed-results validation
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import {
+            buildExampleAcceptanceResults,
+            validateAcceptanceResults,
+          } from "./tools/validate-laptop-acceptance-results.mjs";
+          const plan = JSON.parse(fs.readFileSync("/tmp/den-946-plan.json", "utf8"));
+          const results = buildExampleAcceptanceResults(plan);
+          const report = validateAcceptanceResults(plan, results, {allowExample: true});
+          if (report.status !== "passed") process.exit(1);
+          if (report.evidenceMode !== "example") process.exit(1);
+          if (report.soakHours < 168) process.exit(1);
+          if (!report.zeroLostCommittedFiduciaEntries) process.exit(1);
+          if (!report.zeroLostJetStreamMessages) process.exit(1);
+          if (!report.zeroDuplicateProtectedEffects) process.exit(1);
+          fs.writeFileSync("/tmp/den-946-example-results.json", `${JSON.stringify(results, null, 2)}\n`);
+          NODE
+          node tools/validate-laptop-acceptance-results.mjs \
+            --plan /tmp/den-946-plan.json \
+            --results /tmp/den-946-example-results.json \
+            --allow-example \
+            >/tmp/den-946-result-report.json
+      - name: Prove CI is software-only
+        run: |
+          set -euo pipefail
+          if grep -R --line-number --extended-regexp \
+            'kubectl[[:space:]].*(delete|scale|patch|apply)|systemctl[[:space:]].*(stop|restart)|tc[[:space:]]+qdisc|date[[:space:]]+-s' \
+            .github/workflows/laptop-acceptance.yml; then
+            echo "acceptance CI must not inject a live fault" >&2
+            exit 1
+          fi
+          grep -Fq 'This is a deterministic state-machine rehearsal, not live acceptance evidence.' \
+            /tmp/den-946-plan-and-report.json
