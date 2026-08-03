@@ -37,9 +37,8 @@ spec:
           type: RuntimeDefault
       containers:
         - name: cloudflared
-          # Exact release tag; never use latest. Promote a reviewed digest when
-          # the fleet's amd64/arm64 inventory from DEN-942 is finalized.
-          image: cloudflare/cloudflared:2026.7.3
+          # Official multi-architecture 2026.7.3 image pinned by digest.
+          image: cloudflare/cloudflared@sha256:e39ee8da81ad5e05d77f38d2f51c60ca51bf2a8450ac3abab50c17fdb91d91bf
           imagePullPolicy: IfNotPresent
           command:
             - cloudflared
@@ -49,6 +48,8 @@ spec:
             - info
             - --metrics
             - 0.0.0.0:2000
+            - --edge-ip-version
+            - "4"
             - run
           env:
             - name: TUNNEL_TOKEN
@@ -102,8 +103,8 @@ spec:
       app: fiducia-cloudflared
 ---
 # The namespace baseline already provides DNS. This policy adds only the local
-# origin and Cloudflare's required tunnel transport. No inbound public flow is
-# needed: cloudflared establishes outbound connections on TCP/UDP 7844.
+# origin and the currently documented Cloudflare Tunnel edge endpoints. The
+# connector is forced to IPv4 so the allowlist and transport mode agree.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -138,7 +139,29 @@ spec:
               app: fiducia-load-balance
       ports:
         - { protocol: TCP, port: 8088 }
-    # Required Cloudflare Tunnel transports: HTTP/2 over TCP and QUIC over UDP.
-    - ports:
+    # Cloudflare Tunnel transport endpoints, region 1 and region 2. Review this
+    # list against Cloudflare's published endpoint document during upgrades.
+    - to:
+        - ipBlock: { cidr: 198.41.192.167/32 }
+        - ipBlock: { cidr: 198.41.192.67/32 }
+        - ipBlock: { cidr: 198.41.192.57/32 }
+        - ipBlock: { cidr: 198.41.192.107/32 }
+        - ipBlock: { cidr: 198.41.192.27/32 }
+        - ipBlock: { cidr: 198.41.192.7/32 }
+        - ipBlock: { cidr: 198.41.192.227/32 }
+        - ipBlock: { cidr: 198.41.192.47/32 }
+        - ipBlock: { cidr: 198.41.192.37/32 }
+        - ipBlock: { cidr: 198.41.192.77/32 }
+        - ipBlock: { cidr: 198.41.200.13/32 }
+        - ipBlock: { cidr: 198.41.200.193/32 }
+        - ipBlock: { cidr: 198.41.200.33/32 }
+        - ipBlock: { cidr: 198.41.200.233/32 }
+        - ipBlock: { cidr: 198.41.200.53/32 }
+        - ipBlock: { cidr: 198.41.200.63/32 }
+        - ipBlock: { cidr: 198.41.200.113/32 }
+        - ipBlock: { cidr: 198.41.200.73/32 }
+        - ipBlock: { cidr: 198.41.200.43/32 }
+        - ipBlock: { cidr: 198.41.200.23/32 }
+      ports:
         - { protocol: TCP, port: 7844 }
         - { protocol: UDP, port: 7844 }
