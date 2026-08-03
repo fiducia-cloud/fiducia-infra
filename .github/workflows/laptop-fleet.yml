@@ -4,10 +4,12 @@ on:
     paths:
       - "laptop/**"
       - "migration/**"
+      - "nix/**"
       - "docs/laptop-*.md"
       - "scripts/*laptop*.sh"
       - "tools/render-laptop-*.mjs"
       - "tools/plan-laptop-*.mjs"
+      - "tools/validate-laptop-inventory.mjs"
       - "tools/laptop-*.test.mjs"
       - "tools/render.mjs"
       - "topology.toml"
@@ -19,10 +21,12 @@ on:
     paths:
       - "laptop/**"
       - "migration/**"
+      - "nix/**"
       - "docs/laptop-*.md"
       - "scripts/*laptop*.sh"
       - "tools/render-laptop-*.mjs"
       - "tools/plan-laptop-*.mjs"
+      - "tools/validate-laptop-inventory.mjs"
       - "tools/laptop-*.test.mjs"
       - "tools/render.mjs"
       - "topology.toml"
@@ -55,10 +59,38 @@ jobs:
           node-version: "22.22.1"
       - name: Verify generated laptop profile
         run: npm run check:laptop
-      - name: Test laptop topology, GitOps, and migration contracts
-        run: node --test tools/laptop-fleet.test.mjs tools/laptop-gitops.test.mjs tools/laptop-cloud-migration.test.mjs
-      - name: Validate bootstrap shell syntax
-        run: bash -n scripts/bootstrap-laptop-gitops.sh scripts/promote-laptop-cluster.sh
+      - name: Test laptop topology, GitOps, networking, host, and migration contracts
+        run: |
+          node --test \
+            tools/laptop-fleet.test.mjs \
+            tools/laptop-gitops.test.mjs \
+            tools/laptop-networking.test.mjs \
+            tools/laptop-host-inventory.test.mjs \
+            tools/laptop-cloud-migration.test.mjs
+      - name: Validate laptop operation shell syntax
+        run: |
+          bash -n \
+            scripts/bootstrap-laptop-gitops.sh \
+            scripts/promote-laptop-cluster.sh \
+            scripts/apply-laptop-runtime-secrets.sh \
+            scripts/restore-laptop-k3s-snapshot.sh \
+            scripts/capture-laptop-host-evidence.sh
+      - name: Rehearse strict fleet inventory validation
+        run: |
+          set -euo pipefail
+          node tools/validate-laptop-inventory.mjs \
+            --inventory laptop/inventory/fleet.example.json \
+            --allow-example \
+            --now 2026-08-03T18:00:00Z \
+            >/tmp/fiducia-laptop-fleet-inventory.json
+          node -e '
+            const fs = require("node:fs");
+            const report = JSON.parse(fs.readFileSync("/tmp/fiducia-laptop-fleet-inventory.json", "utf8"));
+            if (report.status !== "passed") process.exit(1);
+            if (report.evidenceMode !== "example") process.exit(1);
+            if (!report.nonClaims.some((claim) => claim.includes("not production evidence"))) process.exit(1);
+            if (!report.failureDomains.distinctIsps) process.exit(1);
+          '
       - name: Render every immutable root application
         run: |
           set -euo pipefail
@@ -67,6 +99,19 @@ jobs:
             node tools/render-laptop-gitops.mjs \
               --cluster "$cluster" \
               --revision "$revision" >/dev/null
+          done
+      - name: Render deny-by-default tailnet policy and every cluster adapter
+        run: |
+          set -euo pipefail
+          node tools/render-laptop-tailnet.mjs \
+            --operator operator@example.com \
+            --tailnet-domain example.ts.net \
+            --policy-only >/tmp/fiducia-tailnet-policy.json
+          for cluster in laptop-aws-sim laptop-gcp-sim laptop-azure-sim; do
+            node tools/render-laptop-tailnet.mjs \
+              --operator operator@example.com \
+              --tailnet-domain example.ts.net \
+              --cluster "$cluster" >/tmp/"$cluster"-tailnet.json
           done
       - name: Rehearse laptop-to-cloud member migration
         run: |
