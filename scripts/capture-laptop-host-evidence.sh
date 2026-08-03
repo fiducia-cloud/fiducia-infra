@@ -55,10 +55,6 @@ mkdir -p "$(dirname "$output")"
 temporary="$(mktemp "${output}.tmp.XXXXXX")"
 trap 'rm -f "$temporary"' EXIT
 
-json_string() {
-  jq -Rn --arg value "$1" '$value'
-}
-
 service_state() {
   local unit="$1"
   jq -n \
@@ -127,7 +123,7 @@ done
 k3s_config=/etc/rancher/k3s/config.yaml
 k3s_exists="false"
 k3s_mode="null"
-k3s_sha256="null"
+k3s_sha256=""
 k3s_node_match="false"
 k3s_secret_encryption="false"
 k3s_snapshot_secret="false"
@@ -145,7 +141,7 @@ if [[ -f "$k3s_config" ]]; then
 fi
 
 firewall_backend="unknown"
-firewall_ruleset_sha256="null"
+firewall_ruleset_sha256=""
 firewall_rule_lines="null"
 if command -v nft >/dev/null; then
   firewall_backend="nftables"
@@ -166,8 +162,12 @@ fi
 # Record only protocol and port, not listening addresses or owning processes.
 listening_ports="$(
   ss -H -lntu \
-    | awk '{endpoint=$5; sub(/^.*:/, "", endpoint); print tolower(substr($1,1,3)) ":" endpoint}' \
-    | grep -E '^(tcp|udp):[0-9]+$' \
+    | awk '{
+        endpoint=$5;
+        sub(/^.*:/, "", endpoint);
+        protocol=tolower(substr($1,1,3));
+        if (protocol ~ /^(tcp|udp)$/ && endpoint ~ /^[0-9]+$/) print protocol ":" endpoint;
+      }' \
     | sort -u \
     | jq -Rsc 'split("\n") | map(select(length > 0))'
 )"
@@ -209,7 +209,7 @@ jq -n \
   --argjson disks "$disks" \
   --argjson interfaces "$interfaces" \
   --arg firewallBackend "$firewall_backend" \
-  --argjson firewallRulesetSha256 "$firewall_ruleset_sha256" \
+  --arg firewallRulesetSha256 "$firewall_ruleset_sha256" \
   --argjson firewallRuleLines "$firewall_rule_lines" \
   --argjson listeningPorts "$listening_ports" \
   --argjson sshd "$(service_state sshd.service)" \
@@ -219,7 +219,7 @@ jq -n \
   --argjson k3s "$(service_state k3s.service)" \
   --argjson k3sConfigExists "$k3s_exists" \
   --argjson k3sConfigMode "$k3s_mode" \
-  --argjson k3sConfigSha256 "$k3s_sha256" \
+  --arg k3sConfigSha256 "$k3s_sha256" \
   --argjson k3sNodeMatch "$k3s_node_match" \
   --argjson k3sSecretEncryption "$k3s_secret_encryption" \
   --argjson k3sSnapshotSecret "$k3s_snapshot_secret" \
@@ -238,12 +238,16 @@ jq -n \
     battery: {present: $batteryPresent, healthPercent: $batteryHealthPercent, cycleCount: $batteryCycleCount},
     disks: $disks,
     network: {interfaces: $interfaces, listeningProtocolPorts: $listeningPorts},
-    firewall: {backend: $firewallBackend, rulesetSha256: $firewallRulesetSha256, ruleLines: $firewallRuleLines},
+    firewall: {
+      backend: $firewallBackend,
+      rulesetSha256: (if $firewallRulesetSha256 == "" then null else $firewallRulesetSha256 end),
+      ruleLines: $firewallRuleLines
+    },
     services: {sshd: $sshd, tailscaled: $tailscaled, smartd: $smartd, timesyncd: $timesyncd, k3s: $k3s},
     k3sConfig: {
       exists: $k3sConfigExists,
       mode: $k3sConfigMode,
-      sha256: $k3sConfigSha256,
+      sha256: (if $k3sConfigSha256 == "" then null else $k3sConfigSha256 end),
       nodeIdentityMatches: $k3sNodeMatch,
       secretEncryption: $k3sSecretEncryption,
       snapshotSecret: $k3sSnapshotSecret,
