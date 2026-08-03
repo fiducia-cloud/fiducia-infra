@@ -16,5 +16,7 @@ node-label:
   - fiducia.cloud/substrate=laptop-k3s
   - fiducia.cloud/synthetic-provider=gcp
   - fiducia.cloud/site=site-b
+etcd-s3: true
+etcd-s3-config-secret: k3s-etcd-snapshot-s3-config
 etcd-snapshot-schedule-cron: "0 */6 * * *"
 etcd-snapshot-retention: 14

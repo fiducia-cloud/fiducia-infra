@@ -1,0 +1,144 @@
+# One connector runs in each independent laptop cluster. The tunnel is remotely
+# managed; public hostnames must route only to the local internal LB service.
+# The token is materialized out-of-band as cloudflare-tunnel-token/token.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fiducia-cloudflared
+  namespace: fiducia
+  labels:
+    app: fiducia-cloudflared
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: fiducia-cloudflared
+  template:
+    metadata:
+      labels:
+        app: fiducia-cloudflared
+      annotations:
+        fiducia.cloud/public-origin: outbound-cloudflare-tunnel
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: cloudflared
+          # Exact release tag; never use latest. Promote a reviewed digest when
+          # the fleet's amd64/arm64 inventory from DEN-942 is finalized.
+          image: cloudflare/cloudflared:2026.7.3
+          imagePullPolicy: IfNotPresent
+          command:
+            - cloudflared
+            - tunnel
+            - --no-autoupdate
+            - --loglevel
+            - info
+            - --metrics
+            - 0.0.0.0:2000
+            - run
+          env:
+            - name: TUNNEL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: cloudflare-tunnel-token
+                  key: token
+                  optional: false
+          ports:
+            - name: metrics
+              containerPort: 2000
+              protocol: TCP
+          startupProbe:
+            httpGet: { path: /ready, port: metrics }
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet: { path: /ready, port: metrics }
+            failureThreshold: 2
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /ready, port: metrics }
+            failureThreshold: 3
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: { cpu: "50m", memory: "64Mi" }
+            limits: { cpu: "500m", memory: "256Mi" }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+---
+# Prevent voluntary disruption of the laptop's only connector. Physical host or
+# ISP loss is handled by the connectors in the other independent clusters.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: fiducia-cloudflared
+  namespace: fiducia
+spec:
+  maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: fiducia-cloudflared
+---
+# The namespace baseline already provides DNS. This policy adds only the local
+# origin and Cloudflare's required tunnel transport. No inbound public flow is
+# needed: cloudflared establishes outbound connections on TCP/UDP 7844.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fiducia-cloudflared
+  namespace: fiducia
+spec:
+  podSelector:
+    matchLabels:
+      app: fiducia-cloudflared
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # In-namespace metrics/health scraping.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: fiducia
+      ports:
+        - { protocol: TCP, port: 2000 }
+    # K3s kubelet probes originate from the node network, not a selected pod.
+    - from:
+        - ipBlock: { cidr: 10.0.0.0/8 }
+        - ipBlock: { cidr: 172.16.0.0/12 }
+        - ipBlock: { cidr: 192.168.0.0/16 }
+        - ipBlock: { cidr: 100.64.0.0/10 }
+      ports:
+        - { protocol: TCP, port: 2000 }
+  egress:
+    # Remote tunnel routes must target only this in-cluster origin.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: fiducia-load-balance
+      ports:
+        - { protocol: TCP, port: 8088 }
+    # Required Cloudflare Tunnel transports: HTTP/2 over TCP and QUIC over UDP.
+    - ports:
+        - { protocol: TCP, port: 7844 }
+        - { protocol: UDP, port: 7844 }

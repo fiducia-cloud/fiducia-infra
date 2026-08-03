@@ -113,6 +113,8 @@ function hostConfig(cluster) {
     `  - fiducia.cloud/substrate=laptop-k3s\n` +
     `  - fiducia.cloud/synthetic-provider=${cluster.synthetic_provider}\n` +
     `  - fiducia.cloud/site=${cluster.site}\n` +
+    `etcd-s3: true\n` +
+    `etcd-s3-config-secret: k3s-etcd-snapshot-s3-config\n` +
     `etcd-snapshot-schedule-cron: \"0 */6 * * *\"\n` +
     `etcd-snapshot-retention: 14\n`;
 }
