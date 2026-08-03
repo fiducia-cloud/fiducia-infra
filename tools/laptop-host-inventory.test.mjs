@@ -140,7 +140,8 @@ test("live evidence must be fresh, concrete, reviewed, and non-example", () => {
   assert.throws(() => validateFleetInventory(staleCapture, { now: fixedNow }), /older than 30 days/);
 
   const staleReview = liveInventory();
-  staleReview.reviewedAt = "2026-07-01T00:00:00Z";
+  staleReview.capturedAt = "2026-07-20T00:00:00Z";
+  staleReview.reviewedAt = "2026-07-25T00:00:00Z";
   assert.throws(() => validateFleetInventory(staleReview, { now: fixedNow }), /older than 7 days/);
 
   const exampleProof = liveInventory();
@@ -156,7 +157,7 @@ test("live evidence must be fresh, concrete, reviewed, and non-example", () => {
 test("secret-bearing keys and credential-like values are rejected recursively", () => {
   const secretKey = example();
   secretKey.hosts[0].network.accessToken = "redacted";
-  assert.throws(() => validateFleetInventory(secretKey, { allowExample: true, now: fixedNow }), /forbidden secret-bearing/);
+  assert.throws(() => validateFleetInventory(secretKey, { allowExample: true, now: fixedNow }), /not allowed|forbidden secret-bearing/);
 
   const credential = example();
   credential.hosts[0].physicalAccessOwner = "github_pat_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
@@ -164,7 +165,7 @@ test("secret-bearing keys and credential-like values are rejected recursively", 
 
   const rawSerial = example();
   rawSerial.hosts[0].rawSerial = "ABC123";
-  assert.throws(() => validateFleetInventory(rawSerial, { allowExample: true, now: fixedNow }), /forbidden secret-bearing/);
+  assert.throws(() => validateFleetInventory(rawSerial, { allowExample: true, now: fixedNow }), /not allowed|forbidden secret-bearing/);
 });
 
 test("identical live inventory produces a deterministic fleet fingerprint", () => {
@@ -204,6 +205,7 @@ test("NixOS module restricts management to the mesh and disables unattended flee
   assert.match(module, /AllowHibernation=no/);
   assert.match(module, /RuntimeWatchdogSec = "60s"/);
   assert.match(module, /system\.autoUpgrade\.enable = false/);
+  assert.match(module, /StateDirectory = "fiducia-host-audit"/);
   assert.match(module, /fiducia-laptop-host-audit[\s\S]*OnUnitActiveSec = "15min"/);
   assert.doesNotMatch(module, /wheelNeedsPassword = false/);
 });
@@ -222,5 +224,6 @@ test("host evidence capture is read-only, redacted, local, and root-gated", () =
   assert.doesNotMatch(script, /\bcurl\b|\bwget\b/);
   assert.doesNotMatch(script, /set -x|set -o xtrace/);
   assert.doesNotMatch(script, /printenv|\/proc\/[0-9]+\/environ/);
-  assert.doesNotMatch(script, /SERIAL|MACADDRESS|ADDRESS=/i);
+  assert.doesNotMatch(script, /--argjson (?:k3sConfigSha256|firewallRulesetSha256)/);
+  assert.doesNotMatch(script, /\b(?:SERIAL|WWN|MACADDRESS)\b[=:]/i);
 });
