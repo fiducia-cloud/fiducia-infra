@@ -2,6 +2,7 @@ name: laptop-fleet
 on:
   pull_request:
     paths:
+      - "base/messaging/**"
       - "laptop/**"
       - "migration/**"
       - "nix/**"
@@ -9,7 +10,8 @@ on:
       - "scripts/*laptop*.sh"
       - "tools/render-laptop-*.mjs"
       - "tools/plan-laptop-*.mjs"
-      - "tools/validate-laptop-inventory.mjs"
+      - "tools/verify-etcd-*.mjs"
+      - "tools/validate-laptop-*.mjs"
       - "tools/laptop-*.test.mjs"
       - "tools/render.mjs"
       - "topology.toml"
@@ -19,6 +21,7 @@ on:
   push:
     branches: [main]
     paths:
+      - "base/messaging/**"
       - "laptop/**"
       - "migration/**"
       - "nix/**"
@@ -26,7 +29,8 @@ on:
       - "scripts/*laptop*.sh"
       - "tools/render-laptop-*.mjs"
       - "tools/plan-laptop-*.mjs"
-      - "tools/validate-laptop-inventory.mjs"
+      - "tools/verify-etcd-*.mjs"
+      - "tools/validate-laptop-*.mjs"
       - "tools/laptop-*.test.mjs"
       - "tools/render.mjs"
       - "topology.toml"
@@ -45,7 +49,7 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -57,14 +61,17 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
           node-version: "22.22.1"
-      - name: Verify generated laptop profile
-        run: npm run check:laptop
-      - name: Test laptop topology, GitOps, networking, host, and migration contracts
+      - name: Verify generated laptop profile and messaging configs
+        run: |
+          npm run check:laptop
+          node tools/render-laptop-messaging.mjs --check
+      - name: Test laptop topology, GitOps, networking, messaging, backup evidence, host, and migration contracts
         run: |
           node --test \
             tools/laptop-fleet.test.mjs \
             tools/laptop-gitops.test.mjs \
             tools/laptop-networking.test.mjs \
+            tools/laptop-messaging-ha.test.mjs \
             tools/laptop-host-inventory.test.mjs \
             tools/laptop-cloud-migration.test.mjs
       - name: Validate laptop operation shell syntax
@@ -73,8 +80,13 @@ jobs:
             scripts/bootstrap-laptop-gitops.sh \
             scripts/promote-laptop-cluster.sh \
             scripts/apply-laptop-runtime-secrets.sh \
+            scripts/apply-laptop-nats-route-tls.sh \
+            scripts/capture-laptop-etcd-snapshot-evidence.sh \
             scripts/restore-laptop-k3s-snapshot.sh \
-            scripts/capture-laptop-host-evidence.sh
+            scripts/capture-laptop-host-evidence.sh \
+            scripts/test-laptop-nats-configs.sh
+      - name: Validate generated NATS configs with pinned server image
+        run: bash scripts/test-laptop-nats-configs.sh
       - name: Rehearse strict fleet inventory validation
         run: |
           set -euo pipefail
@@ -90,6 +102,24 @@ jobs:
             if (report.evidenceMode !== "example") process.exit(1);
             if (!report.nonClaims.some((claim) => claim.includes("not production evidence"))) process.exit(1);
             if (!report.failureDomains.distinctIsps) process.exit(1);
+          '
+      - name: Rehearse strict JetStream evidence validation
+        run: |
+          set -euo pipefail
+          node tools/validate-laptop-jetstream-evidence.mjs \
+            --evidence laptop/messaging/jetstream-evidence.example.json \
+            --allow-example \
+            --now 2026-08-03T18:05:00Z \
+            >/tmp/fiducia-laptop-jetstream-evidence.json
+          node -e '
+            const fs = require("node:fs");
+            const report = JSON.parse(fs.readFileSync("/tmp/fiducia-laptop-jetstream-evidence.json", "utf8"));
+            if (report.status !== "passed") process.exit(1);
+            if (report.evidenceMode !== "example") process.exit(1);
+            if (report.serverVersion !== "2.11.17") process.exit(1);
+            if (report.serverCount !== 3 || report.quorum !== 2) process.exit(1);
+            if (report.stream.replicas !== 3 || report.stream.maximumFollowerLag !== 0) process.exit(1);
+            if (!report.nonClaims.some((claim) => claim.includes("never production proof"))) process.exit(1);
           '
       - name: Render every immutable root application
         run: |
