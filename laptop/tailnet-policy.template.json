@@ -5,7 +5,8 @@
     "tag:fiducia-laptop-host": ["__OPERATOR_EMAIL__"],
     "tag:fiducia-peer-egress": ["tag:k8s-operator"],
     "tag:fiducia-node-peer": ["tag:k8s-operator"],
-    "tag:fiducia-brain-peer": ["tag:k8s-operator"]
+    "tag:fiducia-brain-peer": ["tag:k8s-operator"],
+    "tag:fiducia-nats-route": ["tag:k8s-operator"]
   },
   "grants": [
     {
@@ -27,6 +28,11 @@
       "src": ["tag:fiducia-peer-egress"],
       "dst": ["tag:fiducia-brain-peer"],
       "ip": ["tcp:9095"]
+    },
+    {
+      "src": ["tag:fiducia-peer-egress"],
+      "dst": ["tag:fiducia-nats-route"],
+      "ip": ["tcp:6222"]
     }
   ],
   "tests": [
@@ -40,7 +46,8 @@
       ],
       "deny": [
         "tag:fiducia-node-peer:9090",
-        "tag:fiducia-brain-peer:9095"
+        "tag:fiducia-brain-peer:9095",
+        "tag:fiducia-nats-route:6222"
       ]
     },
     {
@@ -48,14 +55,16 @@
       "proto": "tcp",
       "accept": [
         "tag:fiducia-node-peer:9090",
-        "tag:fiducia-brain-peer:9095"
+        "tag:fiducia-brain-peer:9095",
+        "tag:fiducia-nats-route:6222"
       ],
       "deny": [
         "tag:fiducia-laptop-host:22",
         "tag:fiducia-laptop-host:6443",
         "tag:k8s-operator:443",
         "tag:fiducia-node-peer:8090",
-        "tag:fiducia-brain-peer:8095"
+        "tag:fiducia-brain-peer:8095",
+        "tag:fiducia-nats-route:4222"
       ]
     }
   ]
