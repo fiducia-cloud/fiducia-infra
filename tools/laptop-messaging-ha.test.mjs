@@ -33,6 +33,7 @@ test("renderer creates exactly three unique site-tagged explicit-route mTLS JetS
   for (const cluster of topology.cluster) {
     const relativePath = `laptop/clusters/${cluster.name}/nats.conf`;
     const config = files[relativePath];
+    const patch = files[`laptop/clusters/${cluster.name}/nats-config.patch.yaml`];
     const expectedPeers = topology.cluster.filter((candidate) => candidate.name !== cluster.name);
 
     assert.match(config, new RegExp(`server_name: ${natsServerName(cluster.name)}`));
@@ -69,10 +70,17 @@ test("renderer creates exactly three unique site-tagged explicit-route mTLS JetS
     for (const peer of expectedPeers) {
       assert.ok(config.includes(`nats://${natsRouteServiceDns(peer.name)}:${NATS_ROUTE_PORT}`));
     }
+
+    assert.match(patch, /kind: ConfigMap/);
+    assert.match(patch, /name: fiducia-nats-config/);
+    assert.match(patch, /nats\.conf: \|/);
+    assert.ok(patch.includes(`server_name: ${natsServerName(cluster.name)}`));
+    assert.ok(patch.includes(`advertise: "${natsRouteServiceDns(cluster.name)}:${NATS_ROUTE_PORT}"`));
+    assert.doesNotMatch(patch, /behavior:\s*replace/);
   }
 });
 
-test("checked-in NATS configurations match a fresh render byte-for-byte", () => {
+test("checked-in NATS configurations and ConfigMap patches match a fresh render byte-for-byte", () => {
   const { files } = renderLaptopMessaging();
   for (const [relativePath, content] of Object.entries(files)) {
     const onDisk = fs.readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8");
@@ -104,12 +112,16 @@ test("messaging topology rejects identity, replication, site, platform, and stor
   assert.throws(() => validateMessagingTopology(wrongStorage), /local-path storage/);
 });
 
-test("every laptop overlay replaces the standalone config and mounts route TLS", () => {
+test("every laptop overlay patches the hand-authored base ConfigMap and mounts route TLS", () => {
   const { topology } = renderLaptopMessaging();
   for (const cluster of topology.cluster) {
     const overlay = fs.readFileSync(new URL(`../laptop/clusters/${cluster.name}/kustomization.yaml`, import.meta.url), "utf8");
+    const patch = fs.readFileSync(new URL(`../laptop/clusters/${cluster.name}/nats-config.patch.yaml`, import.meta.url), "utf8");
     assert.match(overlay, /\.\.\/\.\.\/components\/messaging-ha/);
-    assert.match(overlay, /name: fiducia-nats-config[\s\S]*behavior: replace[\s\S]*nats\.conf=nats\.conf/);
+    assert.match(overlay, /patches:[\s\S]*path: patches\.yaml[\s\S]*path: nats-config\.patch\.yaml/);
+    assert.doesNotMatch(overlay, /name: fiducia-nats-config[\s\S]*behavior: replace/);
+    assert.match(patch, /apiVersion: v1[\s\S]*kind: ConfigMap[\s\S]*name: fiducia-nats-config[\s\S]*nats\.conf: \|/);
+    assert.ok(patch.includes(`server_name: ${natsServerName(cluster.name)}`));
   }
 
   const component = fs.readFileSync(new URL("../laptop/components/messaging-ha/kustomization.yaml", import.meta.url), "utf8");
