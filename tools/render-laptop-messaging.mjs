@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Render one explicit-route NATS/JetStream configuration per laptop cluster.
-// Every server lists both peers, route gossip/client advertisement is disabled,
-// and the route plane fails closed on a dedicated mTLS Secret.
+// Every server lists both peers, client advertisement is disabled, and the
+// route plane fails closed on a dedicated mTLS Secret.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -86,9 +86,10 @@ cluster {
   name: ${NATS_CLUSTER_NAME}
   listen: "0.0.0.0:${NATS_ROUTE_PORT}"
 
-  # All two peer routes are explicit through cluster-local Tailscale egress
-  # Services. Suppress client advertisements so a pod IP or unreachable
-  # tailnet address is never sent to in-cluster clients.
+  # The advertised address is reachable from both peer clusters through their
+  # local Tailscale egress Services. This prevents route discovery from leaking
+  # a pod IP or residential host address across NAT boundaries.
+  advertise: "${natsRouteServiceDns(cluster.name)}:${NATS_ROUTE_PORT}"
   no_advertise: true
   pool_size: 1
 
