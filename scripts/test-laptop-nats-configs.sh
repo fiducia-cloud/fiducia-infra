@@ -95,6 +95,7 @@ for config in "$repo_root"/laptop/clusters/laptop-*-sim/nats.conf; do
   install -m 600 "$config" "$tmpdir/nats.conf"
   echo "validating $cluster with $NATS_IMAGE"
   docker run --rm --network none \
+    --user "$(id -u):$(id -g)" \
     --read-only \
     --tmpfs /tmp:rw,noexec,nosuid,size=16m \
     -v "$tmpdir/nats.conf:/etc/nats/nats.conf:ro" \
