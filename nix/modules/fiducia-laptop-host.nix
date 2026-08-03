@@ -51,13 +51,13 @@ let
       check "Time synchronization is enabled" systemctl is-enabled --quiet systemd-timesyncd.service
 
       root_source="$(findmnt -n -o SOURCE / || true)"
+      root_source="${root_source%%[*}"
       root_type="$(lsblk -n -o TYPE "$root_source" 2>/dev/null | head -n1 || true)"
       check "Root filesystem is backed by a dm-crypt mapping" test "$root_type" = crypt
 
       disk_used="$(df --output=pcent / | tail -n1 | tr -dc '0-9')"
       check "Root disk is below critical utilization" test "$disk_used" -lt ${toString cfg.diskCriticalPercent}
 
-      mkdir -p /var/lib/fiducia-host-audit
       {
         printf 'FIDUCIA_HOST_AUDIT_CLUSTER=%q\n' '${cfg.clusterName}'
         printf 'FIDUCIA_HOST_AUDIT_FAILURES=%q\n' "$failures"
@@ -241,11 +241,12 @@ in
         User = "root";
         Group = "root";
         UMask = "0077";
+        StateDirectory = "fiducia-host-audit";
+        StateDirectoryMode = "0700";
         NoNewPrivileges = true;
         PrivateTmp = true;
         ProtectHome = true;
         ProtectSystem = "strict";
-        ReadWritePaths = [ "/var/lib/fiducia-host-audit" ];
         ProtectKernelTunables = true;
         ProtectKernelModules = true;
         ProtectControlGroups = true;
