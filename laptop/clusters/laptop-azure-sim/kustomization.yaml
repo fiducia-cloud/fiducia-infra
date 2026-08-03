@@ -8,10 +8,15 @@ components:
   - ../../../base/components/brain
   - ../../components/substrate
   - ../../components/runtime
+  - ../../components/messaging-ha
 configMapGenerator:
   - name: fiducia-cluster
     envs:
       - topology.env
+  - name: fiducia-nats-config
+    behavior: replace
+    files:
+      - nats.conf=nats.conf
 generatorOptions:
   disableNameSuffixHash: true
 commonAnnotations:
