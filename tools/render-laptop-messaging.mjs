@@ -14,6 +14,8 @@ const root = path.resolve(here, "..");
 const topologyPath = path.join(root, "laptop", "topology.toml");
 export const NATS_CLUSTER_NAME = "fiducia-laptop-production";
 export const NATS_ROUTE_PORT = 6222;
+export const NATS_SERVER_VERSION = "2.11.17";
+export const NATS_SERVER_IMAGE = "nats:2.11.17-alpine@sha256:e4bf19f15fd3218814a4e3c9e0064e1334bd8aa20d5984b9f1a0afd084f8cc00";
 
 function fail(message) {
   throw new Error(message);
@@ -39,6 +41,10 @@ export function validateMessagingTopology(topology) {
   }
   const names = topology.cluster.map((cluster) => cluster.name);
   if (new Set(names).size !== 3) fail("laptop messaging cluster names must be unique");
+  const sites = topology.cluster.map((cluster) => cluster.site);
+  if (sites.some((site) => typeof site !== "string" || !site) || new Set(sites).size !== 3) {
+    fail("laptop messaging requires three unique non-empty physical site labels");
+  }
   for (const cluster of topology.cluster) {
     if (cluster.platform !== "local-laptop") fail(`${cluster.name} must use platform=local-laptop`);
     if (cluster.storage_class !== "local-path") fail(`${cluster.name} must use local-path storage`);
@@ -60,6 +66,7 @@ export function renderNatsConfig(cluster, topology) {
 # Three independent single-node K3s clusters form one three-server JetStream
 # cluster over the private mesh. Client and monitoring planes remain local.
 server_name: ${natsServerName(cluster.name)}
+server_tags: ["site:${cluster.site}", "cluster:${cluster.name}", "substrate:laptop-k3s"]
 port: 4222
 http: 8222
 
@@ -69,12 +76,14 @@ write_deadline: "10s"
 
 jetstream {
   store_dir: "/data/jetstream"
-  max_mem_store: 512MB
+  max_memory_store: 512MB
   max_file_store: 8GB
+  max_outstanding_catchup: 64MB
   max_buffered_msgs: 10000
   max_buffered_size: 64MB
   request_queue_limit: 5000
   strict: true
+  unique_tag: "site"
 
   limits {
     max_ack_pending: 10000
@@ -86,9 +95,9 @@ cluster {
   name: ${NATS_CLUSTER_NAME}
   listen: "0.0.0.0:${NATS_ROUTE_PORT}"
 
-  # The advertised address is reachable from both peer clusters through their
-  # local Tailscale egress Services. This prevents route discovery from leaking
-  # a pod IP or residential host address across NAT boundaries.
+  # Other servers must contact this member through the tailnet mirror rather
+  # than a pod IP, host IP, or residential address. no_advertise below applies
+  # to client URL gossip; it does not remove this route contact address.
   advertise: "${natsRouteServiceDns(cluster.name)}:${NATS_ROUTE_PORT}"
   no_advertise: true
   pool_size: 1
@@ -109,7 +118,8 @@ ${renderRoutes(peers)}
 }
 
 # Client accounts and subject permissions remain fail-closed and are delivered
-# independently from the route CA/certificate Secret.
+# independently from the route CA/certificate Secret. The include must define a
+# SYS system account and a separate JetStream-enabled application account.
 include ./auth/auth.conf
 `;
 }
