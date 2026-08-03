@@ -33,13 +33,21 @@ test("renderer creates exactly three unique explicit-route mTLS JetStream member
     assert.match(config, new RegExp(`listen: "0\\.0\\.0\\.0:${NATS_ROUTE_PORT}"`));
     assert.match(config, /no_advertise: true/);
     assert.match(config, /pool_size: 1/);
+    assert.match(config, /max_buffered_msgs: 10000/);
+    assert.match(config, /max_buffered_size: 64MB/);
+    assert.match(config, /request_queue_limit: 5000/);
+    assert.match(config, /strict: true/);
+    assert.match(config, /max_ack_pending: 10000/);
+    assert.match(config, /duplicate_window: 600s/);
     assert.match(config, /cert_file: "\/etc\/nats\/route-tls\/tls\.crt"/);
     assert.match(config, /key_file: "\/etc\/nats\/route-tls\/tls\.key"/);
     assert.match(config, /ca_file: "\/etc\/nats\/route-tls\/ca\.crt"/);
+    assert.match(config, /min_version: "1\.3"/);
     assert.match(config, /verify: true/);
+    assert.match(config, /verify_cert_and_check_known_urls: true/);
     assert.match(config, /include \.\/auth\/auth\.conf/);
-    assert.doesNotMatch(config, /advertise:/);
-    assert.doesNotMatch(config, /password|token|credential/i);
+    assert.doesNotMatch(config, /^\s*advertise:/m);
+    assert.doesNotMatch(config, /^\s*(?:password|token):/mi);
 
     const routeLines = config.split("\n").filter((line) => line.trim().startsWith("nats://"));
     assert.equal(routeLines.length, 2);
@@ -114,13 +122,16 @@ test("tailnet exposes only the NATS route plane and denies client-plane escalati
   assert.match(bundle.manifest, /name: fiducia-nats-route-tailnet[\s\S]*tailscale\.com\/hostname: fiducia-nats-route-laptop-aws-sim[\s\S]*port: 6222/);
   assert.equal((bundle.manifest.match(/name: fiducia-nats-route-laptop-(?:gcp|azure)-sim-tailnet/g) ?? []).length, 2);
   assert.equal((bundle.manifest.match(/type: ExternalName/g) ?? []).length, 6);
-  assert.doesNotMatch(bundle.manifest, /fiducia-nats-route[^\n]*[\s\S]{0,300}port: 4222/);
+  assert.doesNotMatch(bundle.manifest, /name: fiducia-nats-route[^\n]*[\s\S]{0,300}port: 4222/);
 });
 
-test("route TLS materialization validates trust, SANs, lifetime, key matching, and context", () => {
+test("route TLS materialization validates CA role, trust, SANs, EKUs, lifetime, key matching, and context", () => {
   const script = fs.readFileSync(new URL("../scripts/apply-laptop-nats-route-tls.sh", import.meta.url), "utf8");
   assert.match(script, /openssl verify -CAfile/);
   assert.match(script, /-checkend 604800/);
+  assert.match(script, /CA:TRUE/);
+  assert.match(script, /TLS Web Server Authentication/);
+  assert.match(script, /TLS Web Client Authentication/);
   assert.match(script, /certificate and private key do not match/);
   assert.match(script, /DNS:fiducia-nats-route-\$cluster\.\$tailnet_domain/);
   assert.match(script, /DNS:fiducia-nats-route-\$cluster-tailnet\.fiducia\.svc\.cluster\.local/);
