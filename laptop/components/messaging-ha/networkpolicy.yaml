@@ -1,0 +1,28 @@
+# Add only the NATS route plane required for the three-member laptop cluster.
+# Client 4222 and monitoring/exporter ports remain namespace-local under the
+# base messaging policy. Route authentication and encryption are mandatory in
+# the generated NATS configuration and fail closed on a missing TLS Secret.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fiducia-nats-laptop-routes
+  namespace: fiducia
+spec:
+  podSelector:
+    matchLabels:
+      app: fiducia-nats
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tailscale
+      ports:
+        - { protocol: TCP, port: 6222 }
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tailscale
+      ports:
+        - { protocol: TCP, port: 6222 }
