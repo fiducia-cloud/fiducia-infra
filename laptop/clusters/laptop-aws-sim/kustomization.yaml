@@ -14,10 +14,6 @@ configMapGenerator:
   - name: fiducia-cluster
     envs:
       - topology.env
-  - name: fiducia-nats-config
-    behavior: replace
-    files:
-      - nats.conf=nats.conf
 generatorOptions:
   disableNameSuffixHash: true
 commonAnnotations:
@@ -26,3 +22,4 @@ commonAnnotations:
   fiducia.cloud/site: site-a
 patches:
   - path: patches.yaml
+  - path: nats-config.patch.yaml
