@@ -25,9 +25,9 @@ usage:
     --ca-file /secure/nats-route/ca.crt \
     [--apply]
 
-Without --apply, validates identity, key matching, CA trust, SANs, lifetime, and
-file permissions, then prints a redacted plan. No certificate or key content is
-printed.
+Without --apply, validates identity, key matching, CA trust, SANs, client/server
+extended key usage, lifetime, and file permissions, then prints a redacted plan.
+No certificate or key content is printed.
 EOF
 }
 
@@ -88,6 +88,17 @@ openssl verify -CAfile "$ca_file" "$cert_file" >/dev/null 2>&1 \
 openssl x509 -in "$cert_file" -checkend 604800 -noout >/dev/null 2>&1 \
   || fail "route certificate expires in less than seven days"
 
+ca_text="$(openssl x509 -in "$ca_file" -noout -text)"
+cert_text="$(openssl x509 -in "$cert_file" -noout -text)"
+grep -Fq "CA:TRUE" <<<"$ca_text" || fail "route CA certificate is not marked CA:TRUE"
+if grep -Fq "CA:TRUE" <<<"$cert_text"; then
+  fail "route leaf certificate must not be a CA certificate"
+fi
+grep -Fq "TLS Web Server Authentication" <<<"$cert_text" \
+  || fail "route certificate lacks serverAuth extended key usage"
+grep -Fq "TLS Web Client Authentication" <<<"$cert_text" \
+  || fail "route certificate lacks clientAuth extended key usage"
+
 cert_pub="$(openssl x509 -in "$cert_file" -pubkey -noout | openssl pkey -pubin -outform DER 2>/dev/null | sha256sum | awk '{print $1}')"
 key_pub="$(openssl pkey -in "$key_file" -pubout -outform DER 2>/dev/null | sha256sum | awk '{print $1}')"
 [[ "$cert_pub" == "$key_pub" ]] || fail "route certificate and private key do not match"
@@ -110,6 +121,7 @@ validated NATS route mTLS plan
   CA fingerprint: $ca_fingerprint
   private key: redacted
   required SANs: present
+  clientAuth and serverAuth EKUs: present
 EOF
 
 [[ "$apply" == "true" ]] || exit 0
