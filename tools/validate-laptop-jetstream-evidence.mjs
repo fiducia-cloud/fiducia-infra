@@ -8,7 +8,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { NATS_CLUSTER_NAME, natsServerName } from "./render-laptop-messaging.mjs";
+import {
+  NATS_CLUSTER_NAME,
+  NATS_SERVER_VERSION,
+  natsServerName,
+} from "./render-laptop-messaging.mjs";
 import { loadTopology } from "./render.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -16,7 +20,6 @@ const root = path.resolve(here, "..");
 const topologyPath = path.join(root, "laptop", "topology.toml");
 const MAX_LIVE_AGE_MS = 10 * 60 * 1000;
 const SHA256_RE = /^[a-f0-9]{64}$/;
-const VERSION_RE = /^\d+\.\d+\.\d+$/;
 const PROOF_RE = /^[a-z0-9][a-z0-9._:/-]{7,255}$/;
 const REQUIRED_GATES = [
   "clientAuth",
@@ -102,10 +105,22 @@ function scanCredentials(value, location = "evidence") {
   }
 }
 
-function expectedServers() {
+function expectedServerRecords() {
   const topology = loadTopology(topologyPath);
   assert(topology.cluster.length === 3 && topology.replication_factor === 3, "laptop topology must remain three members with RF=3");
-  return topology.cluster.map((cluster) => natsServerName(cluster.name));
+  return Object.fromEntries(
+    topology.cluster.map((cluster) => [
+      natsServerName(cluster.name),
+      {
+        clusterName: cluster.name,
+        tags: [
+          `site:${cluster.site}`,
+          `cluster:${cluster.name}`,
+          "substrate:laptop-k3s",
+        ],
+      },
+    ]),
+  );
 }
 
 export function validateJetStreamEvidence(evidence, { allowExample = false, now = new Date() } = {}) {
@@ -128,18 +143,20 @@ export function validateJetStreamEvidence(evidence, { allowExample = false, now 
   }
 
   assert(evidence.clusterName === NATS_CLUSTER_NAME, `clusterName must equal ${NATS_CLUSTER_NAME}`);
-  assert(typeof evidence.serverVersion === "string" && VERSION_RE.test(evidence.serverVersion), "serverVersion must be exact X.Y.Z");
+  assert(evidence.serverVersion === NATS_SERVER_VERSION, `serverVersion must equal pinned version ${NATS_SERVER_VERSION}`);
   assert(typeof evidence.routeCaFingerprint === "string" && SHA256_RE.test(evidence.routeCaFingerprint), "routeCaFingerprint must be lowercase SHA-256");
 
-  const expected = expectedServers();
+  const records = expectedServerRecords();
+  const expected = Object.keys(records);
   exactSet(evidence.servers.map((server) => server.name), expected, "server names");
   assert(expected.includes(evidence.metaLeader), "metaLeader must be a current server");
 
   const leafFingerprints = new Set();
   for (const [index, server] of evidence.servers.entries()) {
     const label = `servers[${index}]`;
-    exactKeys(server, ["name", "routeTls", "routeCount", "routePeers", "leafCertificateFingerprint", "jetstreamEnabled", "storeDirectory", "fileStoreUsedBytes", "fileStoreLimitBytes", "diskFreePercent"], [], label);
+    exactKeys(server, ["name", "serverTags", "routeTls", "routeCount", "routePeers", "leafCertificateFingerprint", "jetstreamEnabled", "storeDirectory", "fileStoreUsedBytes", "fileStoreLimitBytes", "diskFreePercent"], [], label);
     assert(expected.includes(server.name), `${label}.name is unknown`);
+    exactSet(server.serverTags, records[server.name].tags, `${label}.serverTags`);
     assert(server.routeTls === true, `${label}.routeTls must be true`);
     assert(server.routeCount === 2, `${label}.routeCount must equal 2`);
     exactSet(server.routePeers, expected.filter((name) => name !== server.name), `${label}.routePeers`);
