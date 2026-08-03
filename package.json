@@ -14,7 +14,7 @@
     "check": "node tools/render.mjs --check",
     "check:laptop": "node tools/render-laptop-fleet.mjs --check",
     "check:laptop:gitops": "node --test tools/laptop-gitops.test.mjs && bash -n scripts/bootstrap-laptop-gitops.sh scripts/promote-laptop-cluster.sh",
-    "check:laptop:networking": "node --test tools/laptop-networking.test.mjs && bash -n scripts/apply-laptop-runtime-secrets.sh scripts/restore-laptop-k3s-snapshot.sh",
+    "check:laptop:networking": "node --test tools/laptop-networking.test.mjs && bash -n scripts/apply-laptop-runtime-secrets.sh scripts/capture-laptop-etcd-snapshot-evidence.sh scripts/restore-laptop-k3s-snapshot.sh",
     "check:laptop:host": "node --test tools/laptop-host-inventory.test.mjs && node tools/validate-laptop-inventory.mjs --inventory laptop/inventory/fleet.example.json --allow-example --now 2026-08-03T18:00:00Z >/dev/null && bash -n scripts/capture-laptop-host-evidence.sh",
     "check:laptop:cloud": "node --test tools/laptop-cloud-migration.test.mjs && node tools/plan-laptop-cloud-migration.mjs --observations migration/rehearsal-observations.example.json --allow-example --report-only",
     "check:vcluster": "node tools/render-vcluster-hetzner-e2e.mjs --check",

@@ -20,6 +20,14 @@ function fail(message) {
   throw new Error(message);
 }
 
+function clusterSuffix(clusterName) {
+  const suffix = clusterName.replace(/^laptop-/, "");
+  if (!/^(aws|gcp|azure)-sim$/.test(suffix)) {
+    fail(`cluster ${JSON.stringify(clusterName)} does not map to a reviewed peer-tag suffix`);
+  }
+  return suffix;
+}
+
 export function validateTailnetInputs({ operator, tailnetDomain }) {
   if (typeof operator !== "string" || !EMAIL_RE.test(operator)) {
     fail("operator must be a concrete email identity");
@@ -61,6 +69,7 @@ export function renderClusterTailnetBundle({ clusterName, operator, tailnetDomai
   const template = fs.readFileSync(clusterTemplatePath, "utf8");
   const manifest = replaceAllTokens(template, {
     CLUSTER: clusterName,
+    CLUSTER_SUFFIX: clusterSuffix(clusterName),
     PEER1: peers[0],
     PEER2: peers[1],
     TAILNET_DOMAIN: validated.tailnetDomain,

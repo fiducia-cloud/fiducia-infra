@@ -9,6 +9,7 @@ on:
       - "scripts/*laptop*.sh"
       - "tools/render-laptop-*.mjs"
       - "tools/plan-laptop-*.mjs"
+      - "tools/verify-etcd-*.mjs"
       - "tools/validate-laptop-inventory.mjs"
       - "tools/laptop-*.test.mjs"
       - "tools/render.mjs"
@@ -26,6 +27,7 @@ on:
       - "scripts/*laptop*.sh"
       - "tools/render-laptop-*.mjs"
       - "tools/plan-laptop-*.mjs"
+      - "tools/verify-etcd-*.mjs"
       - "tools/validate-laptop-inventory.mjs"
       - "tools/laptop-*.test.mjs"
       - "tools/render.mjs"
@@ -59,7 +61,7 @@ jobs:
           node-version: "22.22.1"
       - name: Verify generated laptop profile
         run: npm run check:laptop
-      - name: Test laptop topology, GitOps, networking, host, and migration contracts
+      - name: Test laptop topology, GitOps, networking, backup evidence, host, and migration contracts
         run: |
           node --test \
             tools/laptop-fleet.test.mjs \
@@ -73,6 +75,7 @@ jobs:
             scripts/bootstrap-laptop-gitops.sh \
             scripts/promote-laptop-cluster.sh \
             scripts/apply-laptop-runtime-secrets.sh \
+            scripts/capture-laptop-etcd-snapshot-evidence.sh \
             scripts/restore-laptop-k3s-snapshot.sh \
             scripts/capture-laptop-host-evidence.sh
       - name: Rehearse strict fleet inventory validation
