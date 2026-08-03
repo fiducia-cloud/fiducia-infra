@@ -3,6 +3,7 @@
 # checksum-pinned Helm chart and an external mode-0600 OAuth values file.
 set -euo pipefail
 
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cluster=""
 context=""
 chart=""
@@ -91,7 +92,8 @@ helm template tailscale-operator "$chart" \
   --namespace tailscale \
   --values "$values" \
   --set-string "operatorConfig.hostname=${cluster}-operator" \
-  --set-string 'apiServerProxyConfig.mode=true' >"$rendered"
+  --set-string 'apiServerProxyConfig.mode=true' \
+  --set-string 'apiServerProxyConfig.allowImpersonation=true' >"$rendered"
 
 kubectl --context "$context" apply --server-side --dry-run=server -f "$rendered" >/dev/null
 
@@ -102,6 +104,7 @@ helm upgrade --install tailscale-operator "$chart" \
   --values "$values" \
   --set-string "operatorConfig.hostname=${cluster}-operator" \
   --set-string 'apiServerProxyConfig.mode=true' \
+  --set-string 'apiServerProxyConfig.allowImpersonation=true' \
   --atomic \
   --wait \
   --timeout 10m
@@ -114,4 +117,13 @@ kubectl --context "$context" -n tailscale wait \
   --for=condition=Available deployment/operator \
   --timeout=300s >/dev/null
 
-echo "installed cluster-local Tailscale operator for $cluster; OAuth values were not printed"
+proxy_group="$repo_root/laptop/hosts/$cluster/tailscale-egress-proxygroup.yaml"
+[[ -f "$proxy_group" ]] || fail "missing generated egress ProxyGroup for $cluster"
+kubectl --context "$context" apply --server-side --dry-run=server -f "$proxy_group" >/dev/null
+kubectl --context "$context" apply --server-side -f "$proxy_group" >/dev/null
+kubectl --context "$context" wait \
+  proxygroup/fiducia-egress-proxies \
+  --for=condition=ProxyGroupReady=true \
+  --timeout=300s >/dev/null
+
+echo "installed cluster-local Tailscale operator and HA egress ProxyGroup for $cluster; OAuth values were not printed"
