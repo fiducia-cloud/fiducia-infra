@@ -1,5 +1,5 @@
-# GENERATED MATERIALIZATION TEMPLATE. Replace every __TOKEN__ through
-# tools/render-laptop-tailnet.mjs; do not apply this template directly.
+# GENERATED MATERIALIZATION TEMPLATE. The renderer replaces each declared
+# uppercase placeholder; do not apply this template directly.
 apiVersion: tailscale.com/v1alpha1
 kind: ProxyGroup
 metadata:
