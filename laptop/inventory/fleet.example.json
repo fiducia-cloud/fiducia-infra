@@ -1,0 +1,343 @@
+{
+  "schemaVersion": 1,
+  "evidenceMode": "example",
+  "capturedAt": "2026-08-01T12:00:00Z",
+  "reviewedAt": "2026-08-01T13:00:00Z",
+  "launchClassification": "limited-production",
+  "fleetException": null,
+  "hosts": [
+    {
+      "clusterName": "laptop-aws-sim",
+      "syntheticProvider": "aws",
+      "siteId": "site-a",
+      "physicalAccessOwner": "example-operator-a",
+      "serialHash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "hardware": {
+        "manufacturer": "Example Manufacturer A",
+        "model": "Example Model A",
+        "architecture": "x86_64",
+        "logicalCpuCount": 8,
+        "memoryMiB": 32768,
+        "ethernet": true,
+        "disk": {
+          "device": "/dev/nvme0n1",
+          "transport": "nvme",
+          "sizeGiB": 953,
+          "smartPassed": true,
+          "rootEncrypted": true,
+          "encryptionType": "luks2",
+          "healthPercent": 98
+        },
+        "battery": {
+          "present": true,
+          "healthPercent": 91,
+          "cycleCount": 140
+        },
+        "thermalSensors": {
+          "available": true,
+          "loadTestMaxC": 81,
+          "throttledDuringLoadTest": false
+        }
+      },
+      "firmware": {
+        "secureBoot": true,
+        "secureBootException": null,
+        "tpmAvailable": true,
+        "autoPowerOnAfterLoss": true,
+        "manualRestartProcedure": null,
+        "firmwareUpdatedAt": "2026-07-25T12:00:00Z"
+      },
+      "network": {
+        "primaryTransport": "ethernet",
+        "uploadMbps": 100,
+        "cgnat": false,
+        "ispFingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "failureDomainIndependent": true,
+        "homeLanCidrs": ["192.168.11.0/24"],
+        "backupWan": {
+          "available": true,
+          "independentProvider": true,
+          "testedAt": "2026-07-31T12:00:00Z",
+          "exception": null
+        }
+      },
+      "power": {
+        "laptopBatteryMinutes": 180,
+        "routerUpsMinutes": 60,
+        "independentUtilityDomain": true
+      },
+      "hostPolicy": {
+        "dedicatedAppliance": true,
+        "dualBoot": false,
+        "nixManaged": true,
+        "fullDiskEncryption": true,
+        "passwordSsh": false,
+        "rootSsh": false,
+        "firewallEnabled": true,
+        "publicManagementPorts": false,
+        "sleepEnabled": false,
+        "hibernateEnabled": false,
+        "lidAction": "ignore",
+        "timeSync": true,
+        "watchdog": true,
+        "automaticFleetWideUpdates": false,
+        "k3sVersion": "v1.34.3+k3s1"
+      },
+      "monitoring": {
+        "smart": true,
+        "nvmeWear": true,
+        "diskUsage": true,
+        "battery": true,
+        "temperature": true,
+        "thermalThrottle": true,
+        "clockDrift": true,
+        "wan": true,
+        "power": true,
+        "diskWarningPercent": 70,
+        "diskCriticalPercent": 85
+      },
+      "evidence": {
+        "hardware": "example:site-a:hardware",
+        "smart": "example:site-a:smart",
+        "encryption": "example:site-a:encryption",
+        "secureBoot": "example:site-a:secure-boot",
+        "firewall": "example:site-a:firewall",
+        "ssh": "example:site-a:ssh",
+        "power": "example:site-a:power",
+        "network": "example:site-a:network",
+        "thermal": "example:site-a:thermal",
+        "monitoring": "example:site-a:monitoring",
+        "rebuildPlan": "example:site-a:rebuild-plan",
+        "revocationPlan": "example:site-a:revocation-plan"
+      },
+      "approval": {
+        "status": "approved",
+        "reviewer": "example-reviewer",
+        "reviewedAt": "2026-08-01T13:00:00Z",
+        "notes": "Example-only approval used to exercise the validator and never accepted as production evidence."
+      }
+    },
+    {
+      "clusterName": "laptop-gcp-sim",
+      "syntheticProvider": "gcp",
+      "siteId": "site-b",
+      "physicalAccessOwner": "example-operator-b",
+      "serialHash": "2222222222222222222222222222222222222222222222222222222222222222",
+      "hardware": {
+        "manufacturer": "Example Manufacturer B",
+        "model": "Example Model B",
+        "architecture": "x86_64",
+        "logicalCpuCount": 8,
+        "memoryMiB": 32768,
+        "ethernet": true,
+        "disk": {
+          "device": "/dev/nvme0n1",
+          "transport": "nvme",
+          "sizeGiB": 953,
+          "smartPassed": true,
+          "rootEncrypted": true,
+          "encryptionType": "luks2",
+          "healthPercent": 97
+        },
+        "battery": {
+          "present": true,
+          "healthPercent": 89,
+          "cycleCount": 170
+        },
+        "thermalSensors": {
+          "available": true,
+          "loadTestMaxC": 83,
+          "throttledDuringLoadTest": false
+        }
+      },
+      "firmware": {
+        "secureBoot": true,
+        "secureBootException": null,
+        "tpmAvailable": true,
+        "autoPowerOnAfterLoss": false,
+        "manualRestartProcedure": "A named site operator restores router power first and then presses the laptop power button within fifteen minutes.",
+        "firmwareUpdatedAt": "2026-07-26T12:00:00Z"
+      },
+      "network": {
+        "primaryTransport": "ethernet",
+        "uploadMbps": 80,
+        "cgnat": true,
+        "ispFingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "failureDomainIndependent": true,
+        "homeLanCidrs": ["192.168.22.0/24"],
+        "backupWan": {
+          "available": true,
+          "independentProvider": true,
+          "testedAt": "2026-07-31T12:15:00Z",
+          "exception": null
+        }
+      },
+      "power": {
+        "laptopBatteryMinutes": 150,
+        "routerUpsMinutes": 45,
+        "independentUtilityDomain": true
+      },
+      "hostPolicy": {
+        "dedicatedAppliance": true,
+        "dualBoot": false,
+        "nixManaged": true,
+        "fullDiskEncryption": true,
+        "passwordSsh": false,
+        "rootSsh": false,
+        "firewallEnabled": true,
+        "publicManagementPorts": false,
+        "sleepEnabled": false,
+        "hibernateEnabled": false,
+        "lidAction": "ignore",
+        "timeSync": true,
+        "watchdog": true,
+        "automaticFleetWideUpdates": false,
+        "k3sVersion": "v1.34.3+k3s1"
+      },
+      "monitoring": {
+        "smart": true,
+        "nvmeWear": true,
+        "diskUsage": true,
+        "battery": true,
+        "temperature": true,
+        "thermalThrottle": true,
+        "clockDrift": true,
+        "wan": true,
+        "power": true,
+        "diskWarningPercent": 70,
+        "diskCriticalPercent": 85
+      },
+      "evidence": {
+        "hardware": "example:site-b:hardware",
+        "smart": "example:site-b:smart",
+        "encryption": "example:site-b:encryption",
+        "secureBoot": "example:site-b:secure-boot",
+        "firewall": "example:site-b:firewall",
+        "ssh": "example:site-b:ssh",
+        "power": "example:site-b:power",
+        "network": "example:site-b:network",
+        "thermal": "example:site-b:thermal",
+        "monitoring": "example:site-b:monitoring",
+        "rebuildPlan": "example:site-b:rebuild-plan",
+        "revocationPlan": "example:site-b:revocation-plan"
+      },
+      "approval": {
+        "status": "approved",
+        "reviewer": "example-reviewer",
+        "reviewedAt": "2026-08-01T13:00:00Z",
+        "notes": "Example-only approval used to exercise the validator and never accepted as production evidence."
+      }
+    },
+    {
+      "clusterName": "laptop-azure-sim",
+      "syntheticProvider": "azure",
+      "siteId": "site-c",
+      "physicalAccessOwner": "example-operator-c",
+      "serialHash": "3333333333333333333333333333333333333333333333333333333333333333",
+      "hardware": {
+        "manufacturer": "Example Manufacturer C",
+        "model": "Example Model C",
+        "architecture": "aarch64",
+        "logicalCpuCount": 10,
+        "memoryMiB": 32768,
+        "ethernet": true,
+        "disk": {
+          "device": "/dev/nvme0n1",
+          "transport": "nvme",
+          "sizeGiB": 953,
+          "smartPassed": true,
+          "rootEncrypted": true,
+          "encryptionType": "luks2",
+          "healthPercent": 99
+        },
+        "battery": {
+          "present": true,
+          "healthPercent": 94,
+          "cycleCount": 80
+        },
+        "thermalSensors": {
+          "available": true,
+          "loadTestMaxC": 78,
+          "throttledDuringLoadTest": false
+        }
+      },
+      "firmware": {
+        "secureBoot": true,
+        "secureBootException": null,
+        "tpmAvailable": true,
+        "autoPowerOnAfterLoss": true,
+        "manualRestartProcedure": null,
+        "firmwareUpdatedAt": "2026-07-27T12:00:00Z"
+      },
+      "network": {
+        "primaryTransport": "ethernet",
+        "uploadMbps": 120,
+        "cgnat": false,
+        "ispFingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "failureDomainIndependent": true,
+        "homeLanCidrs": ["192.168.33.0/24"],
+        "backupWan": {
+          "available": true,
+          "independentProvider": true,
+          "testedAt": "2026-07-31T12:30:00Z",
+          "exception": null
+        }
+      },
+      "power": {
+        "laptopBatteryMinutes": 240,
+        "routerUpsMinutes": 90,
+        "independentUtilityDomain": true
+      },
+      "hostPolicy": {
+        "dedicatedAppliance": true,
+        "dualBoot": false,
+        "nixManaged": true,
+        "fullDiskEncryption": true,
+        "passwordSsh": false,
+        "rootSsh": false,
+        "firewallEnabled": true,
+        "publicManagementPorts": false,
+        "sleepEnabled": false,
+        "hibernateEnabled": false,
+        "lidAction": "ignore",
+        "timeSync": true,
+        "watchdog": true,
+        "automaticFleetWideUpdates": false,
+        "k3sVersion": "v1.34.3+k3s1"
+      },
+      "monitoring": {
+        "smart": true,
+        "nvmeWear": true,
+        "diskUsage": true,
+        "battery": true,
+        "temperature": true,
+        "thermalThrottle": true,
+        "clockDrift": true,
+        "wan": true,
+        "power": true,
+        "diskWarningPercent": 70,
+        "diskCriticalPercent": 85
+      },
+      "evidence": {
+        "hardware": "example:site-c:hardware",
+        "smart": "example:site-c:smart",
+        "encryption": "example:site-c:encryption",
+        "secureBoot": "example:site-c:secure-boot",
+        "firewall": "example:site-c:firewall",
+        "ssh": "example:site-c:ssh",
+        "power": "example:site-c:power",
+        "network": "example:site-c:network",
+        "thermal": "example:site-c:thermal",
+        "monitoring": "example:site-c:monitoring",
+        "rebuildPlan": "example:site-c:rebuild-plan",
+        "revocationPlan": "example:site-c:revocation-plan"
+      },
+      "approval": {
+        "status": "approved",
+        "reviewer": "example-reviewer",
+        "reviewedAt": "2026-08-01T13:00:00Z",
+        "notes": "Example-only approval used to exercise the validator and never accepted as production evidence."
+      }
+    }
+  ]
+}
