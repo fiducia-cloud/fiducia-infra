@@ -12,19 +12,71 @@ import {
   renderTailnetPolicy,
   validateTailnetInputs,
 } from "./render-laptop-tailnet.mjs";
+import { verifySnapshotEvidence } from "./verify-etcd-snapshot-evidence.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
 const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8");
 const inputs = { operator: "operator@example.com", tailnetDomain: "example.ts.net" };
+const fixedNow = new Date("2026-08-03T16:05:00Z");
 
-test("cloudflared is exact-versioned, secret-backed, unprivileged, and independently healthy", () => {
+function snapshotItem({
+  cluster = "laptop-aws-sim",
+  storage = "local",
+  snapshotName = "etcd-snapshot-laptop-aws-sim-1785772800",
+  size = 1048576,
+  creationTime = "2026-08-03T16:00:00Z",
+  tokenHash = "0123456789ab",
+  skipSSLVerify = false,
+} = {}) {
+  const isS3 = storage === "s3";
+  return {
+    apiVersion: "k3s.cattle.io/v1",
+    kind: "ETCDSnapshotFile",
+    metadata: {
+      name: `${isS3 ? "s3" : "local"}-${snapshotName}`,
+      labels: {
+        "etcd.k3s.cattle.io/snapshot-storage-node": isS3 ? "s3" : cluster,
+      },
+      annotations: {
+        "etcd.k3s.cattle.io/snapshot-token-hash": tokenHash,
+      },
+    },
+    spec: {
+      snapshotName,
+      nodeName: isS3 ? "s3" : cluster,
+      location: isS3
+        ? `s3://fiducia-k3s-backups/clusters/${cluster}/${snapshotName}`
+        : `file:///var/lib/rancher/k3s/server/db/snapshots/${snapshotName}`,
+      ...(isS3 ? { s3: { bucket: "fiducia-k3s-backups", region: "us-east-1", skipSSLVerify } } : {}),
+    },
+    status: {
+      creationTime,
+      readyToUse: true,
+      size,
+    },
+  };
+}
+
+function snapshotList(overrides = {}) {
+  return {
+    apiVersion: "v1",
+    kind: "List",
+    items: [
+      snapshotItem({ ...overrides, storage: "local" }),
+      snapshotItem({ ...overrides, storage: "s3" }),
+    ],
+  };
+}
+
+test("cloudflared is digest-pinned, secret-backed, unprivileged, and independently healthy", () => {
   const manifest = read("laptop/components/runtime/cloudflared.yaml");
-  assert.match(manifest, /image: cloudflare\/cloudflared:2026\.7\.3\b/);
-  assert.doesNotMatch(manifest, /cloudflare\/cloudflared:latest\b/);
+  assert.match(manifest, /image: cloudflare\/cloudflared@sha256:[0-9a-f]{64}/);
+  assert.doesNotMatch(manifest, /cloudflare\/cloudflared:(?:latest|main|dev|2026\.7\.3)\b/);
   assert.match(manifest, /name: TUNNEL_TOKEN[\s\S]*name: cloudflare-tunnel-token[\s\S]*key: token[\s\S]*optional: false/);
   assert.match(manifest, /--no-autoupdate/);
-  assert.match(manifest, /--metrics[\s\S]*0\.0\.0\.0:2000[\s\S]*- run/);
+  assert.match(manifest, /--edge-ip-version[\s\S]*- "4"[\s\S]*- run/);
+  assert.match(manifest, /--metrics[\s\S]*0\.0\.0\.0:2000/);
   assert.match(manifest, /startupProbe:[\s\S]*path: \/ready/);
   assert.match(manifest, /readinessProbe:[\s\S]*path: \/ready/);
   assert.match(manifest, /livenessProbe:[\s\S]*path: \/ready/);
@@ -37,12 +89,16 @@ test("cloudflared is exact-versioned, secret-backed, unprivileged, and independe
   assert.match(manifest, /kind: PodDisruptionBudget[\s\S]*maxUnavailable: 0/);
 });
 
-test("cloudflared network policy permits only the local origin and required tunnel transports", () => {
+test("cloudflared network policy permits only local origin and published IPv4 tunnel endpoints", () => {
   const manifest = read("laptop/components/runtime/cloudflared.yaml");
   const policy = manifest.slice(manifest.indexOf("kind: NetworkPolicy"));
   assert.match(policy, /app: fiducia-load-balance[\s\S]*port: 8088/);
   assert.match(policy, /protocol: TCP, port: 7844/);
   assert.match(policy, /protocol: UDP, port: 7844/);
+  const edgeCidrs = [...policy.matchAll(/cidr:\s*(198\.41\.(?:192|200)\.[0-9]+\/32)/g)].map((match) => match[1]);
+  assert.equal(edgeCidrs.length, 20);
+  assert.equal(new Set(edgeCidrs).size, 20);
+  assert.doesNotMatch(policy, /0\.0\.0\.0\/0/);
   assert.doesNotMatch(policy, /port: 22\b|port: 6443\b|port: 8090\b|port: 8095\b|port: 9090\b|port: 9095\b/);
   assert.doesNotMatch(policy, /port: 443\b/);
 });
@@ -71,34 +127,48 @@ test("K3s uses only the rotatable S3 configuration Secret and never embeds crede
   }
 });
 
-test("tailnet policy is deny-by-default and separates operator, host, egress, node, and brain identities", () => {
+test("tailnet policy isolates every cluster egress identity from itself and unrelated control ports", () => {
   const policy = renderTailnetPolicy(inputs);
-  assert.equal(policy.grants.length, 4);
+  assert.equal(policy.grants.length, 8);
   assert.deepEqual(policy.tagOwners["tag:k8s"], ["tag:k8s-operator"]);
   assert.ok(policy.grants.every((grant) => !grant.src.includes("*") && !grant.dst.includes("*")));
   assert.deepEqual(policy.grants[0].ip, ["tcp:22", "tcp:6443"]);
   assert.deepEqual(policy.grants[1].ip, ["tcp:443"]);
-  assert.deepEqual(policy.grants[2].ip, ["tcp:9090"]);
-  assert.deepEqual(policy.grants[3].ip, ["tcp:9095"]);
-  const egressTest = policy.tests.find((entry) => entry.src === "tag:fiducia-peer-egress");
-  assert.ok(egressTest);
-  assert.ok(egressTest.accept.includes("tag:fiducia-node-peer:9090"));
-  assert.ok(egressTest.accept.includes("tag:fiducia-brain-peer:9095"));
-  assert.ok(egressTest.deny.includes("tag:fiducia-laptop-host:22"));
-  assert.ok(egressTest.deny.includes("tag:fiducia-node-peer:8090"));
-  assert.ok(egressTest.deny.includes("tag:fiducia-brain-peer:8095"));
+
+  for (const suffix of ["aws-sim", "gcp-sim", "azure-sim"]) {
+    const src = `tag:fiducia-peer-egress-${suffix}`;
+    const grants = policy.grants.filter((grant) => grant.src.length === 1 && grant.src[0] === src);
+    assert.equal(grants.length, 2);
+    assert.deepEqual(grants.map((grant) => grant.ip[0]).sort(), ["tcp:9090", "tcp:9095"]);
+    assert.ok(grants.every((grant) => grant.dst.length === 2));
+    assert.ok(grants.every((grant) => grant.dst.every((dst) => !dst.endsWith(suffix))));
+
+    const policyTest = policy.tests.find((entry) => entry.src === src);
+    assert.ok(policyTest, `missing policy test for ${src}`);
+    assert.equal(policyTest.accept.length, 4);
+    assert.ok(policyTest.deny.includes(`tag:fiducia-node-peer-${suffix}:9090`));
+    assert.ok(policyTest.deny.includes(`tag:fiducia-brain-peer-${suffix}:9095`));
+    assert.ok(policyTest.deny.includes("tag:fiducia-laptop-host:22"));
+    assert.ok(policyTest.deny.includes("tag:k8s-operator:443"));
+  }
 });
 
-test("tailnet materialization creates one ingress per local peer plane and mirrors exactly two remote peers", () => {
+test("tailnet materialization keeps ProxyGroup cluster-scoped and mirrors exactly two remote peers", () => {
   const all = renderTailnetBundle(inputs);
   assert.equal(all.nonSecret, true);
   assert.deepEqual(Object.keys(all.clusters).sort(), laptopClusterNames().sort());
 
   for (const cluster of laptopClusterNames()) {
+    const suffix = cluster.replace(/^laptop-/, "");
     const bundle = renderClusterTailnetBundle({ clusterName: cluster, ...inputs });
     assert.doesNotMatch(bundle.manifest, /__[A-Z0-9_]+__/);
     assert.doesNotMatch(bundle.manifest, /kind: Secret/);
-    assert.match(bundle.manifest, /kind: ProxyGroup[\s\S]*type: egress[\s\S]*replicas: 2/);
+    const proxyGroup = bundle.manifest.split(/^---$/m)[0];
+    assert.match(proxyGroup, /kind: ProxyGroup[\s\S]*type: egress[\s\S]*replicas: 2/);
+    assert.match(proxyGroup, new RegExp(`tag:fiducia-peer-egress-${suffix}`));
+    assert.doesNotMatch(proxyGroup, /namespace:/);
+    assert.match(bundle.manifest, new RegExp(`tag:fiducia-node-peer-${suffix}`));
+    assert.match(bundle.manifest, new RegExp(`tag:fiducia-brain-peer-${suffix}`));
     assert.match(bundle.manifest, /name: fiducia-node-tailnet[\s\S]*loadBalancerClass: tailscale[\s\S]*port: 9090/);
     assert.match(bundle.manifest, /name: fiducia-brain-tailnet[\s\S]*loadBalancerClass: tailscale[\s\S]*port: 9095/);
     assert.equal((bundle.manifest.match(/type: ExternalName/g) ?? []).length, 4);
@@ -125,16 +195,55 @@ test("tailnet renderer rejects placeholders, unknown clusters, and malformed ide
   );
 });
 
-test("runtime secret bootstrap consumes private files and never passes literal credentials", () => {
+test("runtime secret bootstrap validates tunnel shape, TLS, cluster folder, and private files", () => {
   const script = read("scripts/apply-laptop-runtime-secrets.sh");
   assert.match(script, /set -euo pipefail/);
   assert.match(script, /umask 077/);
+  assert.match(script, /Cloudflare token does not match the expected remotely managed tunnel token shape/);
+  assert.match(script, /etcd-s3-folder must end with the exact cluster identity/);
+  assert.match(script, /etcd-s3-skip-ssl-verify etcd-s3-insecure/);
+  assert.match(script, /must remain false/);
+  assert.match(script, /cannot use plaintext http:\/\//);
   assert.match(script, /--from-file="token=\$cloudflare_token_file"/);
   assert.match(script, /--type=etcd\.k3s\.cattle\.io\/s3-config-secret/);
   assert.match(script, /--dry-run=client -o yaml/);
   assert.match(script, /apply --server-side/);
   assert.doesNotMatch(script, /--from-literal/);
   assert.doesNotMatch(script, /set -x|set -o xtrace/);
+});
+
+test("ETCDSnapshotFile evidence requires a recent matched local and S3 pair", () => {
+  const summary = verifySnapshotEvidence(snapshotList(), "laptop-aws-sim", { now: fixedNow });
+  assert.equal(summary.readyLocal, true);
+  assert.equal(summary.readyS3, true);
+  assert.equal(summary.tlsVerification, true);
+  assert.equal(summary.tokenHashMatched, true);
+  assert.equal("tokenHash" in summary, false);
+
+  assert.throws(
+    () => verifySnapshotEvidence({ items: [snapshotItem()] }, "laptop-aws-sim", { now: fixedNow }),
+    /no ready local\/S3 snapshot pair/,
+  );
+  const sizeMismatch = snapshotList();
+  sizeMismatch.items[1].status.size += 1;
+  assert.throws(() => verifySnapshotEvidence(sizeMismatch, "laptop-aws-sim", { now: fixedNow }), /no ready local\/S3/);
+  const tokenMismatch = snapshotList();
+  tokenMismatch.items[1].metadata.annotations["etcd.k3s.cattle.io/snapshot-token-hash"] = "differenthash";
+  assert.throws(() => verifySnapshotEvidence(tokenMismatch, "laptop-aws-sim", { now: fixedNow }), /no ready local\/S3/);
+  const insecure = snapshotList();
+  insecure.items[1].spec.s3.skipSSLVerify = true;
+  assert.throws(() => verifySnapshotEvidence(insecure, "laptop-aws-sim", { now: fixedNow }), /no ready local\/S3/);
+  const stale = snapshotList({ creationTime: "2026-08-02T00:00:00Z" });
+  assert.throws(() => verifySnapshotEvidence(stale, "laptop-aws-sim", { now: fixedNow }), /older than 8 hours/);
+});
+
+test("snapshot evidence capture is context-bound, redacted, and mode 0600", () => {
+  const script = read("scripts/capture-laptop-etcd-snapshot-evidence.sh");
+  assert.match(script, /fiducia\.cloud\/cluster=\$cluster,fiducia\.cloud\/substrate=laptop-k3s/);
+  assert.match(script, /get etcdsnapshotfile -o json/);
+  assert.match(script, /verify-etcd-snapshot-evidence\.mjs/);
+  assert.match(script, /install -m 600/);
+  assert.doesNotMatch(script, /set -x|\bcurl\b|\bwget\b/);
 });
 
 test("restore is checksum-gated, token-file based, local-only, and requires three acknowledgements", () => {
@@ -158,8 +267,10 @@ test("new laptop implementation inputs contain no pasted provider or GitHub cred
     "laptop/hosts/laptop-gcp-sim/k3s-config.yaml",
     "laptop/hosts/laptop-azure-sim/k3s-config.yaml",
     "scripts/apply-laptop-runtime-secrets.sh",
+    "scripts/capture-laptop-etcd-snapshot-evidence.sh",
     "scripts/restore-laptop-k3s-snapshot.sh",
     "tools/render-laptop-tailnet.mjs",
+    "tools/verify-etcd-snapshot-evidence.mjs",
     "docs/laptop-private-mesh-ingress-snapshots.md",
   ];
   const patterns = [
