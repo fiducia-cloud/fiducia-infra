@@ -43,7 +43,7 @@ test("cloudflared network policy permits only the local origin and required tunn
   assert.match(policy, /app: fiducia-load-balance[\s\S]*port: 8088/);
   assert.match(policy, /protocol: TCP, port: 7844/);
   assert.match(policy, /protocol: UDP, port: 7844/);
-  assert.doesNotMatch(policy, /port: 22\b|port: 6443\b|port: 8090\b|port: 8095\b|port: 9090\b|port: 9095\b/);
+  assert.doesNotMatch(policy, /port: 22\b|port: 6222\b|port: 6443\b|port: 8090\b|port: 8095\b|port: 9090\b|port: 9095\b/);
   assert.doesNotMatch(policy, /port: 443\b/);
 });
 
@@ -71,25 +71,31 @@ test("K3s uses only the rotatable S3 configuration Secret and never embeds crede
   }
 });
 
-test("tailnet policy is deny-by-default and separates operator, host, egress, node, and brain identities", () => {
+test("tailnet policy is deny-by-default and separates operator, host, egress, node, brain, and NATS-route identities", () => {
   const policy = renderTailnetPolicy(inputs);
-  assert.equal(policy.grants.length, 4);
+  assert.equal(policy.grants.length, 5);
   assert.deepEqual(policy.tagOwners["tag:k8s"], ["tag:k8s-operator"]);
+  assert.deepEqual(policy.tagOwners["tag:fiducia-nats-route"], ["tag:k8s-operator"]);
   assert.ok(policy.grants.every((grant) => !grant.src.includes("*") && !grant.dst.includes("*")));
   assert.deepEqual(policy.grants[0].ip, ["tcp:22", "tcp:6443"]);
   assert.deepEqual(policy.grants[1].ip, ["tcp:443"]);
   assert.deepEqual(policy.grants[2].ip, ["tcp:9090"]);
   assert.deepEqual(policy.grants[3].ip, ["tcp:9095"]);
+  assert.deepEqual(policy.grants[4].ip, ["tcp:6222"]);
+  const operatorTest = policy.tests.find((entry) => entry.src === "operator@example.com");
+  assert.ok(operatorTest.deny.includes("tag:fiducia-nats-route:6222"));
   const egressTest = policy.tests.find((entry) => entry.src === "tag:fiducia-peer-egress");
   assert.ok(egressTest);
   assert.ok(egressTest.accept.includes("tag:fiducia-node-peer:9090"));
   assert.ok(egressTest.accept.includes("tag:fiducia-brain-peer:9095"));
+  assert.ok(egressTest.accept.includes("tag:fiducia-nats-route:6222"));
   assert.ok(egressTest.deny.includes("tag:fiducia-laptop-host:22"));
   assert.ok(egressTest.deny.includes("tag:fiducia-node-peer:8090"));
   assert.ok(egressTest.deny.includes("tag:fiducia-brain-peer:8095"));
+  assert.ok(egressTest.deny.includes("tag:fiducia-nats-route:4222"));
 });
 
-test("tailnet materialization creates one ingress per local peer plane and mirrors exactly two remote peers", () => {
+test("tailnet materialization creates three local peer-plane ingresses and mirrors exactly two remote peers per plane", () => {
   const all = renderTailnetBundle(inputs);
   assert.equal(all.nonSecret, true);
   assert.deepEqual(Object.keys(all.clusters).sort(), laptopClusterNames().sort());
@@ -101,8 +107,10 @@ test("tailnet materialization creates one ingress per local peer plane and mirro
     assert.match(bundle.manifest, /kind: ProxyGroup[\s\S]*type: egress[\s\S]*replicas: 2/);
     assert.match(bundle.manifest, /name: fiducia-node-tailnet[\s\S]*loadBalancerClass: tailscale[\s\S]*port: 9090/);
     assert.match(bundle.manifest, /name: fiducia-brain-tailnet[\s\S]*loadBalancerClass: tailscale[\s\S]*port: 9095/);
-    assert.equal((bundle.manifest.match(/type: ExternalName/g) ?? []).length, 4);
-    assert.equal((bundle.manifest.match(/tailscale\.com\/tailnet-fqdn:/g) ?? []).length, 4);
+    assert.match(bundle.manifest, /name: fiducia-nats-route-tailnet[\s\S]*loadBalancerClass: tailscale[\s\S]*port: 6222/);
+    assert.equal((bundle.manifest.match(/type: ExternalName/g) ?? []).length, 6);
+    assert.equal((bundle.manifest.match(/tailscale\.com\/tailnet-fqdn:/g) ?? []).length, 6);
+    assert.equal((bundle.manifest.match(/name: fiducia-nats-route-laptop-(?:aws|gcp|azure)-sim-tailnet/g) ?? []).length, 2);
     assert.doesNotMatch(bundle.peerEnv, new RegExp(`-${cluster}-tailnet`));
     assert.equal(bundle.peerEnv.split("\n").filter(Boolean).length, 2);
     assert.match(bundle.peerEnv, /\.fiducia\.svc\.cluster\.local:9090/);
@@ -154,13 +162,21 @@ test("new laptop implementation inputs contain no pasted provider or GitHub cred
     "laptop/tailnet-policy.template.json",
     "laptop/tailnet-cluster.template.yaml",
     "laptop/components/runtime/cloudflared.yaml",
+    "laptop/components/messaging-ha/kustomization.yaml",
+    "laptop/components/messaging-ha/networkpolicy.yaml",
     "laptop/hosts/laptop-aws-sim/k3s-config.yaml",
     "laptop/hosts/laptop-gcp-sim/k3s-config.yaml",
     "laptop/hosts/laptop-azure-sim/k3s-config.yaml",
+    "laptop/clusters/laptop-aws-sim/nats.conf",
+    "laptop/clusters/laptop-gcp-sim/nats.conf",
+    "laptop/clusters/laptop-azure-sim/nats.conf",
     "scripts/apply-laptop-runtime-secrets.sh",
+    "scripts/apply-laptop-nats-route-tls.sh",
     "scripts/restore-laptop-k3s-snapshot.sh",
     "tools/render-laptop-tailnet.mjs",
+    "tools/render-laptop-messaging.mjs",
     "docs/laptop-private-mesh-ingress-snapshots.md",
+    "docs/laptop-jetstream-ha.md",
   ];
   const patterns = [
     /ghp_[A-Za-z0-9]{20,}/,
