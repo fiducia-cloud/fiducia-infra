@@ -1,16 +1,16 @@
 # GENERATED MATERIALIZATION TEMPLATE. The renderer replaces each declared
 # uppercase placeholder; do not apply this template directly.
+# ProxyGroup is cluster-scoped: metadata.namespace is deliberately absent.
 apiVersion: tailscale.com/v1alpha1
 kind: ProxyGroup
 metadata:
   name: fiducia-peer-egress
-  namespace: tailscale
 spec:
   type: egress
   replicas: 2
   tags:
     - tag:k8s
-    - tag:fiducia-peer-egress
+    - tag:fiducia-peer-egress-__CLUSTER_SUFFIX__
 ---
 apiVersion: v1
 kind: Service
@@ -19,7 +19,7 @@ metadata:
   namespace: fiducia
   annotations:
     tailscale.com/hostname: fiducia-node-__CLUSTER__
-    tailscale.com/tags: "tag:k8s,tag:fiducia-node-peer"
+    tailscale.com/tags: "tag:k8s,tag:fiducia-node-peer-__CLUSTER_SUFFIX__"
 spec:
   type: LoadBalancer
   loadBalancerClass: tailscale
@@ -35,7 +35,7 @@ metadata:
   namespace: fiducia
   annotations:
     tailscale.com/hostname: fiducia-brain-__CLUSTER__
-    tailscale.com/tags: "tag:k8s,tag:fiducia-brain-peer"
+    tailscale.com/tags: "tag:k8s,tag:fiducia-brain-peer-__CLUSTER_SUFFIX__"
 spec:
   type: LoadBalancer
   loadBalancerClass: tailscale
@@ -51,7 +51,7 @@ metadata:
   namespace: fiducia
   annotations:
     tailscale.com/hostname: fiducia-nats-route-__CLUSTER__
-    tailscale.com/tags: "tag:k8s,tag:fiducia-nats-route"
+    tailscale.com/tags: "tag:k8s,tag:fiducia-nats-route-__CLUSTER_SUFFIX__"
 spec:
   type: LoadBalancer
   loadBalancerClass: tailscale
