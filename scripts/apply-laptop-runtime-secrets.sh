@@ -11,7 +11,7 @@ s3_dir=""
 apply="false"
 
 usage() {
-  cat <<'EOF'
+  cat <<'EOF_USAGE'
 usage:
   scripts/apply-laptop-runtime-secrets.sh \
     --cluster laptop-aws-sim \
@@ -25,6 +25,7 @@ The S3 directory must contain root-readable files named:
   etcd-s3-access-key
   etcd-s3-secret-key
   etcd-s3-bucket
+  etcd-s3-folder
 
 Optional supported files:
   etcd-s3-endpoint-ca
@@ -33,13 +34,12 @@ Optional supported files:
   etcd-s3-session-token
   etcd-s3-bucket-lookup-type
   etcd-s3-region
-  etcd-s3-folder
   etcd-s3-insecure
   etcd-s3-timeout
   etcd-s3-proxy
 
 Without --apply the script validates inputs and prints only object names.
-EOF
+EOF_USAGE
 }
 
 fail() {
@@ -75,15 +75,32 @@ check_private_file() {
   local mode
   mode="$(stat -c '%a' "$file")"
   (( (8#$mode & 8#077) == 0 )) || fail "secret file must not be group/world accessible: $file (mode $mode)"
+  if grep -Eq 'CHANGEME|REPLACE_ME|EXTERNAL_|<[^>]+>' "$file"; then
+    fail "secret file still contains a placeholder: $file"
+  fi
+}
+
+read_scalar() {
+  local file="$1"
+  local value
+  value="$(tr -d '\r\n' <"$file")"
+  [[ -n "$value" ]] || fail "secret scalar is empty: $file"
+  [[ "$value" =~ ^[^[:space:]]+$ ]] || fail "secret scalar contains whitespace: $file"
+  printf '%s' "$value"
 }
 
 check_private_file "$cloudflare_token_file"
+cloudflare_token="$(read_scalar "$cloudflare_token_file")"
+[[ "$cloudflare_token" =~ ^eyJ[A-Za-z0-9._-]{97,}$ ]] \
+  || fail "Cloudflare token does not match the expected remotely managed tunnel token shape"
+unset cloudflare_token
 
 required_s3_keys=(
   etcd-s3-endpoint
   etcd-s3-access-key
   etcd-s3-secret-key
   etcd-s3-bucket
+  etcd-s3-folder
 )
 optional_s3_keys=(
   etcd-s3-endpoint-ca
@@ -92,7 +109,6 @@ optional_s3_keys=(
   etcd-s3-session-token
   etcd-s3-bucket-lookup-type
   etcd-s3-region
-  etcd-s3-folder
   etcd-s3-insecure
   etcd-s3-timeout
   etcd-s3-proxy
@@ -110,14 +126,32 @@ for key in "${optional_s3_keys[@]}"; do
   fi
 done
 
-cat <<EOF
+s3_endpoint="$(read_scalar "$s3_dir/etcd-s3-endpoint")"
+[[ ! "$s3_endpoint" =~ ^http:// ]] || fail "etcd-s3-endpoint cannot use plaintext http://"
+s3_bucket="$(read_scalar "$s3_dir/etcd-s3-bucket")"
+[[ "$s3_bucket" =~ ^[a-z0-9][a-z0-9.-]{1,62}[a-z0-9]$ ]] \
+  || fail "etcd-s3-bucket must be a conservative DNS-style bucket name"
+s3_folder="$(read_scalar "$s3_dir/etcd-s3-folder")"
+[[ "$s3_folder" == "$cluster" || "$s3_folder" == */"$cluster" ]] \
+  || fail "etcd-s3-folder must end with the exact cluster identity $cluster"
+for tls_key in etcd-s3-skip-ssl-verify etcd-s3-insecure; do
+  if [[ -e "$s3_dir/$tls_key" ]]; then
+    tls_value="$(read_scalar "$s3_dir/$tls_key")"
+    [[ "$tls_value" == "false" ]] || fail "$tls_key must remain false"
+  fi
+done
+unset s3_endpoint s3_bucket s3_folder tls_value
+
+cat <<EOF_PLAN
 validated runtime materialization plan
   cluster: $cluster
   context: $context
   namespace/secret: fiducia/cloudflare-tunnel-token
   namespace/secret: kube-system/k3s-etcd-snapshot-s3-config
+  S3 folder isolation: exact cluster suffix required
+  TLS verification: required
   secret values: redacted
-EOF
+EOF_PLAN
 
 [[ "$apply" == "true" ]] || exit 0
 command -v kubectl >/dev/null || fail "kubectl is required for --apply"
