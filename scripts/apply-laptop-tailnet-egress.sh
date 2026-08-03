@@ -69,7 +69,7 @@ mapfile -t nodes < <(
 [[ ${#nodes[@]} -eq 1 ]] || fail "context $context must expose exactly one labeled laptop node"
 
 kubectl --context "$context" get crd proxygroups.tailscale.com >/dev/null
-kubectl --context "$context" -n fiducia wait \
+kubectl --context "$context" wait \
   proxygroup/fiducia-egress-proxies \
   --for=condition=ProxyGroupReady=true \
   --timeout=300s >/dev/null
