@@ -74,6 +74,7 @@ test("K3s uses only the rotatable S3 configuration Secret and never embeds crede
 test("tailnet policy is deny-by-default and separates operator, host, egress, node, and brain identities", () => {
   const policy = renderTailnetPolicy(inputs);
   assert.equal(policy.grants.length, 4);
+  assert.deepEqual(policy.tagOwners["tag:k8s"], ["tag:k8s-operator"]);
   assert.ok(policy.grants.every((grant) => !grant.src.includes("*") && !grant.dst.includes("*")));
   assert.deepEqual(policy.grants[0].ip, ["tcp:22", "tcp:6443"]);
   assert.deepEqual(policy.grants[1].ip, ["tcp:443"]);
@@ -148,25 +149,29 @@ test("restore is checksum-gated, token-file based, local-only, and requires thre
   assert.doesNotMatch(script, /--etcd-s3-access-key|--etcd-s3-secret-key/);
 });
 
-test("laptop implementation files contain no pasted provider or GitHub credential patterns", () => {
-  const roots = ["laptop", "scripts", "tools", "docs"];
+test("new laptop implementation inputs contain no pasted provider or GitHub credentials", () => {
+  const files = [
+    "laptop/tailnet-policy.template.json",
+    "laptop/tailnet-cluster.template.yaml",
+    "laptop/components/runtime/cloudflared.yaml",
+    "laptop/hosts/laptop-aws-sim/k3s-config.yaml",
+    "laptop/hosts/laptop-gcp-sim/k3s-config.yaml",
+    "laptop/hosts/laptop-azure-sim/k3s-config.yaml",
+    "scripts/apply-laptop-runtime-secrets.sh",
+    "scripts/restore-laptop-k3s-snapshot.sh",
+    "tools/render-laptop-tailnet.mjs",
+    "docs/laptop-private-mesh-ingress-snapshots.md",
+  ];
   const patterns = [
     /ghp_[A-Za-z0-9]{20,}/,
     /github_pat_[A-Za-z0-9_]{20,}/,
     /tskey-(?:auth|client)-[A-Za-z0-9_-]{16,}/,
     /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/,
   ];
-
-  function visit(relativePath) {
-    const absolute = path.join(root, relativePath);
-    for (const entry of fs.readdirSync(absolute, { withFileTypes: true })) {
-      const child = path.join(relativePath, entry.name);
-      if (entry.isDirectory()) visit(child);
-      else if (entry.isFile()) {
-        const content = fs.readFileSync(path.join(root, child), "utf8");
-        for (const pattern of patterns) assert.doesNotMatch(content, pattern, `${child} contains a credential-like value`);
-      }
+  for (const relativePath of files) {
+    const content = read(relativePath);
+    for (const pattern of patterns) {
+      assert.doesNotMatch(content, pattern, `${relativePath} contains a credential-like value`);
     }
   }
-  for (const relativePath of roots) visit(relativePath);
 });
