@@ -1,0 +1,101 @@
+# GENERATED MATERIALIZATION TEMPLATE. The renderer replaces each declared
+# uppercase placeholder; do not apply this template directly.
+apiVersion: tailscale.com/v1alpha1
+kind: ProxyGroup
+metadata:
+  name: fiducia-peer-egress
+  namespace: tailscale
+spec:
+  type: egress
+  replicas: 2
+  tags:
+    - tag:k8s
+    - tag:fiducia-peer-egress
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-node-tailnet
+  namespace: fiducia
+  annotations:
+    tailscale.com/hostname: fiducia-node-__CLUSTER__
+    tailscale.com/tags: "tag:k8s,tag:fiducia-node-peer"
+spec:
+  type: LoadBalancer
+  loadBalancerClass: tailscale
+  selector:
+    app: fiducia-node
+  ports:
+    - { name: raft-peer, protocol: TCP, port: 9090, targetPort: 9090 }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-brain-tailnet
+  namespace: fiducia
+  annotations:
+    tailscale.com/hostname: fiducia-brain-__CLUSTER__
+    tailscale.com/tags: "tag:k8s,tag:fiducia-brain-peer"
+spec:
+  type: LoadBalancer
+  loadBalancerClass: tailscale
+  selector:
+    app: fiducia-brain
+  ports:
+    - { name: raft-peer, protocol: TCP, port: 9095, targetPort: 9095 }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-node-__PEER1__-tailnet
+  namespace: fiducia
+  annotations:
+    tailscale.com/tailnet-fqdn: fiducia-node-__PEER1__.__TAILNET_DOMAIN__
+    tailscale.com/proxy-group: fiducia-peer-egress
+spec:
+  type: ExternalName
+  externalName: placeholder
+  ports:
+    - { name: raft-peer, protocol: TCP, port: 9090 }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-brain-__PEER1__-tailnet
+  namespace: fiducia
+  annotations:
+    tailscale.com/tailnet-fqdn: fiducia-brain-__PEER1__.__TAILNET_DOMAIN__
+    tailscale.com/proxy-group: fiducia-peer-egress
+spec:
+  type: ExternalName
+  externalName: placeholder
+  ports:
+    - { name: raft-peer, protocol: TCP, port: 9095 }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-node-__PEER2__-tailnet
+  namespace: fiducia
+  annotations:
+    tailscale.com/tailnet-fqdn: fiducia-node-__PEER2__.__TAILNET_DOMAIN__
+    tailscale.com/proxy-group: fiducia-peer-egress
+spec:
+  type: ExternalName
+  externalName: placeholder
+  ports:
+    - { name: raft-peer, protocol: TCP, port: 9090 }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-brain-__PEER2__-tailnet
+  namespace: fiducia
+  annotations:
+    tailscale.com/tailnet-fqdn: fiducia-brain-__PEER2__.__TAILNET_DOMAIN__
+    tailscale.com/proxy-group: fiducia-peer-egress
+spec:
+  type: ExternalName
+  externalName: placeholder
+  ports:
+    - { name: raft-peer, protocol: TCP, port: 9095 }
