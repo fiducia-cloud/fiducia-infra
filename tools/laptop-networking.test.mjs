@@ -69,6 +69,10 @@ function snapshotList(overrides = {}) {
   };
 }
 
+function clusterSuffix(cluster) {
+  return cluster.replace(/^laptop-/, "");
+}
+
 test("cloudflared is digest-pinned, secret-backed, unprivileged, and independently healthy", () => {
   const manifest = read("laptop/components/runtime/cloudflared.yaml");
   assert.match(manifest, /image: cloudflare\/cloudflared@sha256:[0-9a-f]{64}/);
@@ -129,7 +133,7 @@ test("K3s uses only the rotatable S3 configuration Secret and never embeds crede
 
 test("tailnet policy isolates every cluster egress identity from itself and unrelated control ports", () => {
   const policy = renderTailnetPolicy(inputs);
-  assert.equal(policy.grants.length, 8);
+  assert.equal(policy.grants.length, 11);
   assert.deepEqual(policy.tagOwners["tag:k8s"], ["tag:k8s-operator"]);
   assert.ok(policy.grants.every((grant) => !grant.src.includes("*") && !grant.dst.includes("*")));
   assert.deepEqual(policy.grants[0].ip, ["tcp:22", "tcp:6443"]);
@@ -138,28 +142,31 @@ test("tailnet policy isolates every cluster egress identity from itself and unre
   for (const suffix of ["aws-sim", "gcp-sim", "azure-sim"]) {
     const src = `tag:fiducia-peer-egress-${suffix}`;
     const grants = policy.grants.filter((grant) => grant.src.length === 1 && grant.src[0] === src);
-    assert.equal(grants.length, 2);
-    assert.deepEqual(grants.map((grant) => grant.ip[0]).sort(), ["tcp:9090", "tcp:9095"]);
+    assert.equal(grants.length, 3);
+    assert.deepEqual(grants.map((grant) => grant.ip[0]).sort(), ["tcp:6222", "tcp:9090", "tcp:9095"]);
     assert.ok(grants.every((grant) => grant.dst.length === 2));
     assert.ok(grants.every((grant) => grant.dst.every((dst) => !dst.endsWith(suffix))));
 
     const policyTest = policy.tests.find((entry) => entry.src === src);
     assert.ok(policyTest, `missing policy test for ${src}`);
-    assert.equal(policyTest.accept.length, 4);
+    assert.equal(policyTest.accept.length, 6);
     assert.ok(policyTest.deny.includes(`tag:fiducia-node-peer-${suffix}:9090`));
     assert.ok(policyTest.deny.includes(`tag:fiducia-brain-peer-${suffix}:9095`));
+    assert.ok(policyTest.deny.includes(`tag:fiducia-nats-route-${suffix}:6222`));
     assert.ok(policyTest.deny.includes("tag:fiducia-laptop-host:22"));
     assert.ok(policyTest.deny.includes("tag:k8s-operator:443"));
+    assert.ok(policyTest.deny.some((destination) => destination.endsWith(":4222")));
+    assert.ok(policyTest.deny.some((destination) => destination.endsWith(":8222")));
   }
 });
 
-test("tailnet materialization keeps ProxyGroup cluster-scoped and mirrors exactly two remote peers", () => {
+test("tailnet materialization keeps ProxyGroup cluster-scoped and mirrors exactly two remote peers per plane", () => {
   const all = renderTailnetBundle(inputs);
   assert.equal(all.nonSecret, true);
   assert.deepEqual(Object.keys(all.clusters).sort(), laptopClusterNames().sort());
 
   for (const cluster of laptopClusterNames()) {
-    const suffix = cluster.replace(/^laptop-/, "");
+    const suffix = clusterSuffix(cluster);
     const bundle = renderClusterTailnetBundle({ clusterName: cluster, ...inputs });
     assert.doesNotMatch(bundle.manifest, /__[A-Z0-9_]+__/);
     assert.doesNotMatch(bundle.manifest, /kind: Secret/);
@@ -169,10 +176,13 @@ test("tailnet materialization keeps ProxyGroup cluster-scoped and mirrors exactl
     assert.doesNotMatch(proxyGroup, /namespace:/);
     assert.match(bundle.manifest, new RegExp(`tag:fiducia-node-peer-${suffix}`));
     assert.match(bundle.manifest, new RegExp(`tag:fiducia-brain-peer-${suffix}`));
+    assert.match(bundle.manifest, new RegExp(`tag:fiducia-nats-route-${suffix}`));
     assert.match(bundle.manifest, /name: fiducia-node-tailnet[\s\S]*loadBalancerClass: tailscale[\s\S]*port: 9090/);
     assert.match(bundle.manifest, /name: fiducia-brain-tailnet[\s\S]*loadBalancerClass: tailscale[\s\S]*port: 9095/);
-    assert.equal((bundle.manifest.match(/type: ExternalName/g) ?? []).length, 4);
-    assert.equal((bundle.manifest.match(/tailscale\.com\/tailnet-fqdn:/g) ?? []).length, 4);
+    assert.match(bundle.manifest, /name: fiducia-nats-route-tailnet[\s\S]*loadBalancerClass: tailscale[\s\S]*port: 6222/);
+    assert.equal((bundle.manifest.match(/type: ExternalName/g) ?? []).length, 6);
+    assert.equal((bundle.manifest.match(/tailscale\.com\/tailnet-fqdn:/g) ?? []).length, 6);
+    assert.equal((bundle.manifest.match(/name: fiducia-nats-route-laptop-(?:aws|gcp|azure)-sim-tailnet/g) ?? []).length, 2);
     assert.doesNotMatch(bundle.peerEnv, new RegExp(`-${cluster}-tailnet`));
     assert.equal(bundle.peerEnv.split("\n").filter(Boolean).length, 2);
     assert.match(bundle.peerEnv, /\.fiducia\.svc\.cluster\.local:9090/);
@@ -258,20 +268,28 @@ test("restore is checksum-gated, token-file based, local-only, and requires thre
   assert.doesNotMatch(script, /--etcd-s3-access-key|--etcd-s3-secret-key/);
 });
 
-test("new laptop implementation inputs contain no pasted provider or GitHub credentials", () => {
+test("laptop implementation inputs contain no pasted provider or GitHub credentials", () => {
   const files = [
     "laptop/tailnet-policy.template.json",
     "laptop/tailnet-cluster.template.yaml",
     "laptop/components/runtime/cloudflared.yaml",
+    "laptop/components/messaging-ha/kustomization.yaml",
+    "laptop/components/messaging-ha/networkpolicy.yaml",
     "laptop/hosts/laptop-aws-sim/k3s-config.yaml",
     "laptop/hosts/laptop-gcp-sim/k3s-config.yaml",
     "laptop/hosts/laptop-azure-sim/k3s-config.yaml",
+    "laptop/messaging/jetstream-evidence.example.json",
     "scripts/apply-laptop-runtime-secrets.sh",
+    "scripts/apply-laptop-nats-route-tls.sh",
     "scripts/capture-laptop-etcd-snapshot-evidence.sh",
     "scripts/restore-laptop-k3s-snapshot.sh",
+    "scripts/test-laptop-nats-configs.sh",
     "tools/render-laptop-tailnet.mjs",
+    "tools/render-laptop-messaging.mjs",
     "tools/verify-etcd-snapshot-evidence.mjs",
+    "tools/validate-laptop-jetstream-evidence.mjs",
     "docs/laptop-private-mesh-ingress-snapshots.md",
+    "docs/laptop-jetstream-ha.md",
   ];
   const patterns = [
     /ghp_[A-Za-z0-9]{20,}/,

@@ -9,6 +9,7 @@ components:
   - ../../../base/components/brain
   - ../../components/substrate
   - ../../components/runtime
+  - ../../components/messaging-ha
 configMapGenerator:
   - name: fiducia-cluster
     envs:
@@ -21,3 +22,4 @@ commonAnnotations:
   fiducia.cloud/site: site-b
 patches:
   - path: patches.yaml
+  - path: nats-config.patch.yaml

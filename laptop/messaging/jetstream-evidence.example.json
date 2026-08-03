@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "evidenceMode": "example",
+  "observedAt": "2026-08-03T18:00:00Z",
+  "clusterName": "fiducia-laptop-production",
+  "serverVersion": "2.11.17",
+  "metaLeader": "fiducia-nats-laptop-azure-sim",
+  "routeCaFingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "servers": [
+    {
+      "name": "fiducia-nats-laptop-aws-sim",
+      "serverTags": [
+        "site:site-a",
+        "cluster:laptop-aws-sim",
+        "substrate:laptop-k3s"
+      ],
+      "routeTls": true,
+      "routeCount": 2,
+      "routePeers": [
+        "fiducia-nats-laptop-gcp-sim",
+        "fiducia-nats-laptop-azure-sim"
+      ],
+      "leafCertificateFingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
+      "jetstreamEnabled": true,
+      "storeDirectory": "/data/jetstream",
+      "fileStoreUsedBytes": 1048576,
+      "fileStoreLimitBytes": 8589934592,
+      "diskFreePercent": 80
+    },
+    {
+      "name": "fiducia-nats-laptop-gcp-sim",
+      "serverTags": [
+        "site:site-b",
+        "cluster:laptop-gcp-sim",
+        "substrate:laptop-k3s"
+      ],
+      "routeTls": true,
+      "routeCount": 2,
+      "routePeers": [
+        "fiducia-nats-laptop-aws-sim",
+        "fiducia-nats-laptop-azure-sim"
+      ],
+      "leafCertificateFingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+      "jetstreamEnabled": true,
+      "storeDirectory": "/data/jetstream",
+      "fileStoreUsedBytes": 1048576,
+      "fileStoreLimitBytes": 8589934592,
+      "diskFreePercent": 82
+    },
+    {
+      "name": "fiducia-nats-laptop-azure-sim",
+      "serverTags": [
+        "site:site-c",
+        "cluster:laptop-azure-sim",
+        "substrate:laptop-k3s"
+      ],
+      "routeTls": true,
+      "routeCount": 2,
+      "routePeers": [
+        "fiducia-nats-laptop-aws-sim",
+        "fiducia-nats-laptop-gcp-sim"
+      ],
+      "leafCertificateFingerprint": "3333333333333333333333333333333333333333333333333333333333333333",
+      "jetstreamEnabled": true,
+      "storeDirectory": "/data/jetstream",
+      "fileStoreUsedBytes": 1048576,
+      "fileStoreLimitBytes": 8589934592,
+      "diskFreePercent": 85
+    }
+  ],
+  "stream": {
+    "name": "FIDUCIA_MESSAGES",
+    "subjects": ["fiducia.>"],
+    "storage": "file",
+    "replicas": 3,
+    "duplicateWindowSeconds": 600,
+    "messages": 1000,
+    "bytes": 10485760,
+    "lostMessages": 0,
+    "leader": "fiducia-nats-laptop-gcp-sim",
+    "replicaState": [
+      {
+        "name": "fiducia-nats-laptop-aws-sim",
+        "current": true,
+        "lag": 0,
+        "activeSeconds": 1
+      },
+      {
+        "name": "fiducia-nats-laptop-azure-sim",
+        "current": true,
+        "lag": 0,
+        "activeSeconds": 2
+      }
+    ]
+  },
+  "gates": {
+    "clientAuth": true,
+    "routeMtls": true,
+    "outboxAuthoritative": true,
+    "inboxDeduplication": true,
+    "fiduciaFencing": true,
+    "protectedMutationIdempotency": true,
+    "dlqReplay": true,
+    "backupSnapshot": true,
+    "externalObjectStorage": true,
+    "oneMemberFailureTest": true
+  },
+  "proof": {
+    "routeReport": "example:jetstream:routes",
+    "serverReport": "example:jetstream:servers",
+    "streamReport": "example:jetstream:stream",
+    "outboxReplay": "example:jetstream:outbox-replay",
+    "fencingAndIdempotency": "example:jetstream:fencing-idempotency",
+    "backupAndRestore": "example:jetstream:backup-restore",
+    "oneMemberFailure": "example:jetstream:one-member-failure"
+  }
+}
