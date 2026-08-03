@@ -1,0 +1,524 @@
+{
+  "schemaVersion": 1,
+  "campaignId": "den-946-laptop-acceptance-v1",
+  "requiredClusters": [
+    "laptop-aws-sim",
+    "laptop-gcp-sim",
+    "laptop-azure-sim"
+  ],
+  "minimumSoakHours": 168,
+  "minimumExternalProbeRegions": 2,
+  "minimumExternalAvailabilityPercent": 99.0,
+  "minimumDiskFreePercent": 20,
+  "maxCriticalFindings": 0,
+  "maxAcknowledgedMessageLoss": 0,
+  "maxDuplicateProtectedMutations": 0,
+  "maxFinalReplicationLag": 0,
+  "liveEvidenceMaxAgeHours": 24,
+  "scenarios": [
+    {
+      "id": "k3s-clean-restore",
+      "order": 1,
+      "category": "backup-restore",
+      "execution": "manual",
+      "destructive": true,
+      "targetScope": "single-cluster",
+      "requiresAlert": true,
+      "requiresRestore": true,
+      "requiresQuorum": false,
+      "allowedRtoSeconds": 7200,
+      "allowedRpoSeconds": 21600,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "fiducia-raft-clean-restore",
+      "order": 2,
+      "category": "backup-restore",
+      "execution": "manual",
+      "destructive": true,
+      "targetScope": "single-cluster",
+      "requiresAlert": true,
+      "requiresRestore": true,
+      "requiresQuorum": true,
+      "allowedRtoSeconds": 7200,
+      "allowedRpoSeconds": 0,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "managed-database-restore",
+      "order": 3,
+      "category": "backup-restore",
+      "execution": "manual",
+      "destructive": true,
+      "targetScope": "managed-service",
+      "requiresAlert": true,
+      "requiresRestore": true,
+      "requiresQuorum": false,
+      "allowedRtoSeconds": 14400,
+      "allowedRpoSeconds": 3600,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "jetstream-outbox-replay",
+      "order": 4,
+      "category": "backup-restore",
+      "execution": "manual",
+      "destructive": true,
+      "targetScope": "fleet",
+      "requiresAlert": true,
+      "requiresRestore": true,
+      "requiresQuorum": true,
+      "allowedRtoSeconds": 3600,
+      "allowedRpoSeconds": 0,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "follower-laptop-power-loss",
+      "order": 5,
+      "category": "physical-failure",
+      "execution": "manual",
+      "destructive": true,
+      "targetScope": "single-cluster",
+      "requiresAlert": true,
+      "requiresRestore": false,
+      "requiresQuorum": true,
+      "allowedRtoSeconds": 300,
+      "allowedRpoSeconds": 0,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "fiducia-leader-power-loss",
+      "order": 6,
+      "category": "physical-failure",
+      "execution": "manual",
+      "destructive": true,
+      "targetScope": "single-cluster",
+      "requiresAlert": true,
+      "requiresRestore": false,
+      "requiresQuorum": true,
+      "allowedRtoSeconds": 300,
+      "allowedRpoSeconds": 0,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "jetstream-stream-leader-loss",
+      "order": 7,
+      "category": "physical-failure",
+      "execution": "manual",
+      "destructive": true,
+      "targetScope": "single-cluster",
+      "requiresAlert": true,
+      "requiresRestore": false,
+      "requiresQuorum": true,
+      "allowedRtoSeconds": 300,
+      "allowedRpoSeconds": 0,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "jetstream-meta-leader-loss",
+      "order": 8,
+      "category": "physical-failure",
+      "execution": "manual",
+      "destructive": true,
+      "targetScope": "single-cluster",
+      "requiresAlert": true,
+      "requiresRestore": false,
+      "requiresQuorum": true,
+      "allowedRtoSeconds": 300,
+      "allowedRpoSeconds": 0,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "primary-wan-loss",
+      "order": 9,
+      "category": "network-failure",
+      "execution": "manual",
+      "destructive": true,
+      "targetScope": "single-site",
+      "requiresAlert": true,
+      "requiresRestore": false,
+      "requiresQuorum": true,
+      "allowedRtoSeconds": 300,
+      "allowedRpoSeconds": 0,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "asymmetric-mesh-partition",
+      "order": 10,
+      "category": "network-failure",
+      "execution": "manual",
+      "destructive": true,
+      "targetScope": "pairwise-path",
+      "requiresAlert": true,
+      "requiresRestore": false,
+      "requiresQuorum": true,
+      "allowedRtoSeconds": 300,
+      "allowedRpoSeconds": 0,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "cloudflared-connector-loss",
+      "order": 11,
+      "category": "service-failure",
+      "execution": "manual",
+      "destructive": true,
+      "targetScope": "single-cluster",
+      "requiresAlert": true,
+      "requiresRestore": false,
+      "requiresQuorum": false,
+      "allowedRtoSeconds": 300,
+      "allowedRpoSeconds": 0,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "k3s-api-loss",
+      "order": 12,
+      "category": "service-failure",
+      "execution": "manual",
+      "destructive": true,
+      "targetScope": "single-cluster",
+      "requiresAlert": true,
+      "requiresRestore": false,
+      "requiresQuorum": false,
+      "allowedRtoSeconds": 900,
+      "allowedRpoSeconds": 0,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "disk-mount-loss",
+      "order": 13,
+      "category": "storage-failure",
+      "execution": "manual",
+      "destructive": true,
+      "targetScope": "single-cluster",
+      "requiresAlert": true,
+      "requiresRestore": true,
+      "requiresQuorum": true,
+      "allowedRtoSeconds": 1800,
+      "allowedRpoSeconds": 0,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "fiducia-member-stop",
+      "order": 14,
+      "category": "service-failure",
+      "execution": "manual",
+      "destructive": true,
+      "targetScope": "single-cluster",
+      "requiresAlert": true,
+      "requiresRestore": false,
+      "requiresQuorum": true,
+      "allowedRtoSeconds": 300,
+      "allowedRpoSeconds": 0,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "jetstream-member-stop",
+      "order": 15,
+      "category": "service-failure",
+      "execution": "manual",
+      "destructive": true,
+      "targetScope": "single-cluster",
+      "requiresAlert": true,
+      "requiresRestore": false,
+      "requiresQuorum": true,
+      "allowedRtoSeconds": 300,
+      "allowedRpoSeconds": 0,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "telemetry-path-loss",
+      "order": 16,
+      "category": "observability-failure",
+      "execution": "manual",
+      "destructive": true,
+      "targetScope": "single-cluster",
+      "requiresAlert": true,
+      "requiresRestore": false,
+      "requiresQuorum": false,
+      "allowedRtoSeconds": 600,
+      "allowedRpoSeconds": 0,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "disk-pressure",
+      "order": 17,
+      "category": "resource-failure",
+      "execution": "manual",
+      "destructive": true,
+      "targetScope": "single-cluster",
+      "requiresAlert": true,
+      "requiresRestore": false,
+      "requiresQuorum": true,
+      "allowedRtoSeconds": 900,
+      "allowedRpoSeconds": 0,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "high-io-latency",
+      "order": 18,
+      "category": "resource-failure",
+      "execution": "manual",
+      "destructive": true,
+      "targetScope": "single-cluster",
+      "requiresAlert": true,
+      "requiresRestore": false,
+      "requiresQuorum": true,
+      "allowedRtoSeconds": 900,
+      "allowedRpoSeconds": 0,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "bounded-clock-drift",
+      "order": 19,
+      "category": "resource-failure",
+      "execution": "manual",
+      "destructive": true,
+      "targetScope": "single-cluster",
+      "requiresAlert": true,
+      "requiresRestore": false,
+      "requiresQuorum": true,
+      "allowedRtoSeconds": 600,
+      "allowedRpoSeconds": 0,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "bounded-thermal-pressure",
+      "order": 20,
+      "category": "resource-failure",
+      "execution": "manual",
+      "destructive": true,
+      "targetScope": "single-cluster",
+      "requiresAlert": true,
+      "requiresRestore": false,
+      "requiresQuorum": true,
+      "allowedRtoSeconds": 900,
+      "allowedRpoSeconds": 0,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "failed-image-pull",
+      "order": 21,
+      "category": "delivery-failure",
+      "execution": "manual",
+      "destructive": true,
+      "targetScope": "single-cluster",
+      "requiresAlert": true,
+      "requiresRestore": false,
+      "requiresQuorum": false,
+      "allowedRtoSeconds": 600,
+      "allowedRpoSeconds": 0,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "interrupted-upgrade",
+      "order": 22,
+      "category": "delivery-failure",
+      "execution": "manual",
+      "destructive": true,
+      "targetScope": "single-cluster",
+      "requiresAlert": true,
+      "requiresRestore": true,
+      "requiresQuorum": true,
+      "allowedRtoSeconds": 1800,
+      "allowedRpoSeconds": 0,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "lost-device-revocation",
+      "order": 23,
+      "category": "security",
+      "execution": "manual",
+      "destructive": true,
+      "targetScope": "single-cluster",
+      "requiresAlert": true,
+      "requiresRestore": false,
+      "requiresQuorum": false,
+      "allowedRtoSeconds": 1800,
+      "allowedRpoSeconds": 0,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "replacement-laptop-rejoin",
+      "order": 24,
+      "category": "recovery",
+      "execution": "manual",
+      "destructive": true,
+      "targetScope": "single-cluster",
+      "requiresAlert": true,
+      "requiresRestore": true,
+      "requiresQuorum": true,
+      "allowedRtoSeconds": 7200,
+      "allowedRpoSeconds": 0,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "public-port-exposure-scan",
+      "order": 25,
+      "category": "security",
+      "execution": "manual",
+      "destructive": false,
+      "targetScope": "fleet",
+      "requiresAlert": false,
+      "requiresRestore": false,
+      "requiresQuorum": false,
+      "allowedRtoSeconds": 600,
+      "allowedRpoSeconds": 0,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "alert-routing-matrix",
+      "order": 26,
+      "category": "observability",
+      "execution": "manual",
+      "destructive": false,
+      "targetScope": "fleet",
+      "requiresAlert": true,
+      "requiresRestore": false,
+      "requiresQuorum": false,
+      "allowedRtoSeconds": 900,
+      "allowedRpoSeconds": 0,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "follower-first-maintenance-rollback",
+      "order": 27,
+      "category": "operations",
+      "execution": "manual",
+      "destructive": true,
+      "targetScope": "fleet",
+      "requiresAlert": true,
+      "requiresRestore": true,
+      "requiresQuorum": true,
+      "allowedRtoSeconds": 3600,
+      "allowedRpoSeconds": 0,
+      "phases": [
+        "before",
+        "fault",
+        "recovered"
+      ]
+    },
+    {
+      "id": "seven-day-soak",
+      "order": 28,
+      "category": "soak",
+      "execution": "manual",
+      "destructive": false,
+      "targetScope": "fleet",
+      "requiresAlert": true,
+      "requiresRestore": false,
+      "requiresQuorum": true,
+      "allowedRtoSeconds": 604800,
+      "allowedRpoSeconds": 0,
+      "phases": [
+        "start",
+        "daily",
+        "complete"
+      ]
+    }
+  ]
+}
