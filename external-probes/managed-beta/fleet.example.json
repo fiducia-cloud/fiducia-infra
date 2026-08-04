@@ -33,14 +33,14 @@
       },
       "failureDomains": {
         "physicalHostHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "schedulerHash": "abababababababababababababababababababababababababababababababab",
-        "runtimeIdentityHash": "acacacacacacacacacacacacacacacacacacacacacacacacacacacacacac",
-        "stateAuthorityHash": "adadadadadadadadadadadadadadadadadadadadadadadadadadadadadad",
-        "credentialHash": "aeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeae",
-        "outboundNetworkHash": "afafafafafafafafafafafafafafafafafafafafafafafafafafafafafaf",
-        "dnsResolverHash": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
-        "localProxyHash": "a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
-        "operatorOwnerHash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+        "schedulerHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "runtimeIdentityHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "stateAuthorityHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "credentialHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "outboundNetworkHash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "dnsResolverHash": "1111111111111111111111111111111111111111111111111111111111111111",
+        "localProxyHash": "2222222222222222222222222222222222222222222222222222222222222222",
+        "operatorOwnerHash": "3333333333333333333333333333333333333333333333333333333333333333"
       },
       "operations": [
         { "operationClass": "health", "endpoint": "https://managed-beta.example.invalid/healthz", "method": "GET", "expectedStatuses": [200], "timeoutMs": 5000 },
@@ -78,15 +78,15 @@
         "randomizedDelaySeconds": 25
       },
       "failureDomains": {
-        "physicalHostHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        "schedulerHash": "bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc",
-        "runtimeIdentityHash": "bdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbd",
-        "stateAuthorityHash": "bebebebebebebebebebebebebebebebebebebebebebebebebebebebebebebebe",
-        "credentialHash": "bfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfbf",
-        "outboundNetworkHash": "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
-        "dnsResolverHash": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
-        "localProxyHash": "b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3",
-        "operatorOwnerHash": "b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4"
+        "physicalHostHash": "4444444444444444444444444444444444444444444444444444444444444444",
+        "schedulerHash": "5555555555555555555555555555555555555555555555555555555555555555",
+        "runtimeIdentityHash": "6666666666666666666666666666666666666666666666666666666666666666",
+        "stateAuthorityHash": "7777777777777777777777777777777777777777777777777777777777777777",
+        "credentialHash": "8888888888888888888888888888888888888888888888888888888888888888",
+        "outboundNetworkHash": "9999999999999999999999999999999999999999999999999999999999999999",
+        "dnsResolverHash": "0000000000000000000000000000000000000000000000000000000000000000",
+        "localProxyHash": "abababababababababababababababababababababababababababababababab",
+        "operatorOwnerHash": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
       },
       "operations": [
         { "operationClass": "health", "endpoint": "https://managed-beta.example.invalid/healthz", "method": "GET", "expectedStatuses": [200], "timeoutMs": 5000 },
