@@ -2,6 +2,9 @@ groups:
   - name: fiducia-managed-beta-recording
     interval: 30s
     rules:
+      # Contractual availability remains cell-scoped and combines all declared
+      # failure-independent sources by sample count. Source continuity records
+      # below retain probe_location so a missing site cannot hide in the total.
       - record: fiducia:sli:public_availability_ratio:28d
         expr: |
           sum by (cell) (
@@ -58,13 +61,18 @@ groups:
           )
       - record: fiducia:sli:external_probe_freshness_seconds
         expr: |
-          time() - max by (cell, operation_class) (
+          time() - max by (cell, operation_class, probe_location) (
             fiducia_external_probe_last_run_unixtime
           )
       - record: fiducia:sli:external_probe_last_success_age_seconds
         expr: |
-          time() - max by (cell, operation_class) (
+          time() - max by (cell, operation_class, probe_location) (
             fiducia_external_probe_last_success_unixtime
+          )
+      - record: fiducia:sli:external_probe_fresh_location_count
+        expr: |
+          count by (cell, operation_class) (
+            fiducia:sli:external_probe_freshness_seconds <= 300
           )
 
   - name: fiducia-managed-beta-alerts
@@ -91,6 +99,17 @@ groups:
           summary: Managed-beta public availability is consuming its error budget persistently
           description: The six-hour burn rate exceeds 6x. Stop expansion and investigate before the 28-day budget is exhausted.
           runbook_url: https://github.com/fiducia-cloud/fiducia-monorepo/blob/main/docs/operations/managed-beta-incident-runbook.md
+      - alert: FiduciaExternalProbeInsufficientLocations
+        expr: fiducia:sli:external_probe_fresh_location_count < 2
+        for: 5m
+        labels:
+          severity: critical
+          service: fiducia-managed-beta
+          owner: reliability
+        annotations:
+          summary: Fewer than two managed-beta probe locations are fresh
+          description: The cell and operation class have fewer than two fresh location-scoped source lineages. Treat availability as insufficiently independent and freeze enrollment.
+          runbook_url: https://github.com/fiducia-cloud/fiducia-monorepo/blob/main/docs/operations/managed-beta-incident-runbook.md
       - alert: FiduciaExternalProbeSourceStale
         expr: fiducia:sli:external_probe_freshness_seconds > 300
         for: 5m
@@ -99,8 +118,8 @@ groups:
           service: fiducia-managed-beta
           owner: reliability
         annotations:
-          summary: A managed-beta external probe source is stale
-          description: A declared cell and operation class has not produced a completed observation for more than five minutes. Treat the SLI as unknown, not healthy.
+          summary: A managed-beta external probe location is stale
+          description: A declared cell, operation class, and probe location has not produced a completed observation for more than five minutes. Treat the source as unknown, not healthy.
           runbook_url: https://github.com/fiducia-cloud/fiducia-monorepo/blob/main/docs/operations/managed-beta-incident-runbook.md
       - alert: FiduciaExternalProbeNeverObserved
         expr: absent(fiducia_external_probe_last_run_unixtime)
@@ -121,12 +140,12 @@ groups:
           service: fiducia-managed-beta
           owner: reliability
         annotations:
-          summary: A managed-beta external probe has not succeeded recently
-          description: The last successful observation is older than fifteen minutes or no successful observation has occurred yet.
+          summary: A managed-beta external probe location has not succeeded recently
+          description: The location's last successful observation is older than fifteen minutes or no successful observation has occurred yet.
           runbook_url: https://github.com/fiducia-cloud/fiducia-monorepo/blob/main/docs/operations/managed-beta-incident-runbook.md
       - alert: FiduciaExternalProbeCounterReset
         expr: |
-          sum by (cell, operation_class, result) (
+          sum by (cell, operation_class, probe_location, result) (
             resets(fiducia_external_probe_total[1h])
           ) > 0
         labels:
@@ -134,12 +153,12 @@ groups:
           service: fiducia-managed-beta
           owner: reliability
         annotations:
-          summary: A managed-beta external probe counter reset
-          description: Check state-file durability, identity mismatch, replacement scheduling, and evidence continuity before using the affected interval.
+          summary: A managed-beta external probe location counter reset
+          description: Check the location's state-file durability, schema migration, identity mismatch, scheduler replacement, and evidence continuity before using the affected interval.
           runbook_url: https://github.com/fiducia-cloud/fiducia-monorepo/blob/main/docs/operations/managed-beta-incident-runbook.md
       - alert: FiduciaExternalProbeDuplicateSeries
         expr: |
-          count by (cell, operation_class, result) (
+          count by (cell, operation_class, probe_location, result) (
             fiducia_external_probe_total
           ) > 1
         for: 5m
@@ -149,5 +168,5 @@ groups:
           owner: reliability
         annotations:
           summary: Duplicate managed-beta external probe authority detected
-          description: More than one time series claims the same bounded cell, operation class, and result identity. Remove duplicate producers before interpreting the SLI.
+          description: More than one time series claims the same cell, operation class, probe location, and result identity. Remove duplicate producers before interpreting the SLI.
           runbook_url: https://github.com/fiducia-cloud/fiducia-monorepo/blob/main/docs/operations/managed-beta-incident-runbook.md
