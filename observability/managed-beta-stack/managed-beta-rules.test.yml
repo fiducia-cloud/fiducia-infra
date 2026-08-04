@@ -19,18 +19,31 @@ tests:
               description: Prometheus has no last-run series. Do not interpret missing data as 100 percent availability.
               runbook_url: https://github.com/fiducia-cloud/fiducia-monorepo/blob/main/docs/operations/managed-beta-incident-runbook.md
 
-  - name: one trusted location is insufficient availability evidence
+  - name: a historically present but stale second location does not satisfy independence
     interval: 1m
     input_series:
       - series: 'fiducia_external_probe_total{probe_location="probe-a",cell="cell-a",operation_class="health",result="success"}'
         values: '0+1x20'
       - series: 'fiducia_external_probe_total{probe_location="probe-a",cell="cell-a",operation_class="health",result="failure"}'
         values: '0+0x20'
+      - series: 'fiducia_external_probe_last_run_unixtime{probe_location="probe-a",cell="cell-a",operation_class="health"}'
+        values: '0+60x20'
+      - series: 'fiducia_external_probe_total{probe_location="probe-b",cell="cell-a",operation_class="health",result="success"}'
+        values: '0+1x20'
+      - series: 'fiducia_external_probe_total{probe_location="probe-b",cell="cell-a",operation_class="health",result="failure"}'
+        values: '0+0x20'
+      - series: 'fiducia_external_probe_last_run_unixtime{probe_location="probe-b",cell="cell-a",operation_class="health"}'
+        values: '0+0x20'
     promql_expr_test:
       - expr: 'fiducia:sli:external_probe_location_count'
         eval_time: 10m
         exp_samples:
-          - labels: '{__name__="fiducia:sli:external_probe_location_count",cell="cell-a"}'
+          - labels: '{__name__="fiducia:sli:external_probe_location_count",cell="cell-a",operation_class="health"}'
+            value: 2
+      - expr: 'fiducia:sli:external_probe_fresh_location_count'
+        eval_time: 10m
+        exp_samples:
+          - labels: '{__name__="fiducia:sli:external_probe_fresh_location_count",cell="cell-a",operation_class="health"}'
             value: 1
     alert_rule_test:
       - eval_time: 10m
@@ -38,38 +51,39 @@ tests:
         exp_alerts:
           - exp_labels:
               cell: cell-a
+              operation_class: health
               severity: critical
               service: fiducia-managed-beta
               owner: reliability
             exp_annotations:
-              summary: Fewer than two trusted external probe locations are observable
-              description: A managed-beta cell has fewer than two scrape-injected probe_location identities. Treat availability evidence as incomplete and freeze enrollment.
+              summary: Fewer than two trusted external probe locations are fresh
+              description: A managed-beta cell and operation class have fewer than two fresh scrape-injected probe_location identities. Treat availability evidence as incomplete and freeze enrollment.
               runbook_url: https://github.com/fiducia-cloud/fiducia-monorepo/blob/main/docs/operations/managed-beta-incident-runbook.md
 
-  - name: a sustained total outage across two locations burns both windows
+  - name: two fresh location-scoped sources survive aggregation and a sustained outage burns both windows
     interval: 1m
     input_series:
       - series: 'fiducia_external_probe_total{probe_location="probe-a",cell="cell-a",operation_class="health",result="success"}'
         values: '0+0x360'
       - series: 'fiducia_external_probe_total{probe_location="probe-a",cell="cell-a",operation_class="health",result="failure"}'
         values: '0+1x360'
+      - series: 'fiducia_external_probe_last_run_unixtime{probe_location="probe-a",cell="cell-a",operation_class="health"}'
+        values: '0+60x360'
+      - series: 'fiducia_external_probe_last_success_unixtime{probe_location="probe-a",cell="cell-a",operation_class="health"}'
+        values: '0+0x360'
       - series: 'fiducia_external_probe_total{probe_location="probe-b",cell="cell-a",operation_class="health",result="success"}'
         values: '0+0x360'
       - series: 'fiducia_external_probe_total{probe_location="probe-b",cell="cell-a",operation_class="health",result="failure"}'
         values: '0+1x360'
-      - series: 'fiducia_external_probe_last_run_unixtime{probe_location="probe-a",cell="cell-a",operation_class="health"}'
-        values: '0+60x360'
       - series: 'fiducia_external_probe_last_run_unixtime{probe_location="probe-b",cell="cell-a",operation_class="health"}'
         values: '0+60x360'
-      - series: 'fiducia_external_probe_last_success_unixtime{probe_location="probe-a",cell="cell-a",operation_class="health"}'
-        values: '0+0x360'
       - series: 'fiducia_external_probe_last_success_unixtime{probe_location="probe-b",cell="cell-a",operation_class="health"}'
         values: '0+0x360'
     promql_expr_test:
-      - expr: 'fiducia:sli:external_probe_location_count'
+      - expr: 'fiducia:sli:external_probe_fresh_location_count'
         eval_time: 6h
         exp_samples:
-          - labels: '{__name__="fiducia:sli:external_probe_location_count",cell="cell-a"}'
+          - labels: '{__name__="fiducia:sli:external_probe_fresh_location_count",cell="cell-a",operation_class="health"}'
             value: 2
       - expr: 'fiducia:sli:public_availability_ratio:28d'
         eval_time: 6h
