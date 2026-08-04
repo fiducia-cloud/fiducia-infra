@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "evidenceMode": "example",
+  "sourceCommit": "a46f116853875b5a3a1b633ab1591253b1bbd4ed",
+  "image": "ghcr.io/fiducia-cloud/fiducia-managed-beta-probe@sha256:cc251cb82f131616e73c070929f4dd9066228d1a90e86c627933f787e63e0941",
+  "cell": "managed-beta",
+  "locations": [
+    {
+      "id": "probe-a",
+      "platform": "linux/amd64",
+      "runtimeUser": "fiducia-probe",
+      "podmanBinary": "/usr/bin/podman",
+      "nodeExporterBinary": "/usr/local/bin/node_exporter",
+      "nodeExporterBinarySha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "stateRoot": "/var/lib/fiducia-managed-beta-probe/probe-a",
+      "textfileRoot": "/var/lib/node_exporter/textfile_collector/probe-a",
+      "bearerFile": "/run/credentials/fiducia-managed-beta-probe/probe-a/bearer",
+      "metricsTarget": "probe-a.example.invalid:9100",
+      "metricsServerName": "probe-a.example.invalid",
+      "serverTls": {
+        "certificateFile": "/run/credentials/fiducia-managed-beta-probe/probe-a/server.crt",
+        "privateKeyFile": "/run/credentials/fiducia-managed-beta-probe/probe-a/server.key",
+        "clientCaFile": "/run/credentials/fiducia-managed-beta-probe/probe-a/prometheus-client-ca.crt"
+      },
+      "scrapeTls": {
+        "caFile": "/run/secrets/managed-beta-probes/probe-a/server-ca.crt",
+        "certificateFile": "/run/secrets/managed-beta-probes/probe-a/prometheus-client.crt",
+        "privateKeyFile": "/run/secrets/managed-beta-probes/probe-a/prometheus-client.key"
+      },
+      "schedule": {
+        "intervalSeconds": 60,
+        "randomizedDelaySeconds": 10
+      },
+      "failureDomains": {
+        "physicalHostHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "schedulerHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "runtimeIdentityHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "stateAuthorityHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "credentialHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "outboundNetworkHash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "dnsResolverHash": "1111111111111111111111111111111111111111111111111111111111111111",
+        "localProxyHash": "2222222222222222222222222222222222222222222222222222222222222222",
+        "operatorOwnerHash": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "operations": [
+        { "operationClass": "health", "endpoint": "https://managed-beta.example.invalid/healthz", "method": "GET", "expectedStatuses": [200], "timeoutMs": 5000 },
+        { "operationClass": "linearizable_read", "endpoint": "https://managed-beta.example.invalid/v1/probe/linearizable-read", "method": "GET", "expectedStatuses": [200], "timeoutMs": 5000 },
+        { "operationClass": "committed_write", "endpoint": "https://managed-beta.example.invalid/v1/probe/committed-write", "method": "POST", "expectedStatuses": [200, 201, 204], "timeoutMs": 10000 },
+        { "operationClass": "renewal", "endpoint": "https://managed-beta.example.invalid/v1/probe/renew", "method": "POST", "expectedStatuses": [200, 204], "timeoutMs": 10000 },
+        { "operationClass": "secret_read", "endpoint": "https://managed-beta.example.invalid/v1/probe/secret-read", "method": "GET", "expectedStatuses": [200], "timeoutMs": 5000 },
+        { "operationClass": "watch_reconcile", "endpoint": "https://managed-beta.example.invalid/v1/probe/watch-reconcile", "method": "GET", "expectedStatuses": [200], "timeoutMs": 30000 }
+      ]
+    },
+    {
+      "id": "probe-b",
+      "platform": "linux/arm64",
+      "runtimeUser": "fiducia-probe",
+      "podmanBinary": "/usr/bin/podman",
+      "nodeExporterBinary": "/usr/local/bin/node_exporter",
+      "nodeExporterBinarySha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "stateRoot": "/var/lib/fiducia-managed-beta-probe/probe-b",
+      "textfileRoot": "/var/lib/node_exporter/textfile_collector/probe-b",
+      "bearerFile": "/run/credentials/fiducia-managed-beta-probe/probe-b/bearer",
+      "metricsTarget": "probe-b.example.invalid:9100",
+      "metricsServerName": "probe-b.example.invalid",
+      "serverTls": {
+        "certificateFile": "/run/credentials/fiducia-managed-beta-probe/probe-b/server.crt",
+        "privateKeyFile": "/run/credentials/fiducia-managed-beta-probe/probe-b/server.key",
+        "clientCaFile": "/run/credentials/fiducia-managed-beta-probe/probe-b/prometheus-client-ca.crt"
+      },
+      "scrapeTls": {
+        "caFile": "/run/secrets/managed-beta-probes/probe-b/server-ca.crt",
+        "certificateFile": "/run/secrets/managed-beta-probes/probe-b/prometheus-client.crt",
+        "privateKeyFile": "/run/secrets/managed-beta-probes/probe-b/prometheus-client.key"
+      },
+      "schedule": {
+        "intervalSeconds": 60,
+        "randomizedDelaySeconds": 25
+      },
+      "failureDomains": {
+        "physicalHostHash": "4444444444444444444444444444444444444444444444444444444444444444",
+        "schedulerHash": "5555555555555555555555555555555555555555555555555555555555555555",
+        "runtimeIdentityHash": "6666666666666666666666666666666666666666666666666666666666666666",
+        "stateAuthorityHash": "7777777777777777777777777777777777777777777777777777777777777777",
+        "credentialHash": "8888888888888888888888888888888888888888888888888888888888888888",
+        "outboundNetworkHash": "9999999999999999999999999999999999999999999999999999999999999999",
+        "dnsResolverHash": "0000000000000000000000000000000000000000000000000000000000000000",
+        "localProxyHash": "abababababababababababababababababababababababababababababababab",
+        "operatorOwnerHash": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      "operations": [
+        { "operationClass": "health", "endpoint": "https://managed-beta.example.invalid/healthz", "method": "GET", "expectedStatuses": [200], "timeoutMs": 5000 },
+        { "operationClass": "linearizable_read", "endpoint": "https://managed-beta.example.invalid/v1/probe/linearizable-read", "method": "GET", "expectedStatuses": [200], "timeoutMs": 5000 },
+        { "operationClass": "committed_write", "endpoint": "https://managed-beta.example.invalid/v1/probe/committed-write", "method": "POST", "expectedStatuses": [200, 201, 204], "timeoutMs": 10000 },
+        { "operationClass": "renewal", "endpoint": "https://managed-beta.example.invalid/v1/probe/renew", "method": "POST", "expectedStatuses": [200, 204], "timeoutMs": 10000 },
+        { "operationClass": "secret_read", "endpoint": "https://managed-beta.example.invalid/v1/probe/secret-read", "method": "GET", "expectedStatuses": [200], "timeoutMs": 5000 },
+        { "operationClass": "watch_reconcile", "endpoint": "https://managed-beta.example.invalid/v1/probe/watch-reconcile", "method": "GET", "expectedStatuses": [200], "timeoutMs": 30000 }
+      ]
+    }
+  ]
+}
