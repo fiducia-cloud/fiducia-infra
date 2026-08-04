@@ -73,7 +73,7 @@ function clusterSuffix(cluster) {
   return cluster.replace(/^laptop-/, "");
 }
 
-test("cloudflared is digest-pinned, secret-backed, unprivileged, and independently healthy", () => {
+test("cloudflared is digest-pinned, secret-backed, unprivileged, and verifies the local origin CA", () => {
   const manifest = read("laptop/components/runtime/cloudflared.yaml");
   assert.match(manifest, /image: cloudflare\/cloudflared@sha256:[0-9a-f]{64}/);
   assert.doesNotMatch(manifest, /cloudflare\/cloudflared:(?:latest|main|dev|2026\.7\.3)\b/);
@@ -81,6 +81,10 @@ test("cloudflared is digest-pinned, secret-backed, unprivileged, and independent
   assert.match(manifest, /--no-autoupdate/);
   assert.match(manifest, /--edge-ip-version[\s\S]*- "4"[\s\S]*- run/);
   assert.match(manifest, /--metrics[\s\S]*0\.0\.0\.0:2000/);
+  assert.match(manifest, /--origin-ca-pool[\s\S]*\/etc\/fiducia\/origin-ca\/ca\.crt/);
+  assert.match(manifest, /fiducia\.cloud\/origin-url: https:\/\/fiducia-load-balance-tls\.fiducia\.svc\.cluster\.local:8443/);
+  assert.match(manifest, /name: origin-ca[\s\S]*secretName: fiducia-load-balance-tls[\s\S]*key: ca\.crt[\s\S]*path: ca\.crt/);
+  assert.doesNotMatch(manifest, /--no-tls-verify|noTLSVerify:\s*true/);
   assert.match(manifest, /startupProbe:[\s\S]*path: \/ready/);
   assert.match(manifest, /readinessProbe:[\s\S]*path: \/ready/);
   assert.match(manifest, /livenessProbe:[\s\S]*path: \/ready/);
@@ -93,10 +97,11 @@ test("cloudflared is digest-pinned, secret-backed, unprivileged, and independent
   assert.match(manifest, /kind: PodDisruptionBudget[\s\S]*maxUnavailable: 0/);
 });
 
-test("cloudflared network policy permits only local origin and published IPv4 tunnel endpoints", () => {
+test("cloudflared network policy permits only verified local TLS and published IPv4 tunnel endpoints", () => {
   const manifest = read("laptop/components/runtime/cloudflared.yaml");
   const policy = manifest.slice(manifest.indexOf("kind: NetworkPolicy"));
-  assert.match(policy, /app: fiducia-load-balance[\s\S]*port: 8088/);
+  assert.match(policy, /app: fiducia-load-balance[\s\S]*port: 8443/);
+  assert.doesNotMatch(policy, /app: fiducia-load-balance[\s\S]{0,300}port: 8088/);
   assert.match(policy, /protocol: TCP, port: 7844/);
   assert.match(policy, /protocol: UDP, port: 7844/);
   const edgeCidrs = [...policy.matchAll(/cidr:\s*(198\.41\.(?:192|200)\.[0-9]+\/32)/g)].map((match) => match[1]);
@@ -282,6 +287,7 @@ test("laptop implementation inputs contain no pasted provider or GitHub credenti
     "scripts/apply-laptop-runtime-secrets.sh",
     "scripts/apply-laptop-nats-route-tls.sh",
     "scripts/capture-laptop-etcd-snapshot-evidence.sh",
+    "scripts/capture-fiducia-internal-tls-evidence.sh",
     "scripts/restore-laptop-k3s-snapshot.sh",
     "scripts/test-laptop-nats-configs.sh",
     "tools/render-laptop-tailnet.mjs",
@@ -290,6 +296,7 @@ test("laptop implementation inputs contain no pasted provider or GitHub credenti
     "tools/validate-laptop-jetstream-evidence.mjs",
     "docs/laptop-private-mesh-ingress-snapshots.md",
     "docs/laptop-jetstream-ha.md",
+    "docs/fiducia-internal-tls.md",
   ];
   const patterns = [
     /ghp_[A-Za-z0-9]{20,}/,
