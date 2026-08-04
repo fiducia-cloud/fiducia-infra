@@ -5,9 +5,10 @@
 # clients must trust an explicit reviewed bundle rather than assuming that all
 # three laptop/cloud clusters share one root.
 apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
+kind: Issuer
 metadata:
   name: fiducia-selfsigned-bootstrap
+  namespace: fiducia
   annotations:
     argocd.argoproj.io/sync-wave: "-4"
 spec:
@@ -43,7 +44,7 @@ spec:
       fiducia.cloud/tls-role: root-ca
   issuerRef:
     name: fiducia-selfsigned-bootstrap
-    kind: ClusterIssuer
+    kind: Issuer
     group: cert-manager.io
 ---
 apiVersion: cert-manager.io/v1
