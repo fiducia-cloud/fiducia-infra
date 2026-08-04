@@ -1,0 +1,153 @@
+groups:
+  - name: fiducia-managed-beta-recording
+    interval: 30s
+    rules:
+      - record: fiducia:sli:public_availability_ratio:28d
+        expr: |
+          sum by (cell) (
+            increase(fiducia_external_probe_total{result="success"}[28d])
+          )
+            /
+          clamp_min(
+            sum by (cell) (increase(fiducia_external_probe_total[28d])),
+            1
+          )
+      - record: fiducia:sli:public_availability_samples:28d
+        expr: |
+          sum by (cell) (increase(fiducia_external_probe_total[28d]))
+      - record: fiducia:sli:public_unavailability_ratio:1h
+        expr: |
+          1 - (
+            sum by (cell) (
+              increase(fiducia_external_probe_total{result="success"}[1h])
+            )
+              /
+            clamp_min(
+              sum by (cell) (increase(fiducia_external_probe_total[1h])),
+              1
+            )
+          )
+      - record: fiducia:sli:public_unavailability_ratio:6h
+        expr: |
+          1 - (
+            sum by (cell) (
+              increase(fiducia_external_probe_total{result="success"}[6h])
+            )
+              /
+            clamp_min(
+              sum by (cell) (increase(fiducia_external_probe_total[6h])),
+              1
+            )
+          )
+      - record: fiducia:sli:public_availability_burn_rate:1h
+        expr: |
+          fiducia:sli:public_unavailability_ratio:1h / 0.005
+      - record: fiducia:sli:public_availability_burn_rate:6h
+        expr: |
+          fiducia:sli:public_unavailability_ratio:6h / 0.005
+      - record: fiducia:sli:public_availability_error_budget_remaining_ratio:28d
+        expr: |
+          clamp_max(
+            clamp_min(
+              1 - (
+                (1 - fiducia:sli:public_availability_ratio:28d) / 0.005
+              ),
+              0
+            ),
+            1
+          )
+      - record: fiducia:sli:external_probe_freshness_seconds
+        expr: |
+          time() - max by (cell, operation_class) (
+            fiducia_external_probe_last_run_unixtime
+          )
+      - record: fiducia:sli:external_probe_last_success_age_seconds
+        expr: |
+          time() - max by (cell, operation_class) (
+            fiducia_external_probe_last_success_unixtime
+          )
+
+  - name: fiducia-managed-beta-alerts
+    rules:
+      - alert: FiduciaPublicAvailabilityFastBurn
+        expr: fiducia:sli:public_availability_burn_rate:1h > 14.4
+        for: 5m
+        labels:
+          severity: critical
+          service: fiducia-managed-beta
+          owner: reliability
+        annotations:
+          summary: Managed-beta public availability is consuming its error budget rapidly
+          description: The one-hour burn rate exceeds 14.4x. Freeze rollout and inspect bounded external-probe results, ingress health, quorum, and recent changes.
+          runbook_url: https://github.com/fiducia-cloud/fiducia-monorepo/blob/main/docs/operations/managed-beta-incident-runbook.md
+      - alert: FiduciaPublicAvailabilitySlowBurn
+        expr: fiducia:sli:public_availability_burn_rate:6h > 6
+        for: 30m
+        labels:
+          severity: warning
+          service: fiducia-managed-beta
+          owner: reliability
+        annotations:
+          summary: Managed-beta public availability is consuming its error budget persistently
+          description: The six-hour burn rate exceeds 6x. Stop expansion and investigate before the 28-day budget is exhausted.
+          runbook_url: https://github.com/fiducia-cloud/fiducia-monorepo/blob/main/docs/operations/managed-beta-incident-runbook.md
+      - alert: FiduciaExternalProbeSourceStale
+        expr: fiducia:sli:external_probe_freshness_seconds > 300
+        for: 5m
+        labels:
+          severity: critical
+          service: fiducia-managed-beta
+          owner: reliability
+        annotations:
+          summary: A managed-beta external probe source is stale
+          description: A declared cell and operation class has not produced a completed observation for more than five minutes. Treat the SLI as unknown, not healthy.
+          runbook_url: https://github.com/fiducia-cloud/fiducia-monorepo/blob/main/docs/operations/managed-beta-incident-runbook.md
+      - alert: FiduciaExternalProbeNeverObserved
+        expr: absent(fiducia_external_probe_last_run_unixtime)
+        for: 5m
+        labels:
+          severity: critical
+          service: fiducia-managed-beta
+          owner: reliability
+        annotations:
+          summary: No managed-beta external probe source is present
+          description: Prometheus has no last-run series. Do not interpret missing data as 100 percent availability.
+          runbook_url: https://github.com/fiducia-cloud/fiducia-monorepo/blob/main/docs/operations/managed-beta-incident-runbook.md
+      - alert: FiduciaExternalProbeNoRecentSuccess
+        expr: fiducia:sli:external_probe_last_success_age_seconds > 900
+        for: 5m
+        labels:
+          severity: warning
+          service: fiducia-managed-beta
+          owner: reliability
+        annotations:
+          summary: A managed-beta external probe has not succeeded recently
+          description: The last successful observation is older than fifteen minutes or no successful observation has occurred yet.
+          runbook_url: https://github.com/fiducia-cloud/fiducia-monorepo/blob/main/docs/operations/managed-beta-incident-runbook.md
+      - alert: FiduciaExternalProbeCounterReset
+        expr: |
+          sum by (cell, operation_class, result) (
+            resets(fiducia_external_probe_total[1h])
+          ) > 0
+        labels:
+          severity: warning
+          service: fiducia-managed-beta
+          owner: reliability
+        annotations:
+          summary: A managed-beta external probe counter reset
+          description: Check state-file durability, identity mismatch, replacement scheduling, and evidence continuity before using the affected interval.
+          runbook_url: https://github.com/fiducia-cloud/fiducia-monorepo/blob/main/docs/operations/managed-beta-incident-runbook.md
+      - alert: FiduciaExternalProbeDuplicateSeries
+        expr: |
+          count by (cell, operation_class, result) (
+            fiducia_external_probe_total
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+          service: fiducia-managed-beta
+          owner: reliability
+        annotations:
+          summary: Duplicate managed-beta external probe authority detected
+          description: More than one time series claims the same bounded cell, operation class, and result identity. Remove duplicate producers before interpreting the SLI.
+          runbook_url: https://github.com/fiducia-cloud/fiducia-monorepo/blob/main/docs/operations/managed-beta-incident-runbook.md
