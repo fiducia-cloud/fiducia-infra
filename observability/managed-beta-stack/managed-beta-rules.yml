@@ -2,6 +2,9 @@ groups:
   - name: fiducia-managed-beta-recording
     interval: 30s
     rules:
+      # Contractual availability remains cell-scoped and combines all observed
+      # source samples. Source continuity records retain trusted probe_location
+      # so a missing or stale location cannot hide inside the aggregate.
       - record: fiducia:sli:public_availability_ratio:28d
         expr: |
           sum by (cell) (
@@ -58,8 +61,8 @@ groups:
           )
       - record: fiducia:sli:external_probe_location_count
         expr: |
-          count by (cell) (
-            count by (probe_location, cell) (
+          count by (cell, operation_class) (
+            count by (probe_location, cell, operation_class) (
               fiducia_external_probe_total
             )
           )
@@ -72,6 +75,11 @@ groups:
         expr: |
           time() - max by (probe_location, cell, operation_class) (
             fiducia_external_probe_last_success_unixtime
+          )
+      - record: fiducia:sli:external_probe_fresh_location_count
+        expr: |
+          count by (cell, operation_class) (
+            fiducia:sli:external_probe_freshness_seconds <= 300
           )
 
   - name: fiducia-managed-beta-alerts
@@ -99,15 +107,15 @@ groups:
           description: The six-hour burn rate exceeds 6x. Stop expansion and investigate before the 28-day budget is exhausted.
           runbook_url: https://github.com/fiducia-cloud/fiducia-monorepo/blob/main/docs/operations/managed-beta-incident-runbook.md
       - alert: FiduciaExternalProbeIndependenceLost
-        expr: fiducia:sli:external_probe_location_count < 2
+        expr: fiducia:sli:external_probe_fresh_location_count < 2
         for: 5m
         labels:
           severity: critical
           service: fiducia-managed-beta
           owner: reliability
         annotations:
-          summary: Fewer than two trusted external probe locations are observable
-          description: A managed-beta cell has fewer than two scrape-injected probe_location identities. Treat availability evidence as incomplete and freeze enrollment.
+          summary: Fewer than two trusted external probe locations are fresh
+          description: A managed-beta cell and operation class have fewer than two fresh scrape-injected probe_location identities. Treat availability evidence as incomplete and freeze enrollment.
           runbook_url: https://github.com/fiducia-cloud/fiducia-monorepo/blob/main/docs/operations/managed-beta-incident-runbook.md
       - alert: FiduciaExternalProbeSourceStale
         expr: fiducia:sli:external_probe_freshness_seconds > 300
