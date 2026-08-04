@@ -1,0 +1,97 @@
+# Private per-cluster Fiducia service PKI. cert-manager creates every private
+# key in Kubernetes Secrets; no certificate or key bytes are committed to Git.
+#
+# The root CA is deliberately local to one Kubernetes cluster. Cross-cluster
+# clients must trust an explicit reviewed bundle rather than assuming that all
+# three laptop/cloud clusters share one root.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: fiducia-selfsigned-bootstrap
+  annotations:
+    argocd.argoproj.io/sync-wave: "-4"
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: fiducia-internal-ca
+  namespace: fiducia
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+spec:
+  secretName: fiducia-internal-ca
+  commonName: fiducia-internal-ca
+  isCA: true
+  duration: 43800h # five years; CA rotation remains an explicit operator task
+  renewBefore: 4320h # alert and begin overlap six months before expiry
+  revisionHistoryLimit: 3
+  usages:
+    - digital signature
+    - cert sign
+    - crl sign
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Never
+  secretTemplate:
+    labels:
+      app.kubernetes.io/name: fiducia-internal-ca
+      app.kubernetes.io/component: pki
+      app.kubernetes.io/part-of: fiducia-cloud
+      fiducia.cloud/tls-role: root-ca
+  issuerRef:
+    name: fiducia-selfsigned-bootstrap
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: fiducia-internal-ca
+  namespace: fiducia
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  ca:
+    secretName: fiducia-internal-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: fiducia-load-balance-tls
+  namespace: fiducia
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  secretName: fiducia-load-balance-tls
+  duration: 720h # 30 days
+  renewBefore: 240h # rotate ten days before expiry
+  revisionHistoryLimit: 3
+  commonName: fiducia-load-balance-tls.fiducia.svc.cluster.local
+  dnsNames:
+    - fiducia-load-balance
+    - fiducia-load-balance.fiducia
+    - fiducia-load-balance.fiducia.svc
+    - fiducia-load-balance.fiducia.svc.cluster.local
+    - fiducia-load-balance-tls
+    - fiducia-load-balance-tls.fiducia
+    - fiducia-load-balance-tls.fiducia.svc
+    - fiducia-load-balance-tls.fiducia.svc.cluster.local
+  usages:
+    - server auth
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  secretTemplate:
+    labels:
+      app.kubernetes.io/name: fiducia-load-balance
+      app.kubernetes.io/component: serving-certificate
+      app.kubernetes.io/part-of: fiducia-cloud
+      fiducia.cloud/tls-role: serving
+  issuerRef:
+    name: fiducia-internal-ca
+    kind: Issuer
+    group: cert-manager.io
