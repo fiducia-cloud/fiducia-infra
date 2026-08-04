@@ -16,6 +16,7 @@ resources:
   - observability/otel-agent.yaml
   - observability/networkpolicy.yaml    # otel-agent egress (gateway + k8s API)
   - observability/tls-prometheus-rules.yaml
+  - observability/raft-durability-prometheus-rules.yaml
   - node/statefulset.yaml
   - node/service.yaml
   - node/networkpolicy.yaml
