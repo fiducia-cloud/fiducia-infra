@@ -2,6 +2,7 @@ name: laptop-fleet
 on:
   pull_request:
     paths:
+      - "acceptance/**"
       - "base/messaging/**"
       - "laptop/**"
       - "migration/**"
@@ -12,6 +13,7 @@ on:
       - "tools/plan-laptop-*.mjs"
       - "tools/verify-etcd-*.mjs"
       - "tools/validate-laptop-*.mjs"
+      - "tools/laptop-*.mjs"
       - "tools/laptop-*.test.mjs"
       - "tools/render.mjs"
       - "topology.toml"
@@ -21,6 +23,7 @@ on:
   push:
     branches: [main]
     paths:
+      - "acceptance/**"
       - "base/messaging/**"
       - "laptop/**"
       - "migration/**"
@@ -31,6 +34,7 @@ on:
       - "tools/plan-laptop-*.mjs"
       - "tools/verify-etcd-*.mjs"
       - "tools/validate-laptop-*.mjs"
+      - "tools/laptop-*.mjs"
       - "tools/laptop-*.test.mjs"
       - "tools/render.mjs"
       - "topology.toml"
@@ -65,7 +69,7 @@ jobs:
         run: |
           npm run check:laptop
           node tools/render-laptop-messaging.mjs --check
-      - name: Test laptop topology, GitOps, networking, messaging, backup evidence, host, and migration contracts
+      - name: Test laptop topology, GitOps, networking, messaging, backup evidence, host, migration, and acceptance contracts
         run: |
           node --test \
             tools/laptop-fleet.test.mjs \
@@ -73,7 +77,8 @@ jobs:
             tools/laptop-networking.test.mjs \
             tools/laptop-messaging-ha.test.mjs \
             tools/laptop-host-inventory.test.mjs \
-            tools/laptop-cloud-migration.test.mjs
+            tools/laptop-cloud-migration.test.mjs \
+            tools/laptop-acceptance.test.mjs
       - name: Validate laptop operation shell syntax
         run: |
           bash -n \
@@ -84,6 +89,7 @@ jobs:
             scripts/capture-laptop-etcd-snapshot-evidence.sh \
             scripts/restore-laptop-k3s-snapshot.sh \
             scripts/capture-laptop-host-evidence.sh \
+            scripts/capture-laptop-acceptance-checkpoint.sh \
             scripts/test-laptop-nats-configs.sh
       - name: Validate generated NATS configs with pinned server image
         run: bash scripts/test-laptop-nats-configs.sh
@@ -119,6 +125,31 @@ jobs:
             if (report.serverVersion !== "2.11.17") process.exit(1);
             if (report.serverCount !== 3 || report.quorum !== 2) process.exit(1);
             if (report.stream.replicas !== 3 || report.stream.maximumFollowerLag !== 0) process.exit(1);
+            if (!report.nonClaims.some((claim) => claim.includes("never production proof"))) process.exit(1);
+          '
+      - name: Rehearse DEN-946 physical acceptance planning and evidence validation
+        run: |
+          set -euo pipefail
+          node tools/laptop-acceptance.mjs --plan \
+            >/tmp/fiducia-laptop-acceptance-plan.json
+          node tools/laptop-acceptance.mjs \
+            --evidence acceptance/laptop-fleet/evidence.example.json \
+            --allow-example \
+            --now 2026-08-03T19:00:00Z \
+            >/tmp/fiducia-laptop-acceptance-report.json
+          node -e '
+            const fs = require("node:fs");
+            const plan = JSON.parse(fs.readFileSync("/tmp/fiducia-laptop-acceptance-plan.json", "utf8"));
+            const report = JSON.parse(fs.readFileSync("/tmp/fiducia-laptop-acceptance-report.json", "utf8"));
+            if (!plan.softwareOnly || plan.scenarioCount !== 28) process.exit(1);
+            if (!plan.invariants.faultsAreManual || !plan.invariants.soakRunsLast) process.exit(1);
+            if (plan.scenarios.some((scenario) => scenario.automatedFaultInjection)) process.exit(1);
+            if (report.status !== "passed" || !report.softwareOnly) process.exit(1);
+            if (report.evidenceMode !== "example") process.exit(1);
+            if (report.launchClassification !== "limited-production") process.exit(1);
+            if (report.scenarioCount !== 28 || report.passedScenarios !== 28) process.exit(1);
+            if (report.soakHours !== 168) process.exit(1);
+            if (!report.failureDomains.distinctSites || !report.failureDomains.distinctIsps || !report.failureDomains.distinctPowerDomains) process.exit(1);
             if (!report.nonClaims.some((claim) => claim.includes("never production proof"))) process.exit(1);
           '
       - name: Render every immutable root application
