@@ -32,8 +32,8 @@ const forbiddenIdentityTerms = [
   "cookie",
 ];
 
-describe("DEN-1404/DEN-1619 managed beta SLO package", () => {
-  it("declares availability records plus location continuity and safety alerts", async () => {
+describe("DEN-1404 managed beta SLO package", () => {
+  it("declares the required availability records and safety alerts", async () => {
     const rules = await text("managed-beta-rules.yml");
     const records = names(rules, "record");
     const alerts = names(rules, "alert");
@@ -46,9 +46,9 @@ describe("DEN-1404/DEN-1619 managed beta SLO package", () => {
       "fiducia:sli:public_availability_burn_rate:1h",
       "fiducia:sli:public_availability_burn_rate:6h",
       "fiducia:sli:public_availability_error_budget_remaining_ratio:28d",
+      "fiducia:sli:external_probe_location_count",
       "fiducia:sli:external_probe_freshness_seconds",
       "fiducia:sli:external_probe_last_success_age_seconds",
-      "fiducia:sli:external_probe_fresh_location_count",
     ]) {
       assert.ok(records.has(record), `missing recording rule ${record}`);
     }
@@ -56,7 +56,7 @@ describe("DEN-1404/DEN-1619 managed beta SLO package", () => {
     for (const alert of [
       "FiduciaPublicAvailabilityFastBurn",
       "FiduciaPublicAvailabilitySlowBurn",
-      "FiduciaExternalProbeInsufficientLocations",
+      "FiduciaExternalProbeIndependenceLost",
       "FiduciaExternalProbeSourceStale",
       "FiduciaExternalProbeNeverObserved",
       "FiduciaExternalProbeNoRecentSuccess",
@@ -70,15 +70,13 @@ describe("DEN-1404/DEN-1619 managed beta SLO package", () => {
     assert.match(rules, /fiducia:sli:public_unavailability_ratio:1h \/ 0\.005/u);
     assert.match(rules, /fiducia:sli:public_availability_burn_rate:1h > 14\.4/u);
     assert.match(rules, /fiducia:sli:public_availability_burn_rate:6h > 6/u);
-    assert.match(rules, /max by \(cell, operation_class, probe_location\)/u);
-    assert.match(rules, /fiducia:sli:external_probe_fresh_location_count < 2/u);
     assert.match(rules, /absent\(fiducia_external_probe_last_run_unixtime\)/u);
     assert.match(rules, /resets\(fiducia_external_probe_total\[1h\]\)/u);
-    assert.match(rules, /sum by \(cell, operation_class, probe_location, result\)/u);
-    assert.match(rules, /count by \(cell, operation_class, probe_location, result\)/u);
+    assert.match(rules, /count by \(probe_location, cell, operation_class, result\)/u);
+    assert.match(rules, /external_probe_location_count < 2/u);
   });
 
-  it("keeps rules and dashboard inside the bounded source-identity boundary", async () => {
+  it("keeps rules and dashboard queries inside the low-cardinality SLI boundary", async () => {
     const rules = await text("managed-beta-rules.yml");
     const dashboardText = await text("managed-beta-overview.json");
     const combined = `${rules}\n${dashboardText}`.toLowerCase();
@@ -97,47 +95,36 @@ describe("DEN-1404/DEN-1619 managed beta SLO package", () => {
         `unexpected metric family ${metric}`,
       );
     }
-
-    assert.match(rules, /probe_location/u);
-    assert.doesNotMatch(rules, /hostname|public_ip|site_address|cloud_account/u);
   });
 
-  it("ships a location-aware dashboard with honest no-data, sample, freshness, and burn views", async () => {
+  it("ships a parseable dashboard with honest no-data, sample, freshness, and burn views", async () => {
     const dashboard = JSON.parse(await text("managed-beta-overview.json"));
     assert.equal(dashboard.uid, "fiducia-managed-beta-slo");
     assert.equal(dashboard.title, "Fiducia managed beta SLO overview");
-    assert.equal(dashboard.version, 2);
     assert.ok(Array.isArray(dashboard.panels));
-    assert.ok(dashboard.panels.length >= 9);
+    assert.ok(dashboard.panels.length >= 8);
 
     const serialized = JSON.stringify(dashboard);
     for (const required of [
       "public_availability_ratio:28d",
       "public_availability_error_budget_remaining_ratio:28d",
       "public_availability_samples:28d",
+      "external_probe_location_count",
       "external_probe_freshness_seconds",
       "external_probe_last_success_age_seconds",
-      "external_probe_fresh_location_count",
       "public_availability_burn_rate:1h",
       "public_availability_burn_rate:6h",
       "fiducia_external_probe_total",
-      "probe_location",
       "NO DATA",
     ]) {
       assert.ok(serialized.includes(required), `dashboard missing ${required}`);
     }
 
     const variables = new Set(dashboard.templating.list.map((variable) => variable.name));
-    assert.deepEqual(
-      variables,
-      new Set(["cell", "operation_class", "probe_location"]),
-    );
-    assert.ok(
-      dashboard.panels.some((panel) => panel.title === "Fresh probe locations"),
-    );
+    assert.deepEqual(variables, new Set(["probe_location", "cell", "operation_class"]));
   });
 
-  it("renders as an overlay of the existing stack and mounts rules and dashboard", async () => {
+  it("renders as an overlay of the existing stack and mounts both rules and dashboard", async () => {
     const [kustomization, prometheusPatch, grafanaPatch] = await Promise.all([
       text("kustomization.yaml"),
       text("prometheus-config.patch.yaml"),
@@ -154,7 +141,7 @@ describe("DEN-1404/DEN-1619 managed beta SLO package", () => {
     assert.match(grafanaPatch, /\/var\/lib\/grafana\/dashboards\/managed-beta-overview\.json/u);
   });
 
-  it("documents maturity, two-location identity, and physical-independence limits", async () => {
+  it("documents the evidence progression and failure-independent probe requirement", async () => {
     const readme = await text("README.md");
     for (const required of [
       "specified",
@@ -162,11 +149,19 @@ describe("DEN-1404/DEN-1619 managed beta SLO package", () => {
       "queryable",
       "measured",
       "two failure-independent",
-      "probe_location",
       "Missing or stale sources",
-      "do not prove physical independence",
+      "do not meet that requirement",
     ]) {
       assert.ok(readme.includes(required), `README missing ${required}`);
     }
+  });
+
+  it("injects probe location only at the trusted scrape boundary", async () => {
+    const scrape = await text("external-probe-scrape.example.yml");
+    assert.match(scrape, /honor_labels: false/u);
+    assert.match(scrape, /probe_location: probe-a/u);
+    assert.match(scrape, /probe_location: probe-b/u);
+    assert.ok(!scrape.includes("honor_labels: true"));
+    assert.ok(!scrape.includes("tenant_id"));
   });
 });

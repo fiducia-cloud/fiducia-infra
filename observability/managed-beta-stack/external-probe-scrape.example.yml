@@ -1,0 +1,24 @@
+# Example only. Copy the reviewed targets into the central Prometheus
+# configuration through the deployment-specific secret/config path.
+#
+# probe_location is injected by the trusted monitoring configuration. The probe
+# textfile must not supply this label, and honor_labels must remain false so an
+# untrusted target cannot override monitoring-topology identity.
+- job_name: managed-beta-external-probes
+  honor_labels: false
+  scheme: https
+  metrics_path: /metrics
+  static_configs:
+    - targets: ["probe-a.example.invalid:9100"]
+      labels:
+        probe_location: probe-a
+    - targets: ["probe-b.example.invalid:9100"]
+      labels:
+        probe_location: probe-b
+  authorization:
+    credentials_file: /run/secrets/managed-beta-probe-scrape-token
+  tls_config:
+    ca_file: /run/secrets/managed-beta-probe-ca.crt
+    cert_file: /run/secrets/managed-beta-prometheus-client.crt
+    key_file: /run/secrets/managed-beta-prometheus-client.key
+    min_version: TLS13
