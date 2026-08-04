@@ -1,6 +1,11 @@
 # One connector runs in each independent laptop cluster. The tunnel is remotely
-# managed; public hostnames must route only to the local internal LB service.
-# The token is materialized out-of-band as cloudflare-tunnel-token/token.
+# managed; every public hostname must route to:
+#
+#   https://fiducia-load-balance-tls.fiducia.svc.cluster.local:8443
+#
+# with origin certificate verification enabled. The token is materialized
+# out-of-band as cloudflare-tunnel-token/token. The mounted CA is public trust
+# material only; the load-balancer private key never enters this pod.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -25,6 +30,8 @@ spec:
         app: fiducia-cloudflared
       annotations:
         fiducia.cloud/public-origin: outbound-cloudflare-tunnel
+        fiducia.cloud/origin-url: https://fiducia-load-balance-tls.fiducia.svc.cluster.local:8443
+        fiducia.cloud/origin-trust: fiducia-load-balance-tls/ca.crt
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 60
@@ -48,6 +55,8 @@ spec:
             - info
             - --metrics
             - 0.0.0.0:2000
+            - --origin-ca-pool
+            - /etc/fiducia/origin-ca/ca.crt
             - --edge-ip-version
             - "4"
             - run
@@ -84,10 +93,18 @@ spec:
             limits: { cpu: "500m", memory: "256Mi" }
           volumeMounts:
             - { name: tmp, mountPath: /tmp }
+            - { name: origin-ca, mountPath: /etc/fiducia/origin-ca, readOnly: true }
       volumes:
         - name: tmp
           emptyDir:
             sizeLimit: 64Mi
+        - name: origin-ca
+          secret:
+            secretName: fiducia-load-balance-tls
+            optional: false
+            defaultMode: 0444
+            items:
+              - { key: ca.crt, path: ca.crt }
 ---
 # Prevent voluntary disruption of the laptop's only connector. Physical host or
 # ISP loss is handled by the connectors in the other independent clusters.
@@ -103,7 +120,7 @@ spec:
       app: fiducia-cloudflared
 ---
 # The namespace baseline already provides DNS. This policy adds only the local
-# origin and the currently documented Cloudflare Tunnel edge endpoints. The
+# verified-HTTPS origin and the documented Cloudflare Tunnel edge endpoints. The
 # connector is forced to IPv4 so the allowlist and transport mode agree.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -132,13 +149,13 @@ spec:
       ports:
         - { protocol: TCP, port: 2000 }
   egress:
-    # Remote tunnel routes must target only this in-cluster origin.
+    # Remote tunnel routes must target only this in-cluster TLS origin.
     - to:
         - podSelector:
             matchLabels:
               app: fiducia-load-balance
       ports:
-        - { protocol: TCP, port: 8088 }
+        - { protocol: TCP, port: 8443 }
     # Cloudflare Tunnel transport endpoints, region 1 and region 2. Review this
     # list against Cloudflare's published endpoint document during upgrades.
     - to:
