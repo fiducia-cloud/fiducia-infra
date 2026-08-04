@@ -1,0 +1,108 @@
+name: managed-beta-probe-hosts
+on:
+  pull_request:
+    paths:
+      - "external-probes/managed-beta/**"
+      - "tools/render-managed-beta-probe-hosts.mjs"
+      - "tools/managed-beta-probe-hosts.test.mjs"
+      - "docs/managed-beta-independent-probe-hosts.md"
+      - "package.json"
+      - ".github/workflows/managed-beta-probe-hosts.yml"
+  push:
+    branches: [main]
+    paths:
+      - "external-probes/managed-beta/**"
+      - "tools/render-managed-beta-probe-hosts.mjs"
+      - "tools/managed-beta-probe-hosts.test.mjs"
+      - "docs/managed-beta-independent-probe-hosts.md"
+      - "package.json"
+      - ".github/workflows/managed-beta-probe-hosts.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Validate workflow
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: ./.github/workflows/managed-beta-probe-hosts.yml
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22.22.1"
+      - name: Run independence, hardening, scrape, and redaction tests
+        run: npm run check:managed-beta:probe-hosts
+      - name: Render the explicit example twice and prove deterministic output
+        run: |
+          set -euo pipefail
+          left="$(mktemp -d)"
+          right="$(mktemp -d)"
+          trap 'rm -rf "$left" "$right"' EXIT
+          node tools/render-managed-beta-probe-hosts.mjs \
+            --inventory external-probes/managed-beta/fleet.example.json \
+            --output-dir "$left" \
+            --allow-example >/tmp/managed-beta-probe-hosts-left.json
+          node tools/render-managed-beta-probe-hosts.mjs \
+            --inventory external-probes/managed-beta/fleet.example.json \
+            --output-dir "$right" \
+            --allow-example >/tmp/managed-beta-probe-hosts-right.json
+          diff -ruN "$left" "$right"
+          test "$(find "$left" -type f | wc -l)" -eq 44
+          cmp /tmp/managed-beta-probe-hosts-left.json /tmp/managed-beta-probe-hosts-right.json || {
+            # outputDir is intentionally different; compare stable report fields.
+            node -e '
+              const fs = require("node:fs");
+              const a = JSON.parse(fs.readFileSync("/tmp/managed-beta-probe-hosts-left.json", "utf8"));
+              const b = JSON.parse(fs.readFileSync("/tmp/managed-beta-probe-hosts-right.json", "utf8"));
+              delete a.outputDir;
+              delete b.outputDir;
+              if (JSON.stringify(a) !== JSON.stringify(b)) process.exit(1);
+            '
+          }
+      - name: Prove example inventory fails closed without the explicit flag
+        run: |
+          set -euo pipefail
+          output="$(mktemp -d)"
+          if node tools/render-managed-beta-probe-hosts.mjs \
+            --inventory external-probes/managed-beta/fleet.example.json \
+            --output-dir "$output"; then
+            echo "example inventory unexpectedly rendered without --allow-example" >&2
+            exit 1
+          fi
+      - name: Verify location identity exists only at the trusted scrape boundary
+        run: |
+          set -euo pipefail
+          output="$(mktemp -d)"
+          trap 'rm -rf "$output"' EXIT
+          node tools/render-managed-beta-probe-hosts.mjs \
+            --inventory external-probes/managed-beta/fleet.example.json \
+            --output-dir "$output" \
+            --allow-example >/dev/null
+          if grep -RIn -- 'probe_location' "$output/locations"; then
+            echo "probe runtime attempted to self-assert probe_location" >&2
+            exit 1
+          fi
+          test "$(grep -c 'honor_labels: false' "$output/central-prometheus/managed-beta-external-probes.yml")" -eq 2
+          test "$(grep -c 'probe_location: probe-' "$output/central-prometheus/managed-beta-external-probes.yml")" -eq 2
+          test "$(grep -c 'min_version: TLS13' "$output/central-prometheus/managed-beta-external-probes.yml")" -eq 2
+      - name: Reject credentials and private keys in tracked inventory and runbook
+        run: |
+          set -euo pipefail
+          if grep -RInE \
+            -- '-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|tskey-(auth|client)-[A-Za-z0-9_-]{16,}' \
+            external-probes/managed-beta \
+            docs/managed-beta-independent-probe-hosts.md; then
+            echo "credential/private-key pattern detected" >&2
+            exit 1
+          fi
