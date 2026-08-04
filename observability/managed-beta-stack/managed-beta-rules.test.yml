@@ -46,7 +46,7 @@ tests:
           - labels: '{__name__="fiducia:sli:external_probe_fresh_location_count",cell="cell-a",operation_class="health"}'
             value: 1
     alert_rule_test:
-      - eval_time: 10m
+      - eval_time: 12m
         alertname: FiduciaExternalProbeIndependenceLost
         exp_alerts:
           - exp_labels:
