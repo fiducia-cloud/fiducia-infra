@@ -1,0 +1,93 @@
+# Backend-neutral TLS rule bundle. The central Prometheus/Mimir sidecar selects
+# ConfigMaps labelled fiducia.cloud/prometheus-rules=true and loads rules.yaml.
+#
+# cert-manager metrics cover issuance/readiness/expiry. The Fiducia load-balancer
+# metrics are application contracts: the binary must increment them without
+# placing certificate bytes, bearer tokens, host headers, or customer values in
+# labels.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fiducia-internal-tls-prometheus-rules
+  namespace: fiducia
+  labels:
+    app.kubernetes.io/name: fiducia-internal-tls
+    app.kubernetes.io/component: prometheus-rules
+    app.kubernetes.io/part-of: fiducia-cloud
+    fiducia.cloud/prometheus-rules: "true"
+data:
+  rules.yaml: |
+    groups:
+      - name: fiducia-internal-tls-recording
+        interval: 30s
+        rules:
+          - record: fiducia:internal_tls_certificate_seconds_to_expiry
+            expr: |
+              min(
+                certmanager_certificate_expiration_timestamp_seconds{
+                  namespace="fiducia",
+                  name="fiducia-load-balance-tls"
+                }
+              ) - time()
+
+          - record: fiducia:internal_tls_handshake_failures:rate5m
+            expr: |
+              sum(rate(fiducia_tls_handshake_failures_total{service="fiducia-load-balance"}[5m]))
+
+          - record: fiducia:plaintext_downgrade_rejections:rate5m
+            expr: |
+              sum(rate(fiducia_plaintext_downgrade_rejections_total{service="fiducia-load-balance"}[5m]))
+
+      - name: fiducia-internal-tls-alerts
+        interval: 30s
+        rules:
+          - alert: FiduciaInternalTlsCertificateNotReady
+            expr: |
+              max(
+                certmanager_certificate_ready_status{
+                  namespace="fiducia",
+                  name="fiducia-load-balance-tls",
+                  condition="True"
+                }
+              ) < 1
+            for: 5m
+            labels:
+              severity: critical
+              service: fiducia-load-balance
+            annotations:
+              summary: Fiducia serving certificate is not Ready
+              description: Stop promotion. Inspect cert-manager Certificate, CertificateRequest, Issuer, and Secret events without printing private-key data.
+              runbook_url: https://github.com/fiducia-cloud/fiducia-infra/blob/main/docs/fiducia-internal-tls.md#certificate-not-ready
+
+          - alert: FiduciaInternalTlsCertificateExpiresSoon
+            expr: fiducia:internal_tls_certificate_seconds_to_expiry < 604800
+            for: 15m
+            labels:
+              severity: warning
+              service: fiducia-load-balance
+            annotations:
+              summary: Fiducia serving certificate expires in less than seven days
+              description: Verify cert-manager renewal, then roll load-balancer replicas one at a time after the renewed Secret is present.
+              runbook_url: https://github.com/fiducia-cloud/fiducia-infra/blob/main/docs/fiducia-internal-tls.md#leaf-rotation
+
+          - alert: FiduciaInternalTlsHandshakeFailures
+            expr: fiducia:internal_tls_handshake_failures:rate5m > 0
+            for: 5m
+            labels:
+              severity: warning
+              service: fiducia-load-balance
+            annotations:
+              summary: Verified Fiducia TLS handshakes are failing
+              description: Break down only by bounded failure class such as unknown_ca, hostname_mismatch, expired, revoked, or protocol. Never label by certificate, token, tenant, or client-supplied hostname.
+              runbook_url: https://github.com/fiducia-cloud/fiducia-infra/blob/main/docs/fiducia-internal-tls.md#handshake-failures
+
+          - alert: FiduciaPlaintextDowngradeAttempt
+            expr: fiducia:plaintext_downgrade_rejections:rate5m > 0
+            for: 5m
+            labels:
+              severity: warning
+              service: fiducia-load-balance
+            annotations:
+              summary: A client attempted plaintext Fiducia application traffic
+              description: Identify the bounded client/service identity from logs and migrate or block it. Port 8088 is health/426-only during the final migration stage.
+              runbook_url: https://github.com/fiducia-cloud/fiducia-infra/blob/main/docs/fiducia-internal-tls.md#plaintext-downgrade
