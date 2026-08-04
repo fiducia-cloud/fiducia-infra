@@ -1,0 +1,73 @@
+rule_files:
+  - managed-beta-rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: missing probe data is unknown and pages rather than looking healthy
+    interval: 1m
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: FiduciaExternalProbeNeverObserved
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: fiducia-managed-beta
+              owner: reliability
+            exp_annotations:
+              summary: No managed-beta external probe source is present
+              description: Prometheus has no last-run series. Do not interpret missing data as 100 percent availability.
+              runbook_url: https://github.com/fiducia-cloud/fiducia-monorepo/blob/main/docs/operations/managed-beta-incident-runbook.md
+
+  - name: a sustained total outage burns the 99.5 percent budget and raises both windows
+    interval: 1m
+    input_series:
+      - series: 'fiducia_external_probe_total{cell="cell-a",operation_class="health",result="success"}'
+        values: '0+0x360'
+      - series: 'fiducia_external_probe_total{cell="cell-a",operation_class="health",result="failure"}'
+        values: '0+1x360'
+      - series: 'fiducia_external_probe_last_run_unixtime{cell="cell-a",operation_class="health"}'
+        values: '0+60x360'
+      - series: 'fiducia_external_probe_last_success_unixtime{cell="cell-a",operation_class="health"}'
+        values: '0+0x360'
+    promql_expr_test:
+      - expr: 'fiducia:sli:public_availability_ratio:28d'
+        eval_time: 6h
+        exp_samples:
+          - labels: '{__name__="fiducia:sli:public_availability_ratio:28d",cell="cell-a"}'
+            value: 0
+      - expr: 'fiducia:sli:public_availability_burn_rate:1h'
+        eval_time: 6h
+        exp_samples:
+          - labels: '{__name__="fiducia:sli:public_availability_burn_rate:1h",cell="cell-a"}'
+            value: 200
+      - expr: 'fiducia:sli:public_availability_burn_rate:6h'
+        eval_time: 6h
+        exp_samples:
+          - labels: '{__name__="fiducia:sli:public_availability_burn_rate:6h",cell="cell-a"}'
+            value: 200
+    alert_rule_test:
+      - eval_time: 6h
+        alertname: FiduciaPublicAvailabilityFastBurn
+        exp_alerts:
+          - exp_labels:
+              cell: cell-a
+              severity: critical
+              service: fiducia-managed-beta
+              owner: reliability
+            exp_annotations:
+              summary: Managed-beta public availability is consuming its error budget rapidly
+              description: The one-hour burn rate exceeds 14.4x. Freeze rollout and inspect bounded external-probe results, ingress health, quorum, and recent changes.
+              runbook_url: https://github.com/fiducia-cloud/fiducia-monorepo/blob/main/docs/operations/managed-beta-incident-runbook.md
+      - eval_time: 6h
+        alertname: FiduciaPublicAvailabilitySlowBurn
+        exp_alerts:
+          - exp_labels:
+              cell: cell-a
+              severity: warning
+              service: fiducia-managed-beta
+              owner: reliability
+            exp_annotations:
+              summary: Managed-beta public availability is consuming its error budget persistently
+              description: The six-hour burn rate exceeds 6x. Stop expansion and investigate before the 28-day budget is exhausted.
+              runbook_url: https://github.com/fiducia-cloud/fiducia-monorepo/blob/main/docs/operations/managed-beta-incident-runbook.md
