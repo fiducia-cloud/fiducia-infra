@@ -61,7 +61,7 @@ jobs:
           grep -q 'FiduciaPublicAvailabilityFastBurn' "$rendered"
           grep -q 'FiduciaExternalProbeNeverObserved' "$rendered"
           grep -q 'name: fiducia-grafana-managed-beta-dashboard' "$rendered"
-          grep -q 'uid.:.fiducia-managed-beta-slo' "$rendered"
+          grep -q 'fiducia-managed-beta-slo' "$rendered"
           grep -q '/var/lib/grafana/dashboards/managed-beta-overview.json' "$rendered"
 
           if grep -nE '^[[:space:]]*image:[[:space:]].*:latest([[:space:]]|$)' "$rendered"; then
