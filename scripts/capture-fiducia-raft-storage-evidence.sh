@@ -76,7 +76,7 @@ kubectl --context "$context" -n fiducia get statefulsets fiducia-node fiducia-br
         metadata: {
           name: .metadata.name,
           generation: .metadata.generation,
-          labels: (.metadata.labels // {} | with_entries(select(.key | startswith("fiducia.cloud/") or .key == "app")))
+          labels: (.metadata.labels // {} | with_entries(select((.key | startswith("fiducia.cloud/")) or (.key == "app"))))
         },
         spec: {
           serviceName: .spec.serviceName,
@@ -86,7 +86,7 @@ kubectl --context "$context" -n fiducia get statefulsets fiducia-node fiducia-br
           persistentVolumeClaimRetentionPolicy: .spec.persistentVolumeClaimRetentionPolicy,
           volumeClaimTemplates: [.spec.volumeClaimTemplates[]? | {
             name: .metadata.name,
-            labels: (.metadata.labels // {} | with_entries(select(.key | startswith("fiducia.cloud/") or .key == "app"))),
+            labels: (.metadata.labels // {} | with_entries(select((.key | startswith("fiducia.cloud/")) or (.key == "app")))),
             accessModes: .spec.accessModes,
             volumeMode: (.spec.volumeMode // "Filesystem"),
             storageClassName: .spec.storageClassName,
