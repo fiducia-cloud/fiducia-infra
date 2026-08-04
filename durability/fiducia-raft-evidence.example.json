@@ -1,0 +1,273 @@
+{
+  "schemaVersion": 1,
+  "evidenceMode": "example",
+  "policyId": "den-437-fiducia-raft-durability-v1",
+  "observedAt": "2026-08-03T20:00:00Z",
+  "campaignStartedAt": "2026-08-03T12:00:00Z",
+  "campaignEndedAt": "2026-08-03T19:00:00Z",
+  "gitRevision": "1111111111111111111111111111111111111111",
+  "substrateClassification": "temporary-laptop",
+  "clusters": {
+    "laptop-aws-sim": {
+      "substrate": "laptop-k3s",
+      "hostRootEncrypted": true,
+      "workloads": {
+        "fiducia-node": {
+          "dataDir": "/var/lib/fiducia",
+          "storageSource": "persistentVolumeClaim",
+          "storageClass": "local-path",
+          "capacityGiB": 10,
+          "accessMode": "ReadWriteOnce",
+          "bound": true,
+          "retentionWhenDeleted": "Retain",
+          "retentionWhenScaled": "Retain",
+          "encryptedAtRest": true,
+          "encryptionLayer": "host-luks2",
+          "nodeReplacementDurable": false,
+          "expansionSupported": false,
+          "maximumObservedP99WriteLatencyMilliseconds": 8,
+          "finalMemberLagEntries": 0
+        },
+        "fiducia-brain": {
+          "dataDir": "/var/lib/fiducia-brain",
+          "storageSource": "persistentVolumeClaim",
+          "storageClass": "local-path",
+          "capacityGiB": 2,
+          "accessMode": "ReadWriteOnce",
+          "bound": true,
+          "retentionWhenDeleted": "Retain",
+          "retentionWhenScaled": "Retain",
+          "encryptedAtRest": true,
+          "encryptionLayer": "host-luks2",
+          "nodeReplacementDurable": false,
+          "expansionSupported": false,
+          "maximumObservedP99WriteLatencyMilliseconds": 7,
+          "finalMemberLagEntries": 0
+        }
+      }
+    },
+    "laptop-gcp-sim": {
+      "substrate": "laptop-k3s",
+      "hostRootEncrypted": true,
+      "workloads": {
+        "fiducia-node": {
+          "dataDir": "/var/lib/fiducia",
+          "storageSource": "persistentVolumeClaim",
+          "storageClass": "local-path",
+          "capacityGiB": 10,
+          "accessMode": "ReadWriteOnce",
+          "bound": true,
+          "retentionWhenDeleted": "Retain",
+          "retentionWhenScaled": "Retain",
+          "encryptedAtRest": true,
+          "encryptionLayer": "host-luks2",
+          "nodeReplacementDurable": false,
+          "expansionSupported": false,
+          "maximumObservedP99WriteLatencyMilliseconds": 9,
+          "finalMemberLagEntries": 0
+        },
+        "fiducia-brain": {
+          "dataDir": "/var/lib/fiducia-brain",
+          "storageSource": "persistentVolumeClaim",
+          "storageClass": "local-path",
+          "capacityGiB": 2,
+          "accessMode": "ReadWriteOnce",
+          "bound": true,
+          "retentionWhenDeleted": "Retain",
+          "retentionWhenScaled": "Retain",
+          "encryptedAtRest": true,
+          "encryptionLayer": "host-luks2",
+          "nodeReplacementDurable": false,
+          "expansionSupported": false,
+          "maximumObservedP99WriteLatencyMilliseconds": 8,
+          "finalMemberLagEntries": 0
+        }
+      }
+    },
+    "laptop-azure-sim": {
+      "substrate": "laptop-k3s",
+      "hostRootEncrypted": true,
+      "workloads": {
+        "fiducia-node": {
+          "dataDir": "/var/lib/fiducia",
+          "storageSource": "persistentVolumeClaim",
+          "storageClass": "local-path",
+          "capacityGiB": 10,
+          "accessMode": "ReadWriteOnce",
+          "bound": true,
+          "retentionWhenDeleted": "Retain",
+          "retentionWhenScaled": "Retain",
+          "encryptedAtRest": true,
+          "encryptionLayer": "host-luks2",
+          "nodeReplacementDurable": false,
+          "expansionSupported": false,
+          "maximumObservedP99WriteLatencyMilliseconds": 6,
+          "finalMemberLagEntries": 0
+        },
+        "fiducia-brain": {
+          "dataDir": "/var/lib/fiducia-brain",
+          "storageSource": "persistentVolumeClaim",
+          "storageClass": "local-path",
+          "capacityGiB": 2,
+          "accessMode": "ReadWriteOnce",
+          "bound": true,
+          "retentionWhenDeleted": "Retain",
+          "retentionWhenScaled": "Retain",
+          "encryptedAtRest": true,
+          "encryptionLayer": "host-luks2",
+          "nodeReplacementDurable": false,
+          "expansionSupported": false,
+          "maximumObservedP99WriteLatencyMilliseconds": 7,
+          "finalMemberLagEntries": 0
+        }
+      }
+    }
+  },
+  "encryptionKeyring": {
+    "activeKeyId": "example-key-2026-07",
+    "requiredKeyIds": [
+      "example-key-2026-01",
+      "example-key-2026-07"
+    ],
+    "custodyProofId": "example-proof-key-custody"
+  },
+  "backups": [
+    {
+      "workload": "fiducia-node",
+      "applicationConsistent": true,
+      "snapshotIntervalSeconds": 3600,
+      "lastSuccessAt": "2026-08-03T18:30:00Z",
+      "encryptedBeforeExternalStorage": true,
+      "independentDestination": true,
+      "immutableRetention": true,
+      "checksumVerified": true,
+      "dailyRestorePoints": 35,
+      "monthlyRestorePoints": 12,
+      "quarterlyRestorePoints": 4,
+      "metadata": {
+        "clusterId": "fiducia-prod",
+        "memberSet": [
+          "fiducia-node-0.laptop-aws-sim",
+          "fiducia-node-0.laptop-gcp-sim",
+          "fiducia-node-0.laptop-azure-sim"
+        ],
+        "appliedIndex": 120045,
+        "revision": 99110,
+        "schemaVersion": 1,
+        "createdAt": "2026-08-03T18:30:00Z",
+        "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "activeKeyId": "example-key-2026-07",
+        "requiredKeyIds": [
+          "example-key-2026-01",
+          "example-key-2026-07"
+        ],
+        "artifactId": "example-backup-fiducia-node-20260803t183000z"
+      }
+    },
+    {
+      "workload": "fiducia-brain",
+      "applicationConsistent": true,
+      "snapshotIntervalSeconds": 3600,
+      "lastSuccessAt": "2026-08-03T18:35:00Z",
+      "encryptedBeforeExternalStorage": true,
+      "independentDestination": true,
+      "immutableRetention": true,
+      "checksumVerified": true,
+      "dailyRestorePoints": 35,
+      "monthlyRestorePoints": 12,
+      "quarterlyRestorePoints": 4,
+      "metadata": {
+        "clusterId": "fiducia-prod-brain",
+        "memberSet": [
+          "fiducia-brain-0.laptop-aws-sim",
+          "fiducia-brain-0.laptop-gcp-sim",
+          "fiducia-brain-0.laptop-azure-sim"
+        ],
+        "appliedIndex": 88012,
+        "revision": 77100,
+        "schemaVersion": 1,
+        "createdAt": "2026-08-03T18:35:00Z",
+        "checksum": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "activeKeyId": "example-key-2026-07",
+        "requiredKeyIds": [
+          "example-key-2026-01",
+          "example-key-2026-07"
+        ],
+        "artifactId": "example-backup-fiducia-brain-20260803t183500z"
+      }
+    }
+  ],
+  "cleanRoomRestore": {
+    "isolatedCluster": true,
+    "newPersistentVolumes": true,
+    "copiedMutableLiveData": false,
+    "startedAt": "2026-08-03T12:00:00Z",
+    "completedAt": "2026-08-03T17:00:00Z",
+    "rtoSeconds": 18000,
+    "rpoSeconds": 1800,
+    "providedKeyIds": [
+      "example-key-2026-01",
+      "example-key-2026-07"
+    ],
+    "representativeValueCount": 25,
+    "semantics": {
+      "representativeValues": true,
+      "revisions": true,
+      "casSuccess": true,
+      "casFailure": true,
+      "authKeyRecords": true,
+      "tokenRevocations": true,
+      "rotationState": true,
+      "encryptionKeyIds": true
+    },
+    "proofId": "example-proof-clean-room-restore"
+  },
+  "scenarios": {
+    "single-member-loss": {
+      "passed": true,
+      "quorumPreserved": true,
+      "proofId": "example-scenario-single-member-loss"
+    },
+    "single-member-replacement": {
+      "passed": true,
+      "quorumPreserved": true,
+      "rtoSeconds": 3600,
+      "proofId": "example-scenario-single-member-replacement"
+    },
+    "interrupted-migration-rollback": {
+      "passed": true,
+      "quorumPreserved": true,
+      "proofId": "example-scenario-interrupted-migration-rollback"
+    },
+    "clean-room-restore": {
+      "passed": true,
+      "quorumPreserved": true,
+      "proofId": "example-scenario-clean-room-restore"
+    },
+    "missing-historical-key-fails-closed": {
+      "passed": true,
+      "quorumPreserved": true,
+      "proofId": "example-scenario-missing-historical-key-fails-closed"
+    }
+  },
+  "proofs": {
+    "storage-class": "example-proof-storage-class",
+    "application-snapshot": "example-proof-application-snapshot",
+    "external-backup": "example-proof-external-backup",
+    "backup-monitoring": "example-proof-backup-monitoring",
+    "clean-room-restore": "example-proof-clean-room-restore-reference",
+    "key-custody": "example-proof-key-custody-reference",
+    "deletion-control": "example-proof-deletion-control"
+  },
+  "findings": [],
+  "approvals": {
+    "operator": {
+      "identity": "example-operator",
+      "approvedAt": "2026-08-03T19:10:00Z"
+    },
+    "reviewer": {
+      "identity": "example-reviewer",
+      "approvedAt": "2026-08-03T19:20:00Z"
+    }
+  }
+}

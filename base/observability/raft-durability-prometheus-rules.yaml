@@ -1,0 +1,182 @@
+# Backend-neutral Raft durability rules. The central Prometheus/Mimir sidecar can
+# select ConfigMaps with fiducia.cloud/prometheus-rules=true and load rules.yaml.
+# Application metric names below are contracts for fiducia-node/brain and the
+# approved backup controller. Labels must remain bounded by workload, cluster,
+# result, and failure class; never use key name, tenant, member UUID, backup URL,
+# certificate, token, or customer value as a metric label.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fiducia-raft-durability-prometheus-rules
+  namespace: fiducia
+  labels:
+    app.kubernetes.io/name: fiducia-raft-durability
+    app.kubernetes.io/component: prometheus-rules
+    app.kubernetes.io/part-of: fiducia-cloud
+    fiducia.cloud/prometheus-rules: "true"
+data:
+  rules.yaml: |
+    groups:
+      - name: fiducia-raft-durability-recording
+        interval: 30s
+        rules:
+          - record: fiducia:raft_pvc_usage_ratio
+            expr: |
+              max by (namespace, persistentvolumeclaim) (
+                kubelet_volume_stats_used_bytes{
+                  namespace="fiducia",
+                  persistentvolumeclaim=~"data-fiducia-(node|brain)-.*"
+                }
+                /
+                clamp_min(
+                  kubelet_volume_stats_capacity_bytes{
+                    namespace="fiducia",
+                    persistentvolumeclaim=~"data-fiducia-(node|brain)-.*"
+                  },
+                  1
+                )
+              )
+
+          - record: fiducia:raft_storage_write_p99_seconds:rate5m
+            expr: |
+              histogram_quantile(
+                0.99,
+                sum by (le, workload, cluster) (
+                  rate(fiducia_raft_storage_write_duration_seconds_bucket[5m])
+                )
+              )
+
+          - record: fiducia:raft_member_lag_entries:max
+            expr: max by (workload, cluster) (fiducia_raft_member_lag_entries)
+
+          - record: fiducia:raft_backup_age_seconds
+            expr: |
+              time()
+              - max by (workload, cluster) (
+                  fiducia_raft_backup_last_success_timestamp_seconds
+                )
+
+          - record: fiducia:raft_restore_test_age_seconds
+            expr: |
+              time()
+              - max by (workload) (
+                  fiducia_raft_restore_test_last_success_timestamp_seconds
+                )
+
+      - name: fiducia-raft-durability-alerts
+        interval: 30s
+        rules:
+          - alert: FiduciaRaftPvcNotBound
+            expr: |
+              kube_persistentvolumeclaim_status_phase{
+                namespace="fiducia",
+                persistentvolumeclaim=~"data-fiducia-(node|brain)-.*",
+                phase=~"Pending|Lost"
+              } == 1
+            for: 5m
+            labels:
+              severity: critical
+              service: fiducia-raft
+            annotations:
+              summary: An authoritative Fiducia Raft PVC is not Bound
+              description: Stop rollout or replacement. Verify the StorageClass, topology, capacity, encryption, and retained prior PVC before changing any other voter.
+              runbook_url: https://github.com/fiducia-cloud/fiducia-infra/blob/main/docs/fiducia-raft-durability.md#pvc-not-bound
+
+          - alert: FiduciaRaftPvcUsageWarning
+            expr: fiducia:raft_pvc_usage_ratio > 0.70
+            for: 15m
+            labels:
+              severity: warning
+              service: fiducia-raft
+            annotations:
+              summary: Fiducia Raft PVC usage is above 70%
+              description: Verify snapshot and backup health, then plan one-volume-at-a-time expansion before the 85% critical threshold.
+              runbook_url: https://github.com/fiducia-cloud/fiducia-infra/blob/main/docs/fiducia-raft-durability.md#disk-capacity
+
+          - alert: FiduciaRaftPvcUsageCritical
+            expr: fiducia:raft_pvc_usage_ratio > 0.85
+            for: 5m
+            labels:
+              severity: critical
+              service: fiducia-raft
+            annotations:
+              summary: Fiducia Raft PVC usage is above 85%
+              description: Stop nonessential writes and rollout activity. Preserve quorum and backups; do not delete WAL, snapshots, PVCs, or historical encryption keys as an emergency shortcut.
+              runbook_url: https://github.com/fiducia-cloud/fiducia-infra/blob/main/docs/fiducia-raft-durability.md#disk-capacity
+
+          - alert: FiduciaRaftStorageWriteLatencyHigh
+            expr: fiducia:raft_storage_write_p99_seconds:rate5m > 0.025
+            for: 15m
+            labels:
+              severity: warning
+              service: fiducia-raft
+            annotations:
+              summary: Fiducia Raft storage p99 write latency is above 25ms
+              description: Check disk health, thermal throttling, queueing, snapshot work, and member lag before changing timeouts or moving another voter.
+              runbook_url: https://github.com/fiducia-cloud/fiducia-infra/blob/main/docs/fiducia-raft-durability.md#storage-latency
+
+          - alert: FiduciaRaftMemberLagging
+            expr: fiducia:raft_member_lag_entries:max > 0
+            for: 10m
+            labels:
+              severity: warning
+              service: fiducia-raft
+            annotations:
+              summary: A Fiducia Raft member is not fully caught up
+              description: Do not proceed to another member migration, restart, upgrade, restore, or key rotation until committed/applied indexes converge.
+              runbook_url: https://github.com/fiducia-cloud/fiducia-infra/blob/main/docs/fiducia-raft-durability.md#member-lag
+
+          - alert: FiduciaRaftApplicationSnapshotOld
+            expr: max by (workload, cluster) (fiducia_raft_snapshot_age_seconds) > 7200
+            for: 15m
+            labels:
+              severity: warning
+              service: fiducia-raft
+            annotations:
+              summary: Fiducia application-consistent snapshot is older than two hours
+              description: Verify the application snapshot/WAL path rather than copying a live mutable data directory.
+              runbook_url: https://github.com/fiducia-cloud/fiducia-infra/blob/main/docs/fiducia-raft-durability.md#backup-contract
+
+          - alert: FiduciaRaftBackupOld
+            expr: fiducia:raft_backup_age_seconds > 93600
+            for: 15m
+            labels:
+              severity: critical
+              service: fiducia-raft
+            annotations:
+              summary: No successful independent Fiducia Raft backup in 26 hours
+              description: Treat the cluster as lacking a production recovery point until encryption, checksum, immutability, destination independence, and required key IDs are reverified.
+              runbook_url: https://github.com/fiducia-cloud/fiducia-infra/blob/main/docs/fiducia-raft-durability.md#backup-contract
+
+          - alert: FiduciaRaftBackupFailure
+            expr: sum by (workload, cluster, failure_class) (increase(fiducia_raft_backup_failures_total[15m])) > 0
+            for: 5m
+            labels:
+              severity: critical
+              service: fiducia-raft
+            annotations:
+              summary: Fiducia Raft backup failed
+              description: Inspect the bounded failure class and preserve the prior immutable restore points. Never emit backup URLs, key IDs, credentials, or KV values in metric labels.
+              runbook_url: https://github.com/fiducia-cloud/fiducia-infra/blob/main/docs/fiducia-raft-durability.md#backup-failure
+
+          - alert: FiduciaRaftBackupMissingHistoricalKey
+            expr: max by (workload, cluster) (fiducia_raft_backup_missing_required_key_ids) > 0
+            for: 5m
+            labels:
+              severity: critical
+              service: fiducia-raft
+            annotations:
+              summary: A Fiducia backup is missing a required historical encryption key ID
+              description: Stop deletion and key retirement. A restore must fail closed until the complete decryption key set is available through approved custody.
+              runbook_url: https://github.com/fiducia-cloud/fiducia-infra/blob/main/docs/fiducia-raft-durability.md#encryption-key-custody
+
+          - alert: FiduciaRaftRestoreTestOld
+            expr: fiducia:raft_restore_test_age_seconds > 7776000
+            for: 1h
+            labels:
+              severity: warning
+              service: fiducia-raft
+            annotations:
+              summary: Fiducia clean-room restore proof is older than 90 days
+              description: Schedule an isolated restore that proves representative values, revisions, CAS behavior, auth records, revocations, rotations, and all encryption key IDs.
+              runbook_url: https://github.com/fiducia-cloud/fiducia-infra/blob/main/docs/fiducia-raft-durability.md#clean-room-restore
