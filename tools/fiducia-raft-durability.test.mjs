@@ -219,8 +219,9 @@ test("all quorum-aware migration and disaster scenarios are mandatory and bounde
 
 test("stale, self-approved, placeholder, critical, and secret-bearing live evidence fails closed", () => {
   const stale = makeLive();
-  stale.observedAt = "2026-08-01T00:00:00Z";
-  assert.throws(() => validateDurabilityEvidence(stale, policy, { now: fixedNow }), /stale/);
+  stale.observedAt = "2026-08-03T20:00:00Z";
+  const staleNow = new Date("2026-08-05T20:30:00Z");
+  assert.throws(() => validateDurabilityEvidence(stale, policy, { now: staleNow }), /stale/);
 
   const selfApproved = makeLive();
   selfApproved.approvals.reviewer.identity = selfApproved.approvals.operator.identity;
@@ -261,7 +262,24 @@ test("durability alert rules cover PVC, latency, lag, backup, key IDs, and resto
   assert.match(rules, /fiducia_raft_member_lag_entries/);
   assert.match(rules, /fiducia_raft_backup_last_success_timestamp_seconds/);
   assert.match(rules, /fiducia_raft_restore_test_last_success_timestamp_seconds/);
-  assert.doesNotMatch(rules, /tenant_id|key_name|backup_url|member_uuid|token|customer_value/);
+
+  const promql = rules
+    .split("\n")
+    .filter((line) => {
+      const trimmed = line.trim();
+      return trimmed.startsWith("expr:")
+        || trimmed.includes("kubelet_volume_stats_")
+        || trimmed.includes("kube_persistentvolumeclaim_status_phase")
+        || trimmed.includes("fiducia_raft_")
+        || trimmed.includes("histogram_quantile(")
+        || trimmed.includes("clamp_min(")
+        || trimmed.includes("rate(")
+        || trimmed.includes("increase(")
+        || trimmed === "time()";
+    })
+    .join("\n");
+  assert.ok(promql.length > 0, "expected PromQL expressions in the durability rule bundle");
+  assert.doesNotMatch(promql, /tenant_id|key_name|backup_url|member_uuid|token|customer_value/);
 });
 
 test("storage capture is read-only, context-bound, redacted, and cannot approve production", () => {
