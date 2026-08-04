@@ -48,6 +48,16 @@ jobs:
       - name: Validate rule, dashboard, cardinality, and evidence contracts
         run: node --test tools/managed-beta-slo.test.mjs
 
+      - name: Validate PromQL and alerting rule syntax with pinned promtool
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --entrypoint /bin/promtool \
+            --volume "$PWD/observability/managed-beta-stack:/rules:ro" \
+            prom/prometheus@sha256:b1935d181b6dd8e9c827705e89438815337e1b10ae35605126f05f44e5c6940f \
+            check rules /rules/managed-beta-rules.yml
+
       - name: Render the managed-beta observability overlay
         shell: bash
         run: |
