@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fiducia-grafana
+spec:
+  template:
+    spec:
+      containers:
+        - name: grafana
+          volumeMounts:
+            - name: managed-beta-dashboard
+              mountPath: /var/lib/grafana/dashboards/managed-beta-overview.json
+              subPath: managed-beta-overview.json
+              readOnly: true
+      volumes:
+        - name: managed-beta-dashboard
+          configMap:
+            name: fiducia-grafana-managed-beta-dashboard

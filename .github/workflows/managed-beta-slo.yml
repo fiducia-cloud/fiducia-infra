@@ -1,0 +1,94 @@
+name: DEN-1404 managed beta SLO rules
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/managed-beta-slo.yml"
+      - "observability/managed-beta-stack/**"
+      - "observability/cron-stack/**"
+      - "tools/managed-beta-slo.test.mjs"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/managed-beta-slo.yml"
+      - "observability/managed-beta-stack/**"
+      - "observability/cron-stack/**"
+      - "tools/managed-beta-slo.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate this workflow
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/managed-beta-slo.yml
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.22.1"
+
+      - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v4
+        with:
+          version: v1.32.2
+
+      - name: Validate rule, dashboard, cardinality, and evidence contracts
+        run: node --test tools/managed-beta-slo.test.mjs
+
+      - name: Validate PromQL, alert syntax, no-data, and burn-rate behavior with pinned promtool
+        shell: bash
+        run: |
+          set -euo pipefail
+          image=prom/prometheus@sha256:b1935d181b6dd8e9c827705e89438815337e1b10ae35605126f05f44e5c6940f
+          docker run --rm \
+            --entrypoint /bin/promtool \
+            --volume "$PWD/observability/managed-beta-stack:/rules:ro" \
+            "$image" \
+            check rules /rules/managed-beta-rules.yml
+          docker run --rm \
+            --entrypoint /bin/promtool \
+            --volume "$PWD/observability/managed-beta-stack:/rules:ro" \
+            --workdir /rules \
+            "$image" \
+            test rules managed-beta-rules.test.yml
+
+      - name: Render the managed-beta observability overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          rendered="$RUNNER_TEMP/fiducia-managed-beta-observability.yaml"
+          kubectl kustomize observability/managed-beta-stack > "$rendered"
+
+          grep -q 'name: fiducia-prometheus-config' "$rendered"
+          grep -q 'managed-beta-rules.yml: |' "$rendered"
+          grep -q 'fiducia:sli:public_availability_ratio:28d' "$rendered"
+          grep -q 'FiduciaPublicAvailabilityFastBurn' "$rendered"
+          grep -q 'FiduciaExternalProbeNeverObserved' "$rendered"
+          grep -q 'name: fiducia-grafana-managed-beta-dashboard' "$rendered"
+          grep -q 'fiducia-managed-beta-slo' "$rendered"
+          grep -q '/var/lib/grafana/dashboards/managed-beta-overview.json' "$rendered"
+
+          if grep -nE '^[[:space:]]*image:[[:space:]].*:latest([[:space:]]|$)' "$rendered"; then
+            echo 'managed-beta stack must not use latest image tags' >&2
+            exit 1
+          fi
+          if grep -niE '(password|secret):[[:space:]]+(admin|changeme|password)' "$rendered"; then
+            echo 'literal bootstrap credentials are forbidden' >&2
+            exit 1
+          fi
+
+      - name: Audit JavaScript dependencies
+        run: npm audit
