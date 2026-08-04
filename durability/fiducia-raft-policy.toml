@@ -12,6 +12,7 @@ disk_warning_percent = 70
 disk_critical_percent = 85
 maximum_p99_write_latency_milliseconds = 25
 maximum_final_member_lag_entries = 0
+maximum_observation_age_hours = 24
 maximum_backup_age_hours = 26
 maximum_restore_test_age_days = 90
 maximum_critical_rpo_seconds = 3600
