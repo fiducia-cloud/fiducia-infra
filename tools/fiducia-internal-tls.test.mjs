@@ -22,10 +22,11 @@ function filesUnder(relativeRoot) {
   return result;
 }
 
-test("cert-manager PKI is self-contained, short-lived at the leaf, and private-key free in Git", () => {
+test("cert-manager PKI is namespaced, short-lived at the leaf, and private-key free in Git", () => {
   const manifest = read("base/tls/fiducia-internal-pki.yaml");
-  assert.match(manifest, /kind: ClusterIssuer[\s\S]*name: fiducia-selfsigned-bootstrap[\s\S]*selfSigned: \{\}/);
+  assert.match(manifest, /kind: Issuer[\s\S]*name: fiducia-selfsigned-bootstrap[\s\S]*namespace: fiducia[\s\S]*selfSigned: \{\}/);
   assert.match(manifest, /kind: Certificate[\s\S]*name: fiducia-internal-ca[\s\S]*isCA: true/);
+  assert.match(manifest, /name: fiducia-selfsigned-bootstrap[\s\S]*kind: Issuer[\s\S]*group: cert-manager\.io/);
   assert.match(manifest, /duration: 43800h/);
   assert.match(manifest, /renewBefore: 4320h/);
   assert.match(manifest, /rotationPolicy: Never/);
@@ -39,6 +40,7 @@ test("cert-manager PKI is self-contained, short-lived at the leaf, and private-k
   ]) {
     assert.ok(manifest.includes(`- ${dnsName}`), `missing DNS SAN ${dnsName}`);
   }
+  assert.doesNotMatch(manifest, /kind: ClusterIssuer/);
   assert.doesNotMatch(manifest, /kind: Secret/);
   assert.doesNotMatch(manifest, /-----BEGIN (?:CERTIFICATE|PRIVATE KEY)-----/);
   assert.doesNotMatch(manifest, /tls\.key:\s*\|/);
