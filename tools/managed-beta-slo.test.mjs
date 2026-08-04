@@ -46,6 +46,7 @@ describe("DEN-1404 managed beta SLO package", () => {
       "fiducia:sli:public_availability_burn_rate:1h",
       "fiducia:sli:public_availability_burn_rate:6h",
       "fiducia:sli:public_availability_error_budget_remaining_ratio:28d",
+      "fiducia:sli:external_probe_location_count",
       "fiducia:sli:external_probe_freshness_seconds",
       "fiducia:sli:external_probe_last_success_age_seconds",
     ]) {
@@ -55,6 +56,7 @@ describe("DEN-1404 managed beta SLO package", () => {
     for (const alert of [
       "FiduciaPublicAvailabilityFastBurn",
       "FiduciaPublicAvailabilitySlowBurn",
+      "FiduciaExternalProbeIndependenceLost",
       "FiduciaExternalProbeSourceStale",
       "FiduciaExternalProbeNeverObserved",
       "FiduciaExternalProbeNoRecentSuccess",
@@ -70,7 +72,8 @@ describe("DEN-1404 managed beta SLO package", () => {
     assert.match(rules, /fiducia:sli:public_availability_burn_rate:6h > 6/u);
     assert.match(rules, /absent\(fiducia_external_probe_last_run_unixtime\)/u);
     assert.match(rules, /resets\(fiducia_external_probe_total\[1h\]\)/u);
-    assert.match(rules, /count by \(cell, operation_class, result\)/u);
+    assert.match(rules, /count by \(probe_location, cell, operation_class, result\)/u);
+    assert.match(rules, /external_probe_location_count < 2/u);
   });
 
   it("keeps rules and dashboard queries inside the low-cardinality SLI boundary", async () => {
@@ -106,6 +109,7 @@ describe("DEN-1404 managed beta SLO package", () => {
       "public_availability_ratio:28d",
       "public_availability_error_budget_remaining_ratio:28d",
       "public_availability_samples:28d",
+      "external_probe_location_count",
       "external_probe_freshness_seconds",
       "external_probe_last_success_age_seconds",
       "public_availability_burn_rate:1h",
@@ -117,7 +121,7 @@ describe("DEN-1404 managed beta SLO package", () => {
     }
 
     const variables = new Set(dashboard.templating.list.map((variable) => variable.name));
-    assert.deepEqual(variables, new Set(["cell", "operation_class"]));
+    assert.deepEqual(variables, new Set(["probe_location", "cell", "operation_class"]));
   });
 
   it("renders as an overlay of the existing stack and mounts both rules and dashboard", async () => {
@@ -150,5 +154,14 @@ describe("DEN-1404 managed beta SLO package", () => {
     ]) {
       assert.ok(readme.includes(required), `README missing ${required}`);
     }
+  });
+
+  it("injects probe location only at the trusted scrape boundary", async () => {
+    const scrape = await text("external-probe-scrape.example.yml");
+    assert.match(scrape, /honor_labels: false/u);
+    assert.match(scrape, /probe_location: probe-a/u);
+    assert.match(scrape, /probe_location: probe-b/u);
+    assert.ok(!scrape.includes("honor_labels: true"));
+    assert.ok(!scrape.includes("tenant_id"));
   });
 });
