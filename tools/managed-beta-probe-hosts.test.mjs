@@ -173,7 +173,7 @@ test("correlated failure domains and shared authorities fail closed", () => {
 test("mutable images, plaintext/IP/query endpoints, unsupported operations, and unsafe users are rejected", () => {
   const mutable = example();
   mutable.image = "ghcr.io/fiducia-cloud/fiducia-managed-beta-probe:latest";
-  assert.throws(() => validateProbeFleet(mutable, { allowExample: true }), /published immutable digest/);
+  assert.throws(() => validateProbeFleet(mutable, { allowExample: true }), /inventory\.image must equal/);
 
   const plaintext = example();
   plaintext.locations[0].operations[0].endpoint = "http://managed-beta.example.invalid/healthz";
