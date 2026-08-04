@@ -21,6 +21,11 @@ spec:
     metadata:
       labels:
         app: fiducia-load-balance
+      annotations:
+        fiducia.cloud/tls: cert-manager-private-ca
+        # The binary currently loads the serving identity at process start. The
+        # rotation runbook restarts one replica at a time after Secret renewal.
+        fiducia.cloud/tls-rotation: rollout-required-after-secret-renewal
     spec:
       # The LB does not call the Kubernetes API (it talks to nodes + brain over
       # HTTP) — don't mount a SA token onto this public-facing pod.
@@ -37,8 +42,7 @@ spec:
                   matchLabels:
                     app: fiducia-load-balance
       # Hardened baseline: run unprivileged, drop all Linux capabilities, and
-      # forbid privilege escalation. The binary listens on a high port (8088) so
-      # it needs no capabilities. rootfs is read-only with a writable /tmp.
+      # forbid privilege escalation. The binary listens on high ports only.
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
@@ -94,9 +98,8 @@ spec:
               value: "json"
           envFrom:
             - configMapRef: { name: fiducia-cluster }   # FIDUCIA_SHARD_COUNT
-          # Readiness uses /readyz (route table hydrated / dependencies OK) so a
-          # live-but-not-yet-ready LB is withheld from Service endpoints;
-          # liveness stays on the always-open /healthz.
+          # Plaintext is retained only for kubelet health probes and the explicit
+          # 426 migration guard. Application traffic uses verified HTTPS :8443.
           readinessProbe: { httpGet: { path: /readyz, port: 8088 }, periodSeconds: 10 }
           livenessProbe:  { httpGet: { path: /healthz, port: 8088 }, periodSeconds: 15 }
           resources:
@@ -111,3 +114,5 @@ spec:
         - name: tls
           secret:
             secretName: fiducia-load-balance-tls
+            optional: false
+            defaultMode: 0440

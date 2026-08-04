@@ -12,8 +12,10 @@ namespace: fiducia
 resources:
   - namespace.yaml
   - networkpolicy.yaml                  # namespace default-deny + DNS/east-west/probe allows
+  - tls/fiducia-internal-pki.yaml       # cert-manager root/issuer + short-lived LB serving identity
   - observability/otel-agent.yaml
   - observability/networkpolicy.yaml    # otel-agent egress (gateway + k8s API)
+  - observability/tls-prometheus-rules.yaml
   - node/statefulset.yaml
   - node/service.yaml
   - node/networkpolicy.yaml

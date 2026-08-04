@@ -6,6 +6,8 @@ kind: Service
 metadata:
   name: fiducia-load-balance
   namespace: fiducia
+  labels:
+    fiducia.cloud/transport: verified-https
 spec:
   type: LoadBalancer
   selector:
@@ -13,16 +15,39 @@ spec:
   ports:
     - { name: https, port: 443, targetPort: 8443 }
 ---
-# Private cleartext listener for in-cluster callers and health tooling. Keeping it
-# on a separate ClusterIP prevents cloud providers from publishing port 80.
+# Canonical in-cluster application endpoint. Direct clients, ESO, and the local
+# Cloudflare connector must verify the `fiducia-load-balance-tls` DNS SAN and the
+# per-cluster Fiducia CA instead of calling the probe/migration listener.
 apiVersion: v1
 kind: Service
 metadata:
-  name: fiducia-load-balance-internal
+  name: fiducia-load-balance-tls
   namespace: fiducia
+  labels:
+    fiducia.cloud/transport: verified-https
+    fiducia.cloud/audience: in-cluster-clients
 spec:
   type: ClusterIP
   selector:
     app: fiducia-load-balance
   ports:
-    - { name: http, port: 8088, targetPort: 8088 }
+    - { name: https, port: 8443, targetPort: 8443 }
+---
+# Temporary probe/migration listener. When the TLS paths are configured, the LB
+# must serve only health probes here and reject every application request with
+# an explicit upgrade-required response. No direct client may use this Service.
+# Remove this Service after kubelet probes move to a dedicated health-only port.
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-load-balance-internal
+  namespace: fiducia
+  labels:
+    fiducia.cloud/transport: plaintext-health-only
+    fiducia.cloud/deprecation: den-438-final-cutover
+spec:
+  type: ClusterIP
+  selector:
+    app: fiducia-load-balance
+  ports:
+    - { name: health-http, port: 8088, targetPort: 8088 }

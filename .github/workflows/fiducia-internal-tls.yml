@@ -1,0 +1,89 @@
+name: fiducia-internal-tls
+on:
+  pull_request:
+    paths:
+      - "base/tls/**"
+      - "base/load-balance/**"
+      - "base/observability/tls-prometheus-rules.yaml"
+      - "base/kustomization.yaml"
+      - "contracts/external-secrets/**"
+      - "laptop/components/runtime/cloudflared.yaml"
+      - "scripts/capture-fiducia-internal-tls-evidence.sh"
+      - "tools/fiducia-internal-tls.test.mjs"
+      - "tools/laptop-networking.test.mjs"
+      - "docs/fiducia-internal-tls.md"
+      - "package.json"
+      - ".github/workflows/fiducia-internal-tls.yml"
+  push:
+    branches: [main]
+    paths:
+      - "base/tls/**"
+      - "base/load-balance/**"
+      - "base/observability/tls-prometheus-rules.yaml"
+      - "base/kustomization.yaml"
+      - "contracts/external-secrets/**"
+      - "laptop/components/runtime/cloudflared.yaml"
+      - "scripts/capture-fiducia-internal-tls-evidence.sh"
+      - "tools/fiducia-internal-tls.test.mjs"
+      - "tools/laptop-networking.test.mjs"
+      - "docs/fiducia-internal-tls.md"
+      - "package.json"
+      - ".github/workflows/fiducia-internal-tls.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Validate workflow
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: ./.github/workflows/fiducia-internal-tls.yml
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22.22.1"
+      - name: Validate TLS, CA trust, downgrade, and evidence contracts
+        run: npm run check:tls
+      - name: Re-run laptop tunnel networking contracts
+        run: node --test tools/laptop-networking.test.mjs
+      - name: Reject plaintext Fiducia load-balancer client URLs
+        run: |
+          set -euo pipefail
+          if grep -RInE \
+            --include='*.yaml' --include='*.yml' --include='*.json' --include='*.toml' --include='*.env' --include='*.conf' \
+            -- 'http://fiducia-load-balance(-internal|-tls)?([.:/]|$)' \
+            base laptop contracts; then
+            echo "plaintext Fiducia load-balancer client URL detected" >&2
+            exit 1
+          fi
+      - name: Reject committed private keys and provider credentials
+        run: |
+          set -euo pipefail
+          if grep -RInE \
+            -- '-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|tskey-(auth|client)-[A-Za-z0-9_-]+' \
+            base/tls \
+            contracts/external-secrets \
+            laptop/components/runtime/cloudflared.yaml \
+            scripts/capture-fiducia-internal-tls-evidence.sh \
+            docs/fiducia-internal-tls.md; then
+            echo "credential/private-key pattern detected" >&2
+            exit 1
+          fi
+      - name: Build every laptop and canonical cloud overlay
+        run: |
+          set -euo pipefail
+          for cluster in laptop/clusters/*/ clusters/*/; do
+            echo "== $cluster =="
+            kubectl kustomize "$cluster" >/dev/null
+          done
