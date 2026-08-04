@@ -1,0 +1,97 @@
+name: fiducia-raft-durability
+on:
+  pull_request:
+    paths:
+      - "base/node/statefulset.yaml"
+      - "base/components/brain/statefulset.yaml"
+      - "base/observability/raft-durability-prometheus-rules.yaml"
+      - "base/kustomization.yaml"
+      - "clusters/**/patches.yaml"
+      - "laptop/clusters/**/patches.yaml"
+      - "durability/**"
+      - "docs/fiducia-raft-durability.md"
+      - "scripts/capture-fiducia-raft-storage-evidence.sh"
+      - "tools/validate-fiducia-raft-durability-evidence.mjs"
+      - "tools/fiducia-raft-durability.test.mjs"
+      - "tools/render.mjs"
+      - "package.json"
+      - ".github/workflows/fiducia-raft-durability.yml"
+  push:
+    branches: [main]
+    paths:
+      - "base/node/statefulset.yaml"
+      - "base/components/brain/statefulset.yaml"
+      - "base/observability/raft-durability-prometheus-rules.yaml"
+      - "base/kustomization.yaml"
+      - "clusters/**/patches.yaml"
+      - "laptop/clusters/**/patches.yaml"
+      - "durability/**"
+      - "docs/fiducia-raft-durability.md"
+      - "scripts/capture-fiducia-raft-storage-evidence.sh"
+      - "tools/validate-fiducia-raft-durability-evidence.mjs"
+      - "tools/fiducia-raft-durability.test.mjs"
+      - "tools/render.mjs"
+      - "package.json"
+      - ".github/workflows/fiducia-raft-durability.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Validate workflow
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: ./.github/workflows/fiducia-raft-durability.yml
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22.22.1"
+      - name: Validate retained PVC, backup, restore, keyring, and evidence contracts
+        run: npm run check:raft:durability
+      - name: Prove example evidence cannot pass production mode
+        run: |
+          set -euo pipefail
+          if node tools/validate-fiducia-raft-durability-evidence.mjs \
+            --evidence durability/fiducia-raft-evidence.example.json \
+            --now 2026-08-03T20:30:00Z; then
+            echo "example durability evidence unexpectedly passed without --allow-example" >&2
+            exit 1
+          fi
+      - name: Verify generated topology remains current
+        run: |
+          npm run check
+          npm run check:laptop
+      - name: Reject secret and private-key patterns in durability evidence and runbook
+        run: |
+          set -euo pipefail
+          if grep -RInE \
+            --include='*.json' --include='*.toml' --include='*.md' \
+            -- '-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|tskey-(auth|client)-[A-Za-z0-9_-]+' \
+            durability docs/fiducia-raft-durability.md; then
+            echo "prohibited credential/private-key pattern detected" >&2
+            exit 1
+          fi
+      - name: Build all laptop and canonical cloud overlays
+        run: |
+          set -euo pipefail
+          for cluster in laptop/clusters/*/ clusters/*/; do
+            echo "== $cluster =="
+            rendered="$(mktemp)"
+            kubectl kustomize "$cluster" >"$rendered"
+            if grep -A4 -E 'name: data$' "$rendered" | grep -q 'emptyDir:'; then
+              echo "authoritative data volume regressed to emptyDir in $cluster" >&2
+              exit 1
+            fi
+            rm -f "$rendered"
+          done
