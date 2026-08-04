@@ -43,7 +43,7 @@ esac
 [[ -n "$context" ]] || fail "--context is required"
 [[ "$output" = /* ]] || fail "--output must be an absolute path"
 
-for command in kubectl openssl jq base64 sha256sum install mktemp date grep awk; do
+for command in kubectl openssl jq base64 install mktemp date grep awk sort sed tr chmod rm; do
   command -v "$command" >/dev/null || fail "$command is required"
 done
 
