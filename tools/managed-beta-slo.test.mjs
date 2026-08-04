@@ -103,7 +103,7 @@ describe("DEN-1404/DEN-1619 managed beta SLO package", () => {
     assert.doesNotMatch(rules, /hostname|public_ip|site_address|cloud_account/u);
   });
 
-  it("ships a location-aware dashboard with honest no-data, freshness, source count, and burn views", async () => {
+  it("retains the merged location-aware dashboard and historical inventory view", async () => {
     const dashboard = JSON.parse(await text("managed-beta-overview.json"));
     assert.equal(dashboard.uid, "fiducia-managed-beta-slo");
     assert.equal(dashboard.title, "Fiducia managed beta SLO overview");
@@ -116,7 +116,7 @@ describe("DEN-1404/DEN-1619 managed beta SLO package", () => {
       "public_availability_ratio:28d",
       "public_availability_error_budget_remaining_ratio:28d",
       "public_availability_samples:28d",
-      "external_probe_fresh_location_count",
+      "external_probe_location_count",
       "external_probe_freshness_seconds",
       "external_probe_last_success_age_seconds",
       "public_availability_burn_rate:1h",
@@ -134,7 +134,9 @@ describe("DEN-1404/DEN-1619 managed beta SLO package", () => {
       new Set(["cell", "operation_class", "probe_location"]),
     );
     assert.ok(
-      dashboard.panels.some((panel) => panel.title === "Fresh probe locations"),
+      dashboard.panels.some(
+        (panel) => panel.title === "Trusted probe locations per cell",
+      ),
     );
   });
 
