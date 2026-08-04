@@ -1,0 +1,36 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: fiducia-observability
+
+# Extend the existing opt-in cron observability stack with the managed-public-beta
+# SLO rules and dashboard. This does not make the SLOs measured: the external
+# producers still need two failure-independent deployments and reviewed evidence.
+resources:
+  - ../cron-stack
+
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    app.kubernetes.io/part-of: fiducia-managed-beta-observability
+
+configMapGenerator:
+  - name: fiducia-prometheus-config
+    behavior: merge
+    files:
+      - managed-beta-rules.yml
+  - name: fiducia-grafana-managed-beta-dashboard
+    files:
+      - managed-beta-overview.json
+
+patches:
+  - path: prometheus-config.patch.yaml
+    target:
+      version: v1
+      kind: ConfigMap
+      name: fiducia-prometheus-config
+  - path: grafana-deployment.patch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: fiducia-grafana
