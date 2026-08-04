@@ -1,5 +1,7 @@
 {
-  "annotations": {"list": []},
+  "annotations": {
+    "list": []
+  },
   "editable": false,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -13,7 +15,10 @@
   ],
   "panels": [
     {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "fieldConfig": {
         "defaults": {
           "decimals": 3,
@@ -23,23 +28,43 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "red", "value": null},
-              {"color": "orange", "value": 0.99},
-              {"color": "green", "value": 0.995}
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.99
+              },
+              {
+                "color": "green",
+                "value": 0.995
+              }
             ]
           },
           "unit": "percentunit"
         },
         "overrides": []
       },
-      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 0},
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
       "id": 1,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto",
         "wideLayout": true
       },
@@ -54,7 +79,10 @@
       "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "fieldConfig": {
         "defaults": {
           "decimals": 1,
@@ -64,23 +92,43 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "red", "value": null},
-              {"color": "orange", "value": 0.25},
-              {"color": "green", "value": 0.5}
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.25
+              },
+              {
+                "color": "green",
+                "value": 0.5
+              }
             ]
           },
           "unit": "percentunit"
         },
         "overrides": []
       },
-      "gridPos": {"h": 6, "w": 6, "x": 6, "y": 0},
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
       "id": 2,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto",
         "wideLayout": true
       },
@@ -95,19 +143,37 @@
       "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "fieldConfig": {
-        "defaults": {"decimals": 0, "noValue": "NO DATA", "unit": "short"},
+        "defaults": {
+          "decimals": 0,
+          "noValue": "NO DATA",
+          "unit": "short"
+        },
         "overrides": []
       },
-      "gridPos": {"h": 6, "w": 6, "x": 12, "y": 0},
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
       "id": 3,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto",
         "wideLayout": true
       },
@@ -122,37 +188,60 @@
       "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "fieldConfig": {
         "defaults": {
           "noValue": "NO DATA",
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null},
-              {"color": "orange", "value": 120},
-              {"color": "red", "value": 300}
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 120
+              },
+              {
+                "color": "red",
+                "value": 300
+              }
             ]
           },
           "unit": "s"
         },
         "overrides": []
       },
-      "gridPos": {"h": 6, "w": 6, "x": 18, "y": 0},
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
       "id": 4,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto",
         "wideLayout": true
       },
       "targets": [
         {
-          "expr": "fiducia:sli:external_probe_freshness_seconds{cell=~\"$cell\",operation_class=~\"$operation_class\"}",
-          "legendFormat": "{{cell}} / {{operation_class}}",
+          "expr": "fiducia:sli:external_probe_freshness_seconds{probe_location=~\"$probe_location\",cell=~\"$cell\",operation_class=~\"$operation_class\"}",
+          "legendFormat": "{{probe_location}} / {{cell}} / {{operation_class}}",
           "refId": "A"
         }
       ],
@@ -160,37 +249,60 @@
       "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "fieldConfig": {
         "defaults": {
           "noValue": "NO DATA",
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null},
-              {"color": "orange", "value": 300},
-              {"color": "red", "value": 900}
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 300
+              },
+              {
+                "color": "red",
+                "value": 900
+              }
             ]
           },
           "unit": "s"
         },
         "overrides": []
       },
-      "gridPos": {"h": 7, "w": 6, "x": 0, "y": 6},
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 0,
+        "y": 6
+      },
       "id": 5,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto",
         "wideLayout": true
       },
       "targets": [
         {
-          "expr": "fiducia:sli:external_probe_last_success_age_seconds{cell=~\"$cell\",operation_class=~\"$operation_class\"}",
-          "legendFormat": "{{cell}} / {{operation_class}}",
+          "expr": "fiducia:sli:external_probe_last_success_age_seconds{probe_location=~\"$probe_location\",cell=~\"$cell\",operation_class=~\"$operation_class\"}",
+          "legendFormat": "{{probe_location}} / {{cell}} / {{operation_class}}",
           "refId": "A"
         }
       ],
@@ -198,18 +310,42 @@
       "type": "stat"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"noValue": "NO DATA", "unit": "ops"}, "overrides": []},
-      "gridPos": {"h": 7, "w": 10, "x": 6, "y": 6},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "NO DATA",
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 10,
+        "x": 6,
+        "y": 6
+      },
       "id": 6,
       "options": {
-        "legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true},
-        "tooltip": {"mode": "multi", "sort": "desc"}
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
-          "expr": "sum by (cell, result) (rate(fiducia_external_probe_total{cell=~\"$cell\",operation_class=~\"$operation_class\"}[$__rate_interval]))",
-          "legendFormat": "{{cell}} / {{result}}",
+          "expr": "sum by (probe_location, cell, result) (rate(fiducia_external_probe_total{probe_location=~\"$probe_location\",cell=~\"$cell\",operation_class=~\"$operation_class\"}[$__rate_interval]))",
+          "legendFormat": "{{probe_location}} / {{cell}} / {{result}}",
           "refId": "A"
         }
       ],
@@ -217,27 +353,55 @@
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "fieldConfig": {
         "defaults": {
           "noValue": "NO DATA",
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null},
-              {"color": "orange", "value": 6},
-              {"color": "red", "value": 14.4}
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
             ]
           },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": {"h": 7, "w": 8, "x": 16, "y": 6},
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 6
+      },
       "id": 7,
       "options": {
-        "legend": {"calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true},
-        "tooltip": {"mode": "multi", "sort": "desc"}
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
@@ -255,52 +419,146 @@
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {"defaults": {"noValue": "NO DATA"}, "overrides": []},
-      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 13},
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "NO DATA"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
       "id": 8,
       "options": {
         "cellHeight": "sm",
-        "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false},
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
         "showHeader": true
       },
       "targets": [
         {
-          "expr": "fiducia_external_probe_total{cell=~\"$cell\",operation_class=~\"$operation_class\"}",
+          "expr": "fiducia_external_probe_total{probe_location=~\"$probe_location\",cell=~\"$cell\",operation_class=~\"$operation_class\"}",
           "format": "table",
           "instant": true,
-          "legendFormat": "{{cell}} / {{operation_class}} / {{result}}",
+          "legendFormat": "{{probe_location}} / {{cell}} / {{operation_class}} / {{result}}",
           "refId": "A"
         },
         {
-          "expr": "fiducia:sli:external_probe_freshness_seconds{cell=~\"$cell\",operation_class=~\"$operation_class\"}",
+          "expr": "fiducia:sli:external_probe_freshness_seconds{probe_location=~\"$probe_location\",cell=~\"$cell\",operation_class=~\"$operation_class\"}",
           "format": "table",
           "instant": true,
-          "legendFormat": "{{cell}} / {{operation_class}} freshness",
+          "legendFormat": "{{probe_location}} / {{cell}} / {{operation_class}} freshness",
           "refId": "B"
         }
       ],
       "title": "Current bounded probe series and freshness",
       "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "min": 0,
+          "noValue": "NO DATA",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 2
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 22
+      },
+      "id": 9,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "expr": "fiducia:sli:external_probe_location_count{cell=~\"$cell\"}",
+          "legendFormat": "{{cell}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Trusted probe locations per cell",
+      "type": "stat"
     }
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["fiducia", "managed-beta", "slo", "den-1404"],
+  "tags": [
+    "fiducia",
+    "managed-beta",
+    "slo",
+    "den-1404"
+  ],
   "templating": {
     "list": [
       {
         "allValue": ".*",
-        "current": {"selected": false, "text": "All", "value": "$__all"},
-        "datasource": {"type": "prometheus", "uid": "prometheus"},
-        "definition": "label_values(fiducia_external_probe_total, cell)",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(fiducia_external_probe_total, probe_location)",
         "hide": 0,
         "includeAll": true,
-        "label": "Cell",
+        "label": "Probe location",
         "multi": true,
-        "name": "cell",
+        "name": "probe_location",
         "options": [],
-        "query": {"query": "label_values(fiducia_external_probe_total, cell)", "refId": "PrometheusVariableQueryEditor-Cell"},
+        "query": {
+          "query": "label_values(fiducia_external_probe_total, probe_location)",
+          "refId": "PrometheusVariableQueryEditor-ProbeLocation"
+        },
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
@@ -309,8 +567,43 @@
       },
       {
         "allValue": ".*",
-        "current": {"selected": false, "text": "All", "value": "$__all"},
-        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(fiducia_external_probe_total, cell)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Cell",
+        "multi": true,
+        "name": "cell",
+        "options": [],
+        "query": {
+          "query": "label_values(fiducia_external_probe_total, cell)",
+          "refId": "PrometheusVariableQueryEditor-Cell"
+        },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
         "definition": "label_values(fiducia_external_probe_total, operation_class)",
         "hide": 0,
         "includeAll": true,
@@ -318,7 +611,10 @@
         "multi": true,
         "name": "operation_class",
         "options": [],
-        "query": {"query": "label_values(fiducia_external_probe_total, operation_class)", "refId": "PrometheusVariableQueryEditor-Operation"},
+        "query": {
+          "query": "label_values(fiducia_external_probe_total, operation_class)",
+          "refId": "PrometheusVariableQueryEditor-Operation"
+        },
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
@@ -327,11 +623,14 @@
       }
     ]
   },
-  "time": {"from": "now-28d", "to": "now"},
+  "time": {
+    "from": "now-28d",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "browser",
   "title": "Fiducia managed beta SLO overview",
   "uid": "fiducia-managed-beta-slo",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
