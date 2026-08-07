@@ -14,6 +14,14 @@ Applying this overlay deploys the existing OTel/Prometheus/Loki/Tempo/Grafana st
 - historical and fresh trusted-location counts per cell and operation class;
 - fast/slow burn, no-data, lost-independence, stale-location, no-recent-success, counter-reset, and duplicate-series alerts;
 - a Grafana dashboard with availability, remaining error budget, samples, fresh location count, per-location freshness/last success, result rates, burn rates, and current source inventory.
+- `managed-beta-rules.yml` in the Prometheus config;
+- 28-day availability, sample-count, error-budget, burn-rate, and probe-freshness
+  recording rules;
+- fast/slow burn, no-data, fewer-than-two-location, stale-source, no-recent-success,
+  counter-reset, and duplicate-series alerts;
+- a provisioned Grafana dashboard with availability, remaining error budget,
+  sample count, trusted location count, per-location freshness, last-success age,
+  result rate, burn rate, and current series inventory.
 
 ## Trusted probe-location identity
 
@@ -28,6 +36,12 @@ Two different trusted location labels prove two monitoring lineages; they do not
 `fiducia:sli:external_probe_location_count` records historically observable locations per `cell` and `operation_class`.
 
 `fiducia:sli:external_probe_fresh_location_count` counts only location lineages whose last completed run is no older than five minutes. `FiduciaExternalProbeIndependenceLost` fires when a cell and operation class have fewer than two fresh sources.
+The package groups only by reviewed `probe_location`, `cell`, `operation_class`,
+and `result` labels. `probe_location` is injected by trusted Prometheus scrape
+configuration with `honor_labels: false`; the probe does not self-assert it. Organization, tenant, project, environment, resource key/path,
+credential, endpoint, request ID, trace ID, response content, and raw error text
+must never enter Prometheus labels, dashboard variables, alert annotations, or
+evidence exports.
 
 This distinction is deliberate: a stale location must not continue satisfying the independence gate merely because its cumulative counter still exists. Likewise, a healthy `health` source cannot satisfy the gate for a missing `committed_write` or `secret_read` source.
 
@@ -51,3 +65,16 @@ The package uses only reviewed `probe_location`, `cell`, `operation_class`, and 
 ## Deployment dependency
 
 Central Prometheus must securely scrape or receive cumulative series from each external location. This overlay installs queries and views; it does not create external machines, credentials, schedules, state volumes, network paths, or physical independence. Those deployment and live-evidence tasks remain in DEN-1619.
+The central Prometheus must be able to scrape or receive the textfile-collector
+series from each external probe location. This overlay installs queries and views;
+it does not create those external machines, credentials, schedules, or network
+paths. Those deployment and evidence tasks remain in DEN-1404.
+
+
+## Trusted probe-location identity
+
+Use `external-probe-scrape.example.yml` as the reviewed shape for central scrape
+targets. Every independent target receives one bounded `probe_location` label at
+the monitoring boundary. A cell with fewer than two currently observed locations
+raises `FiduciaExternalProbeIndependenceLost` and is ineligible for availability
+evidence even when the aggregate ratio appears healthy.
