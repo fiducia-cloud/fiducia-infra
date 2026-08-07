@@ -1,0 +1,1 @@
+PR #22 may use GitHub conditional auto-merge only when repository requirements hold the merge until the final-head laptop-fleet and full CI checks succeed. Auto-merge must not be used to bypass missing or failed required checks.
