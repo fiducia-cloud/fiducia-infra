@@ -132,63 +132,50 @@ Configure the remotely managed Cloudflare route for each connector so its origin
 is the local service only:
 
 ```text
-http://fiducia-load-balance-internal.fiducia.svc.cluster.local:8088
+service: https://fiducia-load-balance-tls.fiducia.svc.cluster.local:8443
+originRequest.caPool: /etc/fiducia/origin-ca/ca.crt
 ```
 
-Do not route the tunnel to the node API, brain control plane, NATS, Kubernetes
-API, SSH, metrics endpoints, or any home-LAN address.
+The Deployment mounts only public `ca.crt` from `Secret/fiducia-load-balance-tls` and starts `cloudflared` with `--origin-ca-pool`. The load-balancer private key is not exposed to the connector.
 
-### Connector identity
+Do not configure:
 
-Use a distinct connector token or separately revocable tunnel identity per
-laptop. A stolen or retired laptop must be removable without rotating every
-healthy connector in the fleet. The token is supplied through
-`scripts/apply-laptop-runtime-secrets.sh`; never put it in an Argo CD
-Application, ConfigMap, shell argument, CI variable dump, Linear comment, or Git
-history.
+- `http://fiducia-load-balance-internal...:8088` as an origin;
+- `noTLSVerify` or `--no-tls-verify`;
+- a router port forward, NodePort, host port, or K3s ServiceLB;
+- an origin pointing at the Kubernetes API, Fiducia node/brain planes, NATS, Argo CD, metrics, SSH, or a home-LAN address.
 
-### External health
+The connector is digest-pinned, has no service-account token, runs non-root with a read-only root filesystem and dropped capabilities, exposes only its local readiness/metrics port, and is protected by a `maxUnavailable: 0` PDB.
 
-Cloudflare connector readiness proves only that the connector process can serve
-its local readiness endpoint. Production acceptance additionally requires:
+Its NetworkPolicy permits only:
 
-- an external HTTPS probe for each laptop origin;
-- at least two independent probe regions;
-- verification that an unhealthy local origin is withdrawn;
-- verification that the two remaining clusters serve traffic when one laptop or
-  ISP disappears;
-- trusted-proxy validation so arbitrary clients cannot forge forwarding headers.
+- the local `fiducia-load-balance` pods on TCP `8443`;
+- published Cloudflare Tunnel edge endpoints on TCP/UDP `7844`;
+- bounded readiness/metrics access.
+
+Port `8088` is a temporary health/upgrade-required listener only and is not an application origin. See `docs/fiducia-internal-tls.md` for the CA, rotation, downgrade, and client-migration contract.
+
+Use a distinct, separately revocable connector identity per laptop where supported. Never put tunnel tokens in Argo CD Applications, ConfigMaps, shell arguments, CI output, Git, or Linear.
+
+External acceptance requires HTTPS probes from at least two independent regions, unhealthy-origin withdrawal, one-laptop/one-ISP failover, and trusted-proxy validation.
 
 ## Tailscale private mesh
 
-The initial mesh uses the Tailscale Kubernetes Operator and a deny-by-default
-grant policy. The committed files are templates because the real operator email,
-tailnet domain, OAuth identity, and device credentials are deployment-specific.
+The initial mesh uses the Tailscale Kubernetes Operator and a deny-by-default policy. Production operator identity, tailnet domain, OAuth material, and device credentials remain deployment inputs outside Git.
 
-### Identity classes
+Identity classes are cluster-specific:
 
-| Tag | Purpose | Allowed destination ports |
-|---|---|---|
-| `tag:fiducia-laptop-host` | Host SSH and private K3s API | 22, 6443 from the named operator only |
-| `tag:k8s-operator` | Kubernetes operator control identity | 443 from the named operator only |
-| `tag:k8s` | Resources created by the operator | Owned by `tag:k8s-operator`; no broad grant by itself |
-| `tag:fiducia-peer-egress` | Per-cluster egress proxy group | Node peer 9090 and brain peer 9095 only |
-| `tag:fiducia-node-peer` | Exposed Fiducia node Raft endpoint | 9090 from peer-egress identities only |
-| `tag:fiducia-brain-peer` | Exposed Fiducia brain Raft endpoint | 9095 from peer-egress identities only |
+| Identity | Access |
+|---|---|
+| Named operator | Laptop SSH `22`, private K3s API `6443`, operator API `443` |
+| Cluster peer egress | Only the other two node `9090`, brain `9095`, and NATS route `6222` identities |
+| Node peer identity | Raft `9090` only |
+| Brain peer identity | Raft `9095` only |
+| NATS route identity | mTLS route `6222` only |
 
-The policy intentionally does not grant peer proxies access to:
+Peer identities are denied access to SSH, Kubernetes API, Fiducia client/control ports `8090/8095`, NATS client `4222`, NATS monitoring `8222`, and their own local route identity.
 
-- SSH or the K3s API;
-- the Kubernetes operator API;
-- the Fiducia node client plane on 8090;
-- the Fiducia brain control plane on 8095;
-- arbitrary tailnet devices or home-LAN subnets.
-
-`laptop/tailnet-policy.template.json` includes policy tests for the positive and
-negative cases. Merge its rendered grants into the existing tailnet policy only
-after the Tailscale policy editor/API accepts all tests.
-
-### Render a reviewed policy
+Render a reviewed policy:
 
 ```sh
 node tools/render-laptop-tailnet.mjs \
@@ -281,59 +268,38 @@ Tailscale is the initial NAT-traversal and identity control plane, but the
 application remains standard TCP on ports 9090 and 9095. A plain WireGuard
 fallback therefore keeps the same logical peer planes and ports.
 
-Before production, prepare a separate encrypted recovery bundle containing:
+### Mesh rollout
 
-- one WireGuard private key per laptop, never shared between laptops;
-- all three public keys;
-- one unique overlay address per laptop;
-- endpoint and keepalive settings appropriate to each real ISP/NAT;
-- host firewall rules allowing UDP on the selected WireGuard listen port only;
-- routes limited to the three overlay addresses, not entire home LANs;
-- private DNS or host records for the existing `node.<cluster>.fiducia.internal`
-  and `brain.<cluster>.fiducia.internal` names;
-- revocation and peer-replacement instructions.
+1. Approve tag ownership, grants, and positive/negative policy tests.
+2. Install a pinned Operator release through the approved bootstrap path.
+3. Apply one follower cluster's local ingress and remote egress resources.
+4. Wait for proxies and Services to become healthy.
+5. Change only that cluster's peer environment.
+6. Verify authentication, role, lag, elections, latency, and packet loss.
+7. Repeat for the second follower.
+8. Transfer/reobserve leadership and move leaders last.
+9. Retain the old path through the rollback window.
 
-The fallback must not expose 8090, 8095, 4222, 6443, or SSH to general VPN peers.
-Operator SSH/API access should use a separate operator peer or narrowly scoped
-host firewall identity.
+Never change all three peer paths simultaneously.
 
-A fallback exercise must prove:
+## Plain WireGuard fallback
 
-1. the Tailscale route for one follower is disabled;
-2. its original Fiducia logical peer hostnames resolve over plain WireGuard;
-3. only 9090 and 9095 are reachable between cluster peers;
-4. 8090, 8095, 4222, 6443, SSH, and home-LAN addresses remain unreachable;
-5. Raft and messaging health recover without changing application protocols or
-   member identities;
-6. the Tailscale path can be restored without creating a duplicate member.
+The application protocols remain standard TCP, so a separately protected WireGuard fallback can preserve the same logical peer planes. Keep one unique key per laptop, narrow overlay routes, private DNS for existing peer names, host firewall rules, endpoint/keepalive data, and revocation instructions in an encrypted recovery bundle.
 
-The private WireGuard keys and actual ISP endpoints are recovery secrets and do
-not belong in this repository.
+The fallback must not expose home LANs or management/data-plane ports beyond the reviewed peer set. Test one follower at a time and prove that `8090`, `8095`, `4222`, `8222`, `6443`, and SSH remain unavailable to ordinary peer identities.
 
-## Runtime Secret materialization
+Private keys and real ISP endpoints do not belong in this repository.
 
-Prepare private, non-symlink files. Every file must be nonempty and inaccessible
-to group and world users.
+## Runtime secret materialization
 
-Cloudflare input:
+`scripts/apply-laptop-runtime-secrets.sh` accepts private non-symlink files and creates:
 
-```text
-/secure/cloudflare-token
-```
+- `fiducia/cloudflare-tunnel-token`;
+- `kube-system/k3s-etcd-snapshot-s3-config` with type `etcd.k3s.cattle.io/s3-config-secret`.
 
-K3s S3 directory, required files:
+It verifies file permissions and kube-context identity, uses `--from-file`, never uses `--from-literal`, does not enable shell tracing, and never prints values.
 
-```text
-/secure/k3s-s3/etcd-s3-endpoint
-/secure/k3s-s3/etcd-s3-access-key
-/secure/k3s-s3/etcd-s3-secret-key
-/secure/k3s-s3/etcd-s3-bucket
-```
-
-The script also accepts K3s-supported optional S3 configuration files such as
-region, folder, CA, session token, proxy, timeout, or bucket lookup type.
-
-Review without changing a cluster:
+Review first, then apply:
 
 ```sh
 scripts/apply-laptop-runtime-secrets.sh \
@@ -346,7 +312,6 @@ scripts/apply-laptop-runtime-secrets.sh \
 
 Apply after review:
 
-```sh
 scripts/apply-laptop-runtime-secrets.sh \
   --cluster laptop-aws-sim \
   --context fiducia-laptop-aws-sim \
@@ -377,7 +342,7 @@ and K3s configuration remain the same.
 
 ## Scheduled off-host K3s snapshots
 
-Each generated laptop K3s configuration now contains only:
+Generated K3s host configuration contains only:
 
 ```yaml
 etcd-s3: true
@@ -407,27 +372,20 @@ embedded in the host configuration. This is important because K3s ignores the
 S3 configuration Secret when conflicting command-line/config-file S3 options
 are also supplied.
 
-Before declaring snapshots healthy, prove all of the following:
+Before declaring backups healthy, prove:
 
-- the K3s server reads the Secret and creates the scheduled snapshot;
-- the snapshot appears in the intended external bucket/folder;
-- the bucket is independent of the laptop's local disk and site;
-- object encryption, retention, and access logging match the data policy;
-- snapshot age and upload failure are monitored;
-- a selected object can be retrieved without the live laptop;
-- its checksum is captured through an independent evidence path;
-- the original K3s server token is held in offline recovery custody.
+- scheduled local and S3 snapshot records match;
+- the object exists in an independent encrypted location;
+- upload failure and age are monitored;
+- the object is retrievable without the original laptop;
+- checksum and recovery-token custody are recorded independently;
+- a clean replacement-host restore succeeds.
 
-A successful upload is not a successful backup until a replacement-host restore
-has completed.
+A successful upload is not a successful backup.
 
 ## Replacement-host restore
 
-K3s cannot read its S3 configuration Secret while the API server is down during
-restore. Retrieve the selected object through an independently audited recovery
-path, then restore from the local file.
-
-Plan-only validation:
+K3s cannot read the Kubernetes S3 Secret while its API is down. Retrieve the approved object through an independently audited path and restore locally:
 
 ```sh
 sudo scripts/restore-laptop-k3s-snapshot.sh \
@@ -469,66 +427,31 @@ Repository tests verify:
 These are software contracts. They do not replace live Tailscale policy acceptance, verified Cloudflare origin health, certificate rotation, S3 upload, clean restore, power/ISP failure, or the seven-day physical soak.
 Destructive apply:
 
-```sh
-sudo scripts/restore-laptop-k3s-snapshot.sh \
-  --cluster laptop-aws-sim \
-  --snapshot /secure/restore/etcd-snapshot \
-  --snapshot-sha256 <expected-sha256> \
-  --token-file /secure/restore/k3s-server-token \
-  --ack-stop-k3s \
-  --ack-cluster-reset \
-  --ack-replace-cluster-state \
-  --apply
+```text
+--ack-stop-k3s
+--ack-cluster-reset
+--ack-replace-cluster-state
+--apply
 ```
 
-The script:
+The script verifies SHA-256, private token-file handling, requested node identity, unresolved reset state, and K3s service recovery. It puts no S3 credentials on the restore command line.
 
-- verifies the snapshot checksum;
-- requires a private non-symlink token file;
-- checks the requested node identity where host config is available;
-- refuses to proceed when an unresolved K3s reset flag exists;
-- requires three explicit destructive acknowledgements;
-- stops K3s;
-- restores from the local snapshot with `--etcd-s3=false` and `--token-file`;
-- starts K3s and verifies the service becomes active.
-
-It deliberately does not place S3 access or secret keys on the restore command
-line.
-
-After the K3s service starts, the restore is still incomplete. The operator must:
-
-1. verify the API server and node identity;
-2. remove stale node objects if required by K3s recovery procedure;
-3. bootstrap the exact Git revision through `DEN-944`;
-4. restore or catch up Fiducia, JetStream, and application state through their
-   separate durability procedures;
-5. rotate any credential exposed by the lost machine;
-6. prove node and brain membership has no duplicate/stale identity;
-7. pass the external health, failover, fencing, replay, and restore checks in
-   `DEN-946` before returning the laptop to traffic.
+After K3s starts, recovery still requires exact GitOps bootstrap, Fiducia and JetStream restore/catch-up, credential rotation, stale-identity rejection, external health, replay, fencing, and DEN-946 acceptance.
 
 ## CI contract
 
-The laptop workflow and `tools/laptop-networking.test.mjs` verify:
+Repository tests verify:
 
-- each laptop overlay contains the runtime connector component;
-- the public application Service remains `ClusterIP` and no NodePort is added;
-- cloudflared is exact-versioned, secret-backed, probeable, unprivileged, and
-  bounded by a PodDisruptionBudget;
-- its NetworkPolicy permits only the local origin plus TCP/UDP 7844;
-- generated K3s configs use the S3 Secret and contain no S3 credential fields;
-- Tailscale grants contain no wildcard source/destination and policy tests deny
-  operator/client/control-plane escalation;
-- every cluster render contains exactly two remote node and two remote brain
-  egress Services and excludes itself;
-- malformed identities, placeholder domains, and unknown clusters fail closed;
-- secret materialization uses private files rather than literals;
-- restore requires checksum, token file, local mode, and all destructive
-  acknowledgements;
-- new implementation inputs contain no credential-like GitHub, Tailscale, or
-  private-key values;
-- all three laptop overlays continue to build.
+- Cloudflare uses verified HTTPS plus the mounted CA pool;
+- its policy allows `8443`, not `8088`;
+- application Services remain ClusterIP on laptop overlays;
+- K3s uses a Secret-backed S3 configuration with no embedded credentials;
+- Tailscale grants are cluster-specific and deny self/management/client access;
+- renderer inputs fail closed;
+- secret materialization is file-backed and redacted;
+- snapshot evidence pairs local and S3 records;
+- restore is checksum/token/acknowledgement gated;
+- tracked inputs contain no recognizable private-key or provider credential patterns;
+- all laptop and canonical cloud overlays build.
 
-These are software-contract tests. They do not replace Tailscale policy
-validation, live tunnel health, S3 upload, clean-room restore, power/ISP failure,
-or the seven-day physical soak.
+These are software contracts. They do not replace live Tailscale policy acceptance, verified Cloudflare origin health, certificate rotation, S3 upload, clean restore, power/ISP failure, or the seven-day physical soak.
