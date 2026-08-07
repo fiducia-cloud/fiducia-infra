@@ -1,0 +1,93 @@
+{
+  "tagOwners": {
+    "tag:k8s-operator": [],
+    "tag:fiducia-admin": [],
+    "tag:fiducia-host-aws-sim": ["tag:fiducia-admin"],
+    "tag:fiducia-host-gcp-sim": ["tag:fiducia-admin"],
+    "tag:fiducia-host-azure-sim": ["tag:fiducia-admin"],
+    "tag:fiducia-peer-aws-sim": ["tag:k8s-operator"],
+    "tag:fiducia-peer-gcp-sim": ["tag:k8s-operator"],
+    "tag:fiducia-peer-azure-sim": ["tag:k8s-operator"]
+  },
+  "grants": [
+    {
+      "src": ["tag:fiducia-admin"],
+      "dst": ["tag:k8s-operator"],
+      "ip": ["tcp:443"]
+    },
+    {
+      "src": ["tag:fiducia-admin"],
+      "dst": [
+        "tag:fiducia-host-aws-sim",
+        "tag:fiducia-host-gcp-sim",
+        "tag:fiducia-host-azure-sim"
+      ],
+      "ip": ["tcp:22", "tcp:6443"]
+    },
+    {
+      "src": ["tag:fiducia-peer-aws-sim"],
+      "dst": ["tag:fiducia-peer-gcp-sim", "tag:fiducia-peer-azure-sim"],
+      "ip": ["tcp:9090", "tcp:9095"]
+    },
+    {
+      "src": ["tag:fiducia-peer-gcp-sim"],
+      "dst": ["tag:fiducia-peer-aws-sim", "tag:fiducia-peer-azure-sim"],
+      "ip": ["tcp:9090", "tcp:9095"]
+    },
+    {
+      "src": ["tag:fiducia-peer-azure-sim"],
+      "dst": ["tag:fiducia-peer-aws-sim", "tag:fiducia-peer-gcp-sim"],
+      "ip": ["tcp:9090", "tcp:9095"]
+    }
+  ],
+  "tests": [
+    {
+      "src": "tag:fiducia-admin",
+      "accept": [
+        "tag:k8s-operator:443",
+        "tag:fiducia-host-aws-sim:22",
+        "tag:fiducia-host-gcp-sim:6443"
+      ],
+      "deny": [
+        "tag:fiducia-peer-aws-sim:9090",
+        "tag:fiducia-host-aws-sim:9090"
+      ]
+    },
+    {
+      "src": "tag:fiducia-peer-aws-sim",
+      "accept": [
+        "tag:fiducia-peer-gcp-sim:9090",
+        "tag:fiducia-peer-gcp-sim:9095",
+        "tag:fiducia-peer-azure-sim:9090",
+        "tag:fiducia-peer-azure-sim:9095"
+      ],
+      "deny": [
+        "tag:fiducia-host-gcp-sim:22",
+        "tag:k8s-operator:443",
+        "tag:fiducia-peer-gcp-sim:6443"
+      ]
+    },
+    {
+      "src": "tag:fiducia-peer-gcp-sim",
+      "accept": [
+        "tag:fiducia-peer-aws-sim:9090",
+        "tag:fiducia-peer-azure-sim:9095"
+      ],
+      "deny": [
+        "tag:fiducia-host-azure-sim:22",
+        "tag:fiducia-peer-aws-sim:443"
+      ]
+    },
+    {
+      "src": "tag:fiducia-peer-azure-sim",
+      "accept": [
+        "tag:fiducia-peer-aws-sim:9095",
+        "tag:fiducia-peer-gcp-sim:9090"
+      ],
+      "deny": [
+        "tag:fiducia-host-aws-sim:6443",
+        "tag:fiducia-peer-gcp-sim:22"
+      ]
+    }
+  ]
+}
