@@ -18,6 +18,14 @@ default:
 #   just env-docker-run prod -d --rm --name api -p 18080:8080 <image>
 #   just tunnel 18080
 
+# SECURITY: a tunnel publishes a local port to the entire internet with NO
+# authentication. Anyone who learns the hostname reaches the laptop directly —
+# Cloudflare proxies it, it does not gate it. Prefer the quick tunnel (random,
+# throwaway hostname), keep it running only while actively testing, and tear it
+# down with `just tunnel-down`. For anything longer-lived, put Cloudflare Access
+# in front of the hostname; neither current API token has the scope to do that,
+# so it must be added in the dashboard.
+
 # Quick tunnel: random *.trycloudflare.com URL. No token, no DNS, ephemeral.
 [group('cloudflare')]
 tunnel port="8080":
@@ -55,3 +63,21 @@ tunnel-named sub port:
     tok=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
           "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/cfd_tunnel/$tid/token" | jq -r '.result')
     exec cloudflared tunnel run --token "$tok"
+
+# Stop tunnels started from this repo and show what is still exposed.
+[group('cloudflare')]
+tunnel-down:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    n=$(pgrep -f 'cloudflared tunnel' | wc -l | tr -d ' ')
+    echo "cloudflared processes before: $n"
+    pkill -f 'cloudflared tunnel --url' 2>/dev/null && echo "  stopped quick tunnel(s)" || true
+    # Named tunnels are deliberately NOT killed blind: other repos and other
+    # agents on this machine run their own connectors, and killing by name
+    # would take theirs down too. List them and let the operator choose.
+    echo "still running (kill by pid if they are yours):"
+    ps -eo pid,etime,command | grep '[c]loudflared tunnel' | cut -c1-110 | sed 's/^/  /' || echo "  none"
+    echo
+    echo "hostnames still pointed at a tunnel (delete the CNAME to fully close):"
+    echo "  localhost-test.fiducia.cloud -> record 282f2ee18fdd81362d5e66835048298c"
+    echo "  see the Linear doc 'DNS baseline — fiducia.cloud zone' for the revert call"
