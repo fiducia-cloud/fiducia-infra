@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "evidenceMode": "example",
+  "campaignId": "den-946-laptop-fleet-v1",
+  "observedAt": "2026-08-03T17:00:00Z",
+  "campaignStartedAt": "2026-07-27T16:00:00Z",
+  "campaignEndedAt": "2026-08-03T16:00:00Z",
+  "classificationRequested": "limited-production",
+  "gitRevision": "1111111111111111111111111111111111111111",
+  "rollbackRevision": "0000000000000000000000000000000000000000",
+  "imageDigests": {
+    "fiduciaNode": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "fiduciaBrain": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "nats": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "cloudflared": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+  },
+  "clusters": [
+    "laptop-aws-sim",
+    "laptop-gcp-sim",
+    "laptop-azure-sim"
+  ],
+  "failureDomains": {
+    "laptop-aws-sim": {
+      "site": "example-site-a",
+      "network": "example-network-a",
+      "power": "example-power-a",
+      "physicalAccessOwner": "example-operator-a"
+    },
+    "laptop-gcp-sim": {
+      "site": "example-site-b",
+      "network": "example-network-b",
+      "power": "example-power-b",
+      "physicalAccessOwner": "example-operator-b"
+    },
+    "laptop-azure-sim": {
+      "site": "example-site-c",
+      "network": "example-network-c",
+      "power": "example-power-c",
+      "physicalAccessOwner": "example-operator-c"
+    }
+  },
+  "externalProbeRegions": [
+    "example-us-east",
+    "example-eu-west"
+  ],
+  "scenarios": {
+    "baseline": { "passed": true, "proofId": "example-scenario-baseline" },
+    "invalid-route-identity": { "passed": true, "proofId": "example-scenario-invalid-route-identity" },
+    "nonleader-power-loss": { "passed": true, "proofId": "example-scenario-nonleader-power-loss" },
+    "leader-power-loss": { "passed": true, "proofId": "example-scenario-leader-power-loss" },
+    "isp-loss": { "passed": true, "proofId": "example-scenario-isp-loss" },
+    "asymmetric-partition": { "passed": true, "proofId": "example-scenario-asymmetric-partition" },
+    "tunnel-loss": { "passed": true, "proofId": "example-scenario-tunnel-loss" },
+    "kubernetes-api-loss": { "passed": true, "proofId": "example-scenario-kubernetes-api-loss" },
+    "disk-pressure": { "passed": true, "proofId": "example-scenario-disk-pressure" },
+    "clock-drift": { "passed": true, "proofId": "example-scenario-clock-drift" },
+    "thermal-pressure": { "passed": true, "proofId": "example-scenario-thermal-pressure" },
+    "failed-image-pull": { "passed": true, "proofId": "example-scenario-failed-image-pull" },
+    "interrupted-upgrade": { "passed": true, "proofId": "example-scenario-interrupted-upgrade" },
+    "outbox-replay": { "passed": true, "proofId": "example-scenario-outbox-replay" },
+    "jetstream-redelivery": { "passed": true, "proofId": "example-scenario-jetstream-redelivery" },
+    "member-replacement": { "passed": true, "proofId": "example-scenario-member-replacement" },
+    "clean-room-restore": { "passed": true, "proofId": "example-scenario-clean-room-restore" },
+    "lost-device-revocation": { "passed": true, "proofId": "example-scenario-lost-device-revocation" },
+    "alert-delivery": { "passed": true, "proofId": "example-scenario-alert-delivery" },
+    "rollback": { "passed": true, "proofId": "example-scenario-rollback" }
+  },
+  "restoreProofs": {
+    "k3s-control-plane": "example-restore-k3s",
+    "fiducia-state": "example-restore-fiducia",
+    "database": "example-restore-database",
+    "jetstream": "example-restore-jetstream",
+    "object-storage": "example-restore-object-storage",
+    "recovery-key-custody": "example-recovery-key-custody"
+  },
+  "alertReceipts": {
+    "external-http": "example-alert-external-http",
+    "tunnel-health": "example-alert-tunnel-health",
+    "private-mesh": "example-alert-private-mesh",
+    "quorum": "example-alert-quorum",
+    "member-lag": "example-alert-member-lag",
+    "election-churn": "example-alert-election-churn",
+    "jetstream-replica": "example-alert-jetstream-replica",
+    "consumer-lag": "example-alert-consumer-lag",
+    "redelivery": "example-alert-redelivery",
+    "dlq": "example-alert-dlq",
+    "disk-space": "example-alert-disk-space",
+    "disk-health": "example-alert-disk-health",
+    "temperature": "example-alert-temperature",
+    "thermal-throttling": "example-alert-thermal-throttling",
+    "battery": "example-alert-battery",
+    "clock-drift": "example-alert-clock-drift",
+    "wan-state": "example-alert-wan-state",
+    "backup-failure": "example-alert-backup-failure",
+    "backup-age": "example-alert-backup-age",
+    "restore-test-age": "example-alert-restore-test-age"
+  },
+  "revocationProofs": {
+    "private-mesh": "example-revoke-private-mesh",
+    "ssh": "example-revoke-ssh",
+    "git-registry": "example-revoke-git-registry",
+    "tls-mtls": "example-revoke-tls-mtls",
+    "sops-age": "example-revoke-sops-age",
+    "cloudflare-tunnel": "example-revoke-cloudflare-tunnel",
+    "runtime-secret-store": "example-revoke-runtime-secret-store",
+    "fiducia-membership": "example-revoke-fiducia-membership",
+    "jetstream-membership": "example-revoke-jetstream-membership"
+  },
+  "measurements": {
+    "publicFailoverRtoSeconds": 90,
+    "memberRebuildRtoSeconds": 3600,
+    "fleetRestoreRtoSeconds": 14400,
+    "criticalRpoSeconds": 900,
+    "acknowledgedMessageLoss": 0,
+    "duplicateProtectedMutations": 0,
+    "maximumObservedCpuPercent": 48,
+    "maximumObservedMemoryPercent": 54,
+    "maximumObservedDiskPercent": 57,
+    "maximumObservedUploadPercent": 42
+  },
+  "soak": {
+    "durationHours": 168,
+    "sampleCount": 336,
+    "maximumSampleGapMinutes": 60,
+    "representativeTraffic": true,
+    "boundedFaultInjection": true,
+    "operatorInterventions": 2,
+    "unresolvedCriticalFindings": []
+  },
+  "findings": [],
+  "approvals": {
+    "operator": {
+      "identity": "example-operator",
+      "approvedAt": "2026-08-03T16:30:00Z"
+    },
+    "reviewer": {
+      "identity": "example-reviewer",
+      "approvedAt": "2026-08-03T16:45:00Z"
+    }
+  }
+}
