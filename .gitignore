@@ -1,13 +1,31 @@
 *.log
 .DS_Store
+
+# --- environment / secrets (sops + age) -------------------------------------
+# Only env/enc/*.env.enc is tracked. Every plaintext form stays out of git;
+# `just env-check` enforces it. See env/README.md.
+# (`*.env` already matches at any depth — `**/*.env` is stated for clarity.)
 .env
 .env.*
+*.env
+**/*.env
+env/dec/
 !.env.example
+
+# Cluster topology is generated, non-secret config (see tools/render.mjs), not a
+# dotenv secret. It stays tracked — deny by default, permit narrowly.
+!**/topology.env
+
+# age private keys — never commit these.
+*.agekey
+*.age-key
+keys.txt
+sops-private*.txt
+
 # rendered output / local secrets — never commit
 rendered/
 *.local.yaml
 secrets/
-.env
 
 # Terraform plans/state and local variable files can contain provider credentials,
 # join tokens, and infrastructure identifiers. Provider lock files stay tracked.
