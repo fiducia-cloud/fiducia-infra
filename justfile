@@ -66,18 +66,34 @@ tunnel-named sub port:
 
 # Stop tunnels started from this repo and show what is still exposed.
 [group('cloudflare')]
-tunnel-down:
+tunnel-down host="localhost-test.fiducia.cloud":
     #!/usr/bin/env bash
     set -uo pipefail
-    n=$(pgrep -f 'cloudflared tunnel' | wc -l | tr -d ' ')
-    echo "cloudflared processes before: $n"
-    pkill -f 'cloudflared tunnel --url' 2>/dev/null && echo "  stopped quick tunnel(s)" || true
-    # Named tunnels are deliberately NOT killed blind: other repos and other
-    # agents on this machine run their own connectors, and killing by name
-    # would take theirs down too. List them and let the operator choose.
-    echo "still running (kill by pid if they are yours):"
-    ps -eo pid,etime,command | grep '[c]loudflared tunnel' | cut -c1-110 | sed 's/^/  /' || echo "  none"
-    echo
-    echo "hostnames still pointed at a tunnel (delete the CNAME to fully close):"
-    echo "  localhost-test.fiducia.cloud -> record 282f2ee18fdd81362d5e66835048298c"
-    echo "  see the Linear doc 'DNS baseline — fiducia.cloud zone' for the revert call"
+    # Match the BINARY, not a subcommand phrase. cloudflared accepts flags
+    # before the subcommand, so `cloudflared --no-autoupdate tunnel run` does
+    # not contain the substring "cloudflared tunnel" — a pattern like that
+    # reports "nothing running" while the origin stays public.
+    pat='(^|/)cloudflared( |$)'
+    before=$(pgrep -f "$pat" | wc -l | tr -d ' ')
+    echo "cloudflared processes: $before"
+    ps -eo pid,command | grep -E '[c]loudflared' | cut -c1-100 | sed 's/^/  /'
+
+    # Quick tunnels are always this session's to kill. Named connectors are not:
+    # other repos and other agents on this machine run their own, so they are
+    # listed for the operator rather than killed blind.
+    pkill -f 'cloudflared .*tunnel .*--url|cloudflared tunnel --url' 2>/dev/null || true
+    sleep 1
+    # Verify, never trust pkill's exit status.
+    after=$(pgrep -f "$pat" | wc -l | tr -d ' ')
+    echo "remaining after stopping quick tunnels: $after"
+    [ "$after" -gt 0 ] && echo "  named connectors still up — kill by pid if they are yours"
+
+    # curl exits 0 for ANY response it received, including Cloudflare's 530
+    # "no origin". Judge on the status code, not the exit code.
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 "https://{{ host }}/" 2>/dev/null || echo 000)
+    case "$code" in
+      530|1033|000) echo "{{ host }} -> HTTP $code (closed: no connector)" ;;
+      *)            echo "{{ host }} -> HTTP $code — STILL PUBLICLY REACHABLE" ;;
+    esac
+    echo "to close permanently, delete the CNAME:"
+    echo "  record 282f2ee18fdd81362d5e66835048298c (see Linear 'DNS baseline — fiducia.cloud zone')"
