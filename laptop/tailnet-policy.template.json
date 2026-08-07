@@ -1,78 +1,215 @@
 {
-  "tagOwners": {
-    "tag:k8s-operator": ["__OPERATOR_EMAIL__"],
-    "tag:k8s": ["tag:k8s-operator"],
-    "tag:fiducia-laptop-host": ["__OPERATOR_EMAIL__"],
-    "tag:fiducia-peer-egress-aws-sim": ["tag:k8s-operator"],
-    "tag:fiducia-peer-egress-gcp-sim": ["tag:k8s-operator"],
-    "tag:fiducia-peer-egress-azure-sim": ["tag:k8s-operator"],
-    "tag:fiducia-node-peer-aws-sim": ["tag:k8s-operator"],
-    "tag:fiducia-node-peer-gcp-sim": ["tag:k8s-operator"],
-    "tag:fiducia-node-peer-azure-sim": ["tag:k8s-operator"],
-    "tag:fiducia-brain-peer-aws-sim": ["tag:k8s-operator"],
-    "tag:fiducia-brain-peer-gcp-sim": ["tag:k8s-operator"],
-    "tag:fiducia-brain-peer-azure-sim": ["tag:k8s-operator"],
-    "tag:fiducia-nats-route-aws-sim": ["tag:k8s-operator"],
-    "tag:fiducia-nats-route-gcp-sim": ["tag:k8s-operator"],
-    "tag:fiducia-nats-route-azure-sim": ["tag:k8s-operator"]
-  },
   "grants": [
     {
-      "src": ["__OPERATOR_EMAIL__"],
-      "dst": ["tag:fiducia-laptop-host"],
-      "ip": ["tcp:22", "tcp:6443"]
+      "src": [
+        "__OPERATOR_EMAIL__"
+      ],
+      "dst": [
+        "tag:fiducia-laptop-host"
+      ],
+      "ip": [
+        "tcp:22",
+        "tcp:6443"
+      ]
     },
     {
-      "src": ["__OPERATOR_EMAIL__"],
-      "dst": ["tag:k8s-operator"],
-      "ip": ["tcp:443"]
+      "src": [
+        "__OPERATOR_EMAIL__"
+      ],
+      "dst": [
+        "tag:k8s-operator"
+      ],
+      "ip": [
+        "tcp:443"
+      ]
     },
     {
-      "src": ["tag:fiducia-peer-egress-aws-sim"],
-      "dst": ["tag:fiducia-node-peer-gcp-sim", "tag:fiducia-node-peer-azure-sim"],
-      "ip": ["tcp:9090"]
+      "src": [
+        "tag:fiducia-peer-egress-aws-sim"
+      ],
+      "dst": [
+        "tag:fiducia-node-peer-gcp-sim",
+        "tag:fiducia-node-peer-azure-sim"
+      ],
+      "ip": [
+        "tcp:9090"
+      ]
     },
     {
-      "src": ["tag:fiducia-peer-egress-aws-sim"],
-      "dst": ["tag:fiducia-brain-peer-gcp-sim", "tag:fiducia-brain-peer-azure-sim"],
-      "ip": ["tcp:9095"]
+      "src": [
+        "tag:fiducia-peer-egress-aws-sim"
+      ],
+      "dst": [
+        "tag:fiducia-brain-peer-gcp-sim",
+        "tag:fiducia-brain-peer-azure-sim"
+      ],
+      "ip": [
+        "tcp:9095"
+      ]
     },
     {
-      "src": ["tag:fiducia-peer-egress-aws-sim"],
-      "dst": ["tag:fiducia-nats-route-gcp-sim", "tag:fiducia-nats-route-azure-sim"],
-      "ip": ["tcp:6222"]
+      "src": [
+        "tag:fiducia-peer-egress-aws-sim"
+      ],
+      "dst": [
+        "tag:fiducia-nats-route-gcp-sim",
+        "tag:fiducia-nats-route-azure-sim"
+      ],
+      "ip": [
+        "tcp:6222"
+      ]
     },
     {
-      "src": ["tag:fiducia-peer-egress-gcp-sim"],
-      "dst": ["tag:fiducia-node-peer-aws-sim", "tag:fiducia-node-peer-azure-sim"],
-      "ip": ["tcp:9090"]
+      "src": [
+        "tag:fiducia-peer-egress-gcp-sim"
+      ],
+      "dst": [
+        "tag:fiducia-node-peer-aws-sim",
+        "tag:fiducia-node-peer-azure-sim"
+      ],
+      "ip": [
+        "tcp:9090"
+      ]
     },
     {
-      "src": ["tag:fiducia-peer-egress-gcp-sim"],
-      "dst": ["tag:fiducia-brain-peer-aws-sim", "tag:fiducia-brain-peer-azure-sim"],
-      "ip": ["tcp:9095"]
+      "src": [
+        "tag:fiducia-peer-egress-gcp-sim"
+      ],
+      "dst": [
+        "tag:fiducia-brain-peer-aws-sim",
+        "tag:fiducia-brain-peer-azure-sim"
+      ],
+      "ip": [
+        "tcp:9095"
+      ]
     },
     {
-      "src": ["tag:fiducia-peer-egress-gcp-sim"],
-      "dst": ["tag:fiducia-nats-route-aws-sim", "tag:fiducia-nats-route-azure-sim"],
-      "ip": ["tcp:6222"]
+      "src": [
+        "tag:fiducia-peer-egress-gcp-sim"
+      ],
+      "dst": [
+        "tag:fiducia-nats-route-aws-sim",
+        "tag:fiducia-nats-route-azure-sim"
+      ],
+      "ip": [
+        "tcp:6222"
+      ]
     },
     {
-      "src": ["tag:fiducia-peer-egress-azure-sim"],
-      "dst": ["tag:fiducia-node-peer-aws-sim", "tag:fiducia-node-peer-gcp-sim"],
-      "ip": ["tcp:9090"]
+      "src": [
+        "tag:fiducia-peer-egress-azure-sim"
+      ],
+      "dst": [
+        "tag:fiducia-node-peer-aws-sim",
+        "tag:fiducia-node-peer-gcp-sim"
+      ],
+      "ip": [
+        "tcp:9090"
+      ]
     },
     {
-      "src": ["tag:fiducia-peer-egress-azure-sim"],
-      "dst": ["tag:fiducia-brain-peer-aws-sim", "tag:fiducia-brain-peer-gcp-sim"],
-      "ip": ["tcp:9095"]
+      "src": [
+        "tag:fiducia-peer-egress-azure-sim"
+      ],
+      "dst": [
+        "tag:fiducia-brain-peer-aws-sim",
+        "tag:fiducia-brain-peer-gcp-sim"
+      ],
+      "ip": [
+        "tcp:9095"
+      ]
     },
     {
-      "src": ["tag:fiducia-peer-egress-azure-sim"],
-      "dst": ["tag:fiducia-nats-route-aws-sim", "tag:fiducia-nats-route-gcp-sim"],
-      "ip": ["tcp:6222"]
+      "src": [
+        "tag:fiducia-peer-egress-azure-sim"
+      ],
+      "dst": [
+        "tag:fiducia-nats-route-aws-sim",
+        "tag:fiducia-nats-route-gcp-sim"
+      ],
+      "ip": [
+        "tcp:6222"
+      ]
+    },
+    {
+      "src": [
+        "tag:fiducia-peer-egress"
+      ],
+      "dst": [
+        "tag:fiducia-node-peer"
+      ],
+      "ip": [
+        "tcp:9090"
+      ]
+    },
+    {
+      "src": [
+        "tag:fiducia-peer-egress"
+      ],
+      "dst": [
+        "tag:fiducia-brain-peer"
+      ],
+      "ip": [
+        "tcp:9095"
+      ]
     }
   ],
+  "tagOwners": {
+    "tag:fiducia-brain-peer": [
+      "tag:k8s-operator"
+    ],
+    "tag:fiducia-brain-peer-aws-sim": [
+      "tag:k8s-operator"
+    ],
+    "tag:fiducia-brain-peer-azure-sim": [
+      "tag:k8s-operator"
+    ],
+    "tag:fiducia-brain-peer-gcp-sim": [
+      "tag:k8s-operator"
+    ],
+    "tag:fiducia-laptop-host": [
+      "__OPERATOR_EMAIL__"
+    ],
+    "tag:fiducia-nats-route-aws-sim": [
+      "tag:k8s-operator"
+    ],
+    "tag:fiducia-nats-route-azure-sim": [
+      "tag:k8s-operator"
+    ],
+    "tag:fiducia-nats-route-gcp-sim": [
+      "tag:k8s-operator"
+    ],
+    "tag:fiducia-node-peer": [
+      "tag:k8s-operator"
+    ],
+    "tag:fiducia-node-peer-aws-sim": [
+      "tag:k8s-operator"
+    ],
+    "tag:fiducia-node-peer-azure-sim": [
+      "tag:k8s-operator"
+    ],
+    "tag:fiducia-node-peer-gcp-sim": [
+      "tag:k8s-operator"
+    ],
+    "tag:fiducia-peer-egress": [
+      "tag:k8s-operator"
+    ],
+    "tag:fiducia-peer-egress-aws-sim": [
+      "tag:k8s-operator"
+    ],
+    "tag:fiducia-peer-egress-azure-sim": [
+      "tag:k8s-operator"
+    ],
+    "tag:fiducia-peer-egress-gcp-sim": [
+      "tag:k8s-operator"
+    ],
+    "tag:k8s": [
+      "tag:k8s-operator"
+    ],
+    "tag:k8s-operator": [
+      "__OPERATOR_EMAIL__"
+    ]
+  },
   "tests": [
     {
       "src": "__OPERATOR_EMAIL__",
@@ -158,6 +295,34 @@
         "tag:fiducia-brain-peer-aws-sim:8095",
         "tag:fiducia-nats-route-aws-sim:4222",
         "tag:fiducia-nats-route-aws-sim:8222"
+      ]
+    },
+    {
+      "src": "__OPERATOR_EMAIL__",
+      "proto": "tcp",
+      "accept": [
+        "tag:fiducia-laptop-host:22",
+        "tag:fiducia-laptop-host:6443",
+        "tag:k8s-operator:443"
+      ],
+      "deny": [
+        "tag:fiducia-node-peer:9090",
+        "tag:fiducia-brain-peer:9095"
+      ]
+    },
+    {
+      "src": "tag:fiducia-peer-egress",
+      "proto": "tcp",
+      "accept": [
+        "tag:fiducia-node-peer:9090",
+        "tag:fiducia-brain-peer:9095"
+      ],
+      "deny": [
+        "tag:fiducia-laptop-host:22",
+        "tag:fiducia-laptop-host:6443",
+        "tag:k8s-operator:443",
+        "tag:fiducia-node-peer:8090",
+        "tag:fiducia-brain-peer:8095"
       ]
     }
   ]
