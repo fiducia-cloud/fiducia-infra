@@ -212,7 +212,7 @@ describe("DEN-1404/DEN-1619 managed beta SLO package", () => {
       "probe_location",
       "honor_labels: false",
       "fresh",
-      "Missing or stale sources",
+      "historically under-covered sources",
       "do not prove physical independence",
     ]) {
       assert.ok(readme.includes(required), `README missing ${required}`);
