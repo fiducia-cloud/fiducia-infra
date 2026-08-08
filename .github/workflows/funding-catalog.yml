@@ -6,6 +6,7 @@ on:
       - "funding/**"
       - "tools/validate-funding.mjs"
       - "tools/validate-funding.test.mjs"
+      - "tools/validate-funding-candidates.mjs"
       - ".github/workflows/funding-catalog.yml"
   push:
     branches: [main]
@@ -13,6 +14,7 @@ on:
       - "funding/**"
       - "tools/validate-funding.mjs"
       - "tools/validate-funding.test.mjs"
+      - "tools/validate-funding-candidates.mjs"
       - ".github/workflows/funding-catalog.yml"
   workflow_dispatch:
 
@@ -34,5 +36,7 @@ jobs:
           node-version: "22.22.1"
       - name: Validate provider catalog
         run: node tools/validate-funding.mjs
+      - name: Validate latest opportunity candidate snapshot
+        run: node tools/validate-funding-candidates.mjs funding/candidates-2026-08-07.json
       - name: Run validator tests
         run: node --test tools/validate-funding.test.mjs
