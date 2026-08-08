@@ -1,0 +1,71 @@
+name: DEN-1619 managed beta evidence policy
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/managed-beta-evidence-policy.yml"
+      - "external-probes/managed-beta/**"
+      - "tools/render-managed-beta-evidence-policy.mjs"
+      - "tools/managed-beta-evidence-policy.test.mjs"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/managed-beta-evidence-policy.yml"
+      - "external-probes/managed-beta/**"
+      - "tools/render-managed-beta-evidence-policy.mjs"
+      - "tools/managed-beta-evidence-policy.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate this workflow
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/managed-beta-evidence-policy.yml
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.22.1"
+
+      - name: Validate the fleet-to-evidence policy contract
+        run: node --test tools/managed-beta-evidence-policy.test.mjs
+
+      - name: Render the reviewed example and enforce the non-secret boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/evidence-policy"
+          node tools/render-managed-beta-evidence-policy.mjs \
+            --fleet external-probes/managed-beta/fleet.example.json \
+            --output-dir "$output"
+
+          test "$(jq -r '.policy.expected_interval_seconds' "$output/availability-policy.json")" -eq 80
+          test "$(jq -r '.policy.minimum_samples_per_source_28d' "$output/availability-policy.json")" -eq 28728
+          test "$(jq -r '.locations | length' "$output/availability-policy.json")" -eq 2
+          test "$(jq -r '.operation_classes | length' "$output/availability-policy.json")" -eq 6
+          grep -Fxq 'FIDUCIA_PROBE_EXPECTED_INTERVAL_SECONDS=80' "$output/availability-policy.env"
+          grep -Fxq 'FIDUCIA_PROBE_MINIMUM_COVERAGE_RATIO=0.95' "$output/availability-policy.env"
+          grep -Fxq 'FIDUCIA_PROBE_MAX_FRESHNESS_SECONDS=320' "$output/availability-policy.env"
+          grep -Fxq 'FIDUCIA_PROBE_MAX_LAST_SUCCESS_AGE_SECONDS=960' "$output/availability-policy.env"
+
+          if grep -R -Eiq '(endpoint|bearer|credential|password|secret_file|hostname|public_ip|state_directory|failure_domain_fingerprint)' "$output"; then
+            echo 'generated evidence policy crossed the non-secret boundary' >&2
+            exit 1
+          fi
+
+      - name: Audit JavaScript dependencies
+        run: npm audit
