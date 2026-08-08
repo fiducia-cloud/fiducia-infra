@@ -34,6 +34,10 @@ Use `external-probe-scrape.example.yml` as the reviewed central scrape shape. It
 
 Two different trusted location labels prove two monitoring lineages; they do not prove physical independence. DEN-1619 separately requires the sources not to share a laptop/cluster, ingress process, scheduler/state volume, credential/runtime identity, outbound network/provider failure domain, or practical DNS failure path.
 
+A cell with fewer than two currently observed locations raises
+`FiduciaExternalProbeIndependenceLost` and is ineligible for availability
+evidence even when the aggregate ratio appears healthy.
+
 ## Observation coverage, freshness, and independence
 
 `fiducia:sli:public_availability_samples:28d` remains the cell-level total used for aggregate service context.
@@ -60,36 +64,7 @@ stack plus:
 
 ## Evidence maturity
 
-A rendered or deployed rules package does not make the service SLO `measured`.
-The evidence progression remains:
-
-1. `specified` — the source/query/alert/dashboard contract exists;
-2. `instrumented` — named external producers emit cumulative series;
-3. `queryable` — Prometheus scrapes the series and evaluates these rules and
-   alerts, with source freshness and no-data visible;
-4. `measured` — an exact release candidate has a bounded observation window,
-   exported query results, image/config commits, probe locations, and independent
-   review.
-
-The external availability objective requires at least two failure-independent
-probe locations. Probes in the same cluster, laptop, DNS path, or ingress process
-as Fiducia are useful diagnostics but do not meet that requirement.
-
-## Low-cardinality boundary
-
-The package groups only by reviewed `cell`, `operation_class`, and `result`
-labels. Organization, tenant, project, environment, resource key/path,
-credential, endpoint, request ID, trace ID, response content, and raw error text
-must never enter Prometheus labels, dashboard variables, alert annotations, or
-evidence exports.
-
-This distinction is deliberate: a stale location must not continue satisfying the independence gate merely because its cumulative counter still exists. Likewise, a healthy `health` source cannot satisfy the gate for a missing `committed_write` or `secret_read` source, and extra observations from one source cannot satisfy the historical coverage requirement for another.
-
-Missing, stale, or historically under-covered sources are incomplete evidence, never 100% availability. Counter resets are evidence-integrity events because the one-shot probe's local state is its cumulative authority. Duplicate time series claiming the same trusted location/cell/operation/result identity are an authority error.
-
-## Evidence maturity
-
-A rendered or deployed rules package does not make the service SLO measured. Progression remains:
+A rendered or deployed rules package does not make the service SLO `measured`. Progression remains:
 
 1. `specified` — source/query/alert/dashboard contracts exist;
 2. `instrumented` — at least two named failure-independent producers emit cumulative series;
@@ -102,27 +77,20 @@ The external availability objective requires at least two failure-independent lo
 
 The package uses only reviewed `probe_location`, `cell`, `operation_class`, and `result` labels. Organization, tenant, project, environment, resource key/path, credential, endpoint, request ID, trace ID, response content, raw error, hostname, IP address, and free-form site identity must never enter metrics, dashboard variables, alert annotations, or evidence exports.
 
+This distinction is deliberate: a stale location must not continue satisfying the independence gate merely because its cumulative counter still exists. Likewise, a healthy `health` source cannot satisfy the gate for a missing `committed_write` or `secret_read` source, and extra observations from one source cannot satisfy the historical coverage requirement for another.
+
+Missing, stale, or historically under-covered sources are incomplete evidence, never 100% availability. Counter resets are evidence-integrity events because the one-shot probe's local state is its cumulative authority. Duplicate time series claiming the same trusted location/cell/operation/result identity are an authority error.
+
 ## Deployment dependency
 
-Central Prometheus must securely scrape or receive cumulative series from each external location. This overlay installs queries and views; it does not create external machines, credentials, schedules, state volumes, network paths, or physical independence. Those deployment and live-evidence tasks remain in DEN-1619.
+Central Prometheus must securely scrape or receive the textfile-collector
+cumulative series from each external probe location. This overlay installs
+queries and views; it does not create those external machines, credentials,
+schedules, state volumes, network paths, or physical independence. Those
+deployment and live-evidence tasks remain in DEN-1404 and DEN-1619.
+
 ## No-data behavior
 
 Missing or stale sources are explicit alerts and dashboard `NO DATA`, never 100%
 availability. Counter resets are evidence-integrity events because the one-shot
 probe's local state is the cumulative counter authority.
-
-## Deployment dependency
-
-The central Prometheus must be able to scrape or receive the textfile-collector
-series from each external probe location. This overlay installs queries and views;
-it does not create those external machines, credentials, schedules, or network
-paths. Those deployment and evidence tasks remain in DEN-1404.
-
-
-## Trusted probe-location identity
-
-Use `external-probe-scrape.example.yml` as the reviewed shape for central scrape
-targets. Every independent target receives one bounded `probe_location` label at
-the monitoring boundary. A cell with fewer than two currently observed locations
-raises `FiduciaExternalProbeIndependenceLost` and is ineligible for availability
-evidence even when the aggregate ratio appears healthy.
