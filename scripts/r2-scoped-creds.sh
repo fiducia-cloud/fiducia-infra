@@ -18,6 +18,20 @@
 # Anything that touches R2 -- CI, backup jobs, log shippers -- should call this
 # rather than reading the parent key. The parent key should only ever be used to
 # mint these.
+#
+# STATUS, 2026-08-07: the account-wide key this was written to defend against has
+# been replaced by `fiducia-r2-scoped-2026-08`, which carries the bucket-scoped
+# permission groups (Workers R2 Storage Bucket Item Read/Write) restricted to the
+# four fiducia-* buckets. Verified: it reads and writes every fiducia bucket and
+# is denied (403) on sonus-auris and zed buckets.
+#
+# That changes how this script is used. `r2/temp-access-credentials` requires an
+# ACCOUNT-LEVEL R2 permission, which a bucket-scoped token deliberately lacks --
+# calling it with the scoped key returns 10000. So this script now needs an
+# account-scoped parent token, and with the scoped key in place it is no longer
+# the primary defence; it is an optional extra narrowing (per-job read-only, TTL
+# bound) for callers that already hold an account-scoped token. Do not reintroduce
+# an account-wide key merely to make this script work.
 set -euo pipefail
 
 bucket=""
@@ -82,10 +96,30 @@ command -v python3 >/dev/null || fail "python3 not found"
 # Cloudflare will happily mint credentials for a bucket that does not exist; the
 # failure only surfaces later as an opaque S3 error inside whatever job used
 # them. Check up front so a typo fails here, loudly, instead of mid-pipeline.
-if ! curl -sS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-      "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/r2/buckets/${bucket}" \
-      | python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin).get("success") else 1)' 2>/dev/null; then
-  fail "bucket not found in account ${CLOUDFLARE_ACCOUNT_ID}: ${bucket}"
+#
+# A missing bucket and a token that has lost R2 permission BOTH come back as
+# success:false, and reporting the second as "bucket not found" sends you
+# hunting for a typo that does not exist. Measured 2026-08-08: the account-wide
+# token was narrowed out of R2 and this script blamed the bucket name.
+probe=$(curl -sS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+  "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/r2/buckets/${bucket}" || true)
+if ! printf '%s' "$probe" | python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin).get("success") else 1)' 2>/dev/null; then
+  detail=$(printf '%s' "$probe" | python3 -c '
+import json,sys
+try: b=json.load(sys.stdin)
+except ValueError: print("non-JSON response"); raise SystemExit
+errs=b.get("errors") or []
+print("; ".join("{0}: {1}".format(e.get("code"), e.get("message")) for e in errs) or "unknown error")
+' 2>/dev/null || echo "unreadable response")
+  case "$detail" in
+    *[Aa]uthentication*|*10000*)
+      fail "CLOUDFLARE_API_TOKEN cannot read R2 in account ${CLOUDFLARE_ACCOUNT_ID}.
+       The bucket name is probably fine — the token lacks R2 permission (or was
+       narrowed/rotated). Cloudflare reported: ${detail}
+       Re-mint a token with R2 access and update env/enc/prod.env.enc." ;;
+    *)
+      fail "bucket not readable in account ${CLOUDFLARE_ACCOUNT_ID}: ${bucket} (${detail})" ;;
+  esac
 fi
 
 response="$(
