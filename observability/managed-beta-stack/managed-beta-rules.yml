@@ -4,7 +4,8 @@ groups:
     rules:
       # Contractual availability remains cell-scoped and combines all observed
       # source samples. Source continuity records retain trusted probe_location
-      # so a missing or stale location cannot hide inside the aggregate.
+      # so a missing, stale, or historically under-covered source cannot hide
+      # inside the aggregate.
       - record: fiducia:sli:public_availability_ratio:28d
         expr: |
           sum by (cell) (
@@ -18,6 +19,11 @@ groups:
       - record: fiducia:sli:public_availability_samples:28d
         expr: |
           sum by (cell) (increase(fiducia_external_probe_total[28d]))
+      - record: fiducia:sli:external_probe_samples:28d
+        expr: |
+          sum by (probe_location, cell, operation_class) (
+            increase(fiducia_external_probe_total[28d])
+          )
       - record: fiducia:sli:public_unavailability_ratio:1h
         expr: |
           1 - (
