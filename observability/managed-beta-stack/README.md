@@ -13,7 +13,7 @@ Applying this overlay deploys the existing OTel/Prometheus/Loki/Tempo/Grafana st
 
 - `managed-beta-rules.yml` in Prometheus;
 - cell-scoped 28-day availability, sample-count, error-budget, and burn-rate records;
-- per-location/cell/operation freshness and last-success records;
+- per-location/cell/operation 28-day sample-count, freshness, and last-success records;
 - historical and fresh trusted-location counts per cell and operation class;
 - fast/slow burn, no-data, lost-independence, stale-location, no-recent-success, counter-reset, and duplicate-series alerts;
 - a Grafana dashboard with availability, remaining error budget, samples, fresh location count, per-location freshness/last success, result rates, burn rates, and current source inventory.
@@ -34,7 +34,11 @@ Use `external-probe-scrape.example.yml` as the reviewed central scrape shape. It
 
 Two different trusted location labels prove two monitoring lineages; they do not prove physical independence. DEN-1619 separately requires the sources not to share a laptop/cluster, ingress process, scheduler/state volume, credential/runtime identity, outbound network/provider failure domain, or practical DNS failure path.
 
-## Freshness and independence
+## Observation coverage, freshness, and independence
+
+`fiducia:sli:public_availability_samples:28d` remains the cell-level total used for aggregate service context.
+
+`fiducia:sli:external_probe_samples:28d` records 28-day observations separately for every trusted `probe_location`, `cell`, and `operation_class`. The exact-candidate exporter uses this per-source record for density checks, so a high-volume source cannot hide sparse history for another location or operation.
 
 `fiducia:sli:external_probe_location_count` records historically observable locations per `cell` and `operation_class`.
 
@@ -79,9 +83,9 @@ credential, endpoint, request ID, trace ID, response content, and raw error text
 must never enter Prometheus labels, dashboard variables, alert annotations, or
 evidence exports.
 
-This distinction is deliberate: a stale location must not continue satisfying the independence gate merely because its cumulative counter still exists. Likewise, a healthy `health` source cannot satisfy the gate for a missing `committed_write` or `secret_read` source.
+This distinction is deliberate: a stale location must not continue satisfying the independence gate merely because its cumulative counter still exists. Likewise, a healthy `health` source cannot satisfy the gate for a missing `committed_write` or `secret_read` source, and extra observations from one source cannot satisfy the historical coverage requirement for another.
 
-Missing or stale sources are explicit alerts and dashboard `NO DATA`, never 100% availability. Counter resets are evidence-integrity events because the one-shot probe's local state is its cumulative authority. Duplicate time series claiming the same trusted location/cell/operation/result identity are an authority error.
+Missing, stale, or historically under-covered sources are incomplete evidence, never 100% availability. Counter resets are evidence-integrity events because the one-shot probe's local state is its cumulative authority. Duplicate time series claiming the same trusted location/cell/operation/result identity are an authority error.
 
 ## Evidence maturity
 
@@ -89,8 +93,8 @@ A rendered or deployed rules package does not make the service SLO measured. Pro
 
 1. `specified` — source/query/alert/dashboard contracts exist;
 2. `instrumented` — at least two named failure-independent producers emit cumulative series;
-3. `queryable` — central Prometheus injects trusted location identity and evaluates these rules, alerts, dashboard, freshness, reset, duplicate, and no-data behavior;
-4. `measured` — a completed exact-candidate window is exported with exact revisions/digests, the full declared/observed location matrix, and independent review.
+3. `queryable` — central Prometheus injects trusted location identity and evaluates these rules, alerts, dashboard, per-source coverage, freshness, reset, duplicate, and no-data behavior;
+4. `measured` — a completed exact-candidate window is exported with exact revisions/digests, the full declared/observed location matrix, sufficient observations for every source, and independent review.
 
 The external availability objective requires at least two failure-independent locations. Probes in the same cluster, laptop, DNS path, scheduler, state authority, or ingress process do not meet that requirement.
 
