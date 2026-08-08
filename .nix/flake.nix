@@ -57,6 +57,7 @@
               # encrypted env files — env/enc/*.env.enc, see env/README.md
               sops
               age
+              python3 # .just/dotenv.py — the shared dotenv parser
             ];
 
             shellHook = ''
