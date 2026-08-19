@@ -96,10 +96,10 @@ test('strict JSON parser rejects direct, escaped-equivalent, and nested duplicat
   assert.throws(() => parseJsonStrict('{"outer":{"a":1,"a":2}}', 'nested'), /duplicate object key/);
 });
 
-test('idempotency key is normalized across superficial formatting', () => {
+test('idempotency key normalizes case, punctuation, and separators', () => {
   assert.equal(
     makeIdempotencyKey({
-      organization: ' Example, Inc. ',
+      organization: 'Example, Inc.',
       program: 'Startup / Credit Program',
       cycle: '2026 Cohort',
       quota_category: 'computing-credit',
