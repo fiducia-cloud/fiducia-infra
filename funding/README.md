@@ -78,7 +78,9 @@ Supported evidence types are:
 - `bounded_human_reply` — a short outcome/routing summary from human correspondence,
   without copying the email body, sender/recipient addresses, or message headers.
 
-Snapshots are sorted by candidate ID. Categories are sorted and unique. Unknown
+Snapshots are regular files, not symlinks. Their names must match
+`candidates-YYYY-MM-DD.json`, and the filename date must equal `verified_on`.
+Snapshots are sorted by candidate ID; categories are sorted and unique. Unknown
 fields fail closed so private account identifiers or future unreviewed semantics
 cannot silently enter the public format.
 
