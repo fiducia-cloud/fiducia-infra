@@ -3,8 +3,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { pathToFileURL } from 'node:url';
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const SNAPSHOT_FILENAME_PATTERN = /^candidates-(\d{4}-\d{2}-\d{2})\.json$/;
 const ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const CATEGORY_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const PUBLIC_SCOPE = 'Public, non-sensitive opportunity discovery only. This file does not assert company eligibility, submission, acceptance, or contractual commitment.';
@@ -133,16 +135,34 @@ export function validateSnapshot(snapshot, rawText = JSON.stringify(snapshot)) {
   return snapshot;
 }
 
+function snapshotDateFromPath(file) {
+  const match = path.basename(file).match(SNAPSHOT_FILENAME_PATTERN);
+  assert(match, `${file}: filename must match candidates-YYYY-MM-DD.json`);
+  return match[1];
+}
+
+function assertRegularSnapshot(file) {
+  const stat = fs.lstatSync(file);
+  assert(!stat.isSymbolicLink(), `${file}: snapshot symlinks are forbidden`);
+  assert(stat.isFile(), `${file}: expected regular snapshot file`);
+  snapshotDateFromPath(file);
+}
+
 export function snapshotFiles(target = 'funding') {
   const resolved = path.resolve(target);
-  const stat = fs.statSync(resolved);
-  if (stat.isFile()) return [resolved];
+  const stat = fs.lstatSync(resolved);
+  assert(!stat.isSymbolicLink(), `${target}: symlinks are forbidden`);
+  if (stat.isFile()) {
+    assertRegularSnapshot(resolved);
+    return [resolved];
+  }
   assert(stat.isDirectory(), `${target}: expected file or directory`);
   const files = fs.readdirSync(resolved)
-    .filter((name) => /^candidates-\d{4}-\d{2}-\d{2}\.json$/.test(name))
+    .filter((name) => SNAPSHOT_FILENAME_PATTERN.test(name))
     .sort()
     .map((name) => path.join(resolved, name));
   assert(files.length > 0, `${target}: no candidate snapshots found`);
+  files.forEach(assertRegularSnapshot);
   return files;
 }
 
@@ -153,6 +173,8 @@ export function validateTarget(target = 'funding') {
     const raw = fs.readFileSync(file, 'utf8');
     const parsed = JSON.parse(raw);
     validateSnapshot(parsed, raw);
+    const filenameDate = snapshotDateFromPath(file);
+    assert(filenameDate === parsed.verified_on, `${file}: filename date ${filenameDate} must match verified_on ${parsed.verified_on}`);
     candidates += parsed.candidates.length;
   }
   return { files, candidates };
@@ -164,7 +186,7 @@ function main() {
   console.log(`Validated ${result.candidates} opportunity candidates across ${result.files.length} snapshot file(s)`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   try {
     main();
   } catch (error) {
