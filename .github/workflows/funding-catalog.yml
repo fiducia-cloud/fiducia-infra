@@ -7,6 +7,7 @@ on:
       - "tools/validate-funding.mjs"
       - "tools/validate-funding.test.mjs"
       - "tools/validate-funding-candidates.mjs"
+      - "tools/validate-funding-candidates.test.mjs"
       - ".github/workflows/funding-catalog.yml"
   push:
     branches: [main]
@@ -15,11 +16,16 @@ on:
       - "tools/validate-funding.mjs"
       - "tools/validate-funding.test.mjs"
       - "tools/validate-funding-candidates.mjs"
+      - "tools/validate-funding-candidates.test.mjs"
       - ".github/workflows/funding-catalog.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: funding-catalog-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   validate:
@@ -27,7 +33,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Set up Node.js
@@ -36,7 +42,7 @@ jobs:
           node-version: "22.22.1"
       - name: Validate provider catalog
         run: node tools/validate-funding.mjs
-      - name: Validate latest opportunity candidate snapshot
-        run: node tools/validate-funding-candidates.mjs funding/candidates-2026-08-07.json
-      - name: Run validator tests
-        run: node --test tools/validate-funding.test.mjs
+      - name: Validate every opportunity candidate snapshot
+        run: node tools/validate-funding-candidates.mjs funding
+      - name: Run fail-closed validator tests
+        run: node --test tools/validate-funding.test.mjs tools/validate-funding-candidates.test.mjs
