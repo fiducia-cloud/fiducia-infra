@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "updated_on": "2026-08-19",
+  "company": {
+    "name": "Fiducia Cloud",
+    "official_contact": "hello@fiducia.cloud",
+    "website": "https://fiducia.cloud",
+    "github": "https://github.com/fiducia-cloud",
+    "linkedin": "https://linkedin.com/in/alexanderdmills"
+  },
+  "migration": {
+    "status": "required",
+    "counting_enabled": false
+  },
+  "counting_policy": {
+    "quota_categories": ["fundraising", "computing-credit", "ai-credit", "speaking"],
+    "qualifying_statuses": ["submitted", "under_review", "approved", "declined", "ineligible", "waitlisted", "closed_after_submission"],
+    "delivery_reconciliation_hours": 72,
+    "email_sent_alone_qualifies": false,
+    "absence_of_bounce_qualifies": false,
+    "reroute_creates_new_application": false,
+    "support_inquiry_qualifies": false,
+    "portal_required_qualifies": false
+  },
+  "applications": []
+}

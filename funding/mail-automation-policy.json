@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "auto_send_enabled": false,
+  "company_sender": "hello@fiducia.cloud",
+  "mode": "allowlisted_threads_human_review_only",
+  "blocked_local_parts": ["mailer-daemon", "postmaster", "no-reply", "noreply", "do-not-reply", "donotreply"],
+  "blocked_precedence": ["bulk", "list", "junk"],
+  "blocked_auto_submitted_values": ["auto-generated", "auto-replied", "auto-notified"],
+  "blocked_content_types": ["message/delivery-status", "multipart/report"],
+  "manual_review_subject_terms": ["invoice", "receipt", "billing", "payment", "security", "password", "otp", "verification", "verify", "survey", "newsletter", "unsubscribe"],
+  "required_send_controls": {
+    "human_approved": true,
+    "authenticated_company_sender": true,
+    "official_intake_verified": true,
+    "idempotency_key_unique": true,
+    "legal_facts_verified": true
+  }
+}
