@@ -22,6 +22,10 @@ function rejects(mutator, pattern) {
   assert.throws(() => validateSnapshot(candidate, JSON.stringify(candidate)), pattern);
 }
 
+function temporaryDirectory() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'fiducia-candidates-'));
+}
+
 test('current snapshot is valid', () => {
   assert.equal(validateSnapshot(current, currentRaw), current);
 });
@@ -33,8 +37,31 @@ test('directory target validates every committed snapshot', () => {
 });
 
 test('snapshot discovery rejects empty directories', () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'fiducia-candidates-'));
+  const directory = temporaryDirectory();
   assert.throws(() => snapshotFiles(directory), /no candidate snapshots found/);
+});
+
+test('file targets require the dated snapshot filename convention', () => {
+  const directory = temporaryDirectory();
+  const file = path.join(directory, 'snapshot.json');
+  fs.writeFileSync(file, currentRaw);
+  assert.throws(() => validateTarget(file), /filename must match/);
+});
+
+test('filename date must match verified_on', () => {
+  const directory = temporaryDirectory();
+  const file = path.join(directory, 'candidates-2026-08-08.json');
+  fs.writeFileSync(file, currentRaw);
+  assert.throws(() => validateTarget(file), /must match verified_on/);
+});
+
+test('snapshot symlinks are rejected', { skip: process.platform === 'win32' }, () => {
+  const directory = temporaryDirectory();
+  const source = path.join(directory, 'source.json');
+  const link = path.join(directory, 'candidates-2026-08-07.json');
+  fs.writeFileSync(source, currentRaw);
+  fs.symlinkSync(source, link);
+  assert.throws(() => snapshotFiles(link), /symlinks are forbidden/);
 });
 
 test('rejects unknown top-level fields', () => {
@@ -90,7 +117,8 @@ test('rejects IP-literal official URLs', () => {
 });
 
 test('rejects credential-shaped material', () => {
-  rejects((value) => { value.candidates[0].evidence = 'ghp_123456789012345678901234567890123456'; }, /GitHub token/);
+  const fixture = 'gh' + 'p_' + ('1'.repeat(36));
+  rejects((value) => { value.candidates[0].evidence = fixture; }, /GitHub token/);
 });
 
 test('rejects email addresses and mailbox excerpts', () => {
