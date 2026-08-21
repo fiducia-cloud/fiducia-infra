@@ -1,9 +1,11 @@
-name: funding-catalog
+name: funding and application policy
 
 on:
   pull_request:
     paths:
       - "funding/**"
+      - "tools/application-operations.mjs"
+      - "tools/application-operations.test.mjs"
       - "tools/validate-funding.mjs"
       - "tools/validate-funding.test.mjs"
       - "tools/validate-funding-candidates.mjs"
@@ -13,6 +15,8 @@ on:
     branches: [main]
     paths:
       - "funding/**"
+      - "tools/application-operations.mjs"
+      - "tools/application-operations.test.mjs"
       - "tools/validate-funding.mjs"
       - "tools/validate-funding.test.mjs"
       - "tools/validate-funding-candidates.mjs"
@@ -24,25 +28,48 @@ permissions:
   contents: read
 
 concurrency:
-  group: funding-catalog-${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          show-progress: false
+          submodules: false
+
       - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6.1.0
         with:
           node-version: "22.22.1"
-      - name: Validate provider catalog
-        run: node tools/validate-funding.mjs
-      - name: Validate every opportunity candidate snapshot
-        run: node tools/validate-funding-candidates.mjs funding
-      - name: Run fail-closed validator tests
-        run: node --test tools/validate-funding.test.mjs tools/validate-funding-candidates.test.mjs
+
+      - name: Validate JavaScript syntax
+        run: |
+          set -euo pipefail
+          node --check tools/application-operations.mjs
+          node --check tools/application-operations.test.mjs
+          node --check tools/validate-funding.mjs
+          node --check tools/validate-funding.test.mjs
+          node --check tools/validate-funding-candidates.mjs
+          node --check tools/validate-funding-candidates.test.mjs
+
+      - name: Validate provider and opportunity catalogs
+        run: |
+          set -euo pipefail
+          node tools/validate-funding.mjs
+          node tools/validate-funding-candidates.mjs funding
+
+      - name: Validate fail-closed application and mail policy
+        run: node tools/application-operations.mjs
+
+      - name: Run hostile policy tests
+        run: >-
+          node --test
+          tools/validate-funding.test.mjs
+          tools/validate-funding-candidates.test.mjs
+          tools/application-operations.test.mjs
