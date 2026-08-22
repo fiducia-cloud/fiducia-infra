@@ -171,7 +171,7 @@ test("unsafe campaign edits fail before a plan can exist", () => {
 test("example completed results require explicit rehearsal mode and validate every immutable step", () => {
   const plan = examplePlan();
   const results = buildExampleAcceptanceResults(plan);
-  assert.throws(() => validateAcceptanceResults(plan, results), /requires --allow-example/);
+  assert.throws(() => validateAcceptanceResults(plan, results), /require --allow-example/);
   const report = validateAcceptanceResults(plan, results, { allowExample: true });
   assert.equal(report.status, "passed");
   assert.equal(report.evidenceMode, "example");
