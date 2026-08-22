@@ -9,6 +9,7 @@ components:
   - ../../../base/components/brain
   - ../../components/substrate
   - ../../components/runtime
+  - ../../components/connectivity
   - ../../components/messaging-ha
 configMapGenerator:
   - name: fiducia-cluster

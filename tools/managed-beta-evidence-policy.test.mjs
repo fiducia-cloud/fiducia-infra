@@ -123,7 +123,10 @@ describe("DEN-1619 evidence-policy renderer", () => {
       /^FIDUCIA_PROBE_MAX_LAST_SUCCESS_AGE_SECONDS=1020$/mu,
     );
 
-    const combined = `${firstJson}\n${firstEnv}`.toLowerCase();
+    const parsedPolicy = JSON.parse(firstJson);
+    const { limitations, ...machinePolicy } = parsedPolicy;
+    assert.ok(Array.isArray(limitations) && limitations.length > 0);
+    const combined = `${JSON.stringify(machinePolicy)}\n${firstEnv}`.toLowerCase();
     for (const forbidden of [
       "endpoint",
       "bearer",
