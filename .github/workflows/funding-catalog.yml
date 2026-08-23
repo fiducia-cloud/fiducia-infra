@@ -9,6 +9,7 @@ on:
       - "tools/validate-funding.mjs"
       - "tools/validate-funding.test.mjs"
       - "tools/validate-funding-candidates.mjs"
+      - "tools/validate-funding-candidates.test.mjs"
       - ".github/workflows/funding-catalog.yml"
   push:
     branches: [main]
@@ -19,6 +20,7 @@ on:
       - "tools/validate-funding.mjs"
       - "tools/validate-funding.test.mjs"
       - "tools/validate-funding-candidates.mjs"
+      - "tools/validate-funding-candidates.test.mjs"
       - ".github/workflows/funding-catalog.yml"
   workflow_dispatch:
 
@@ -54,15 +56,20 @@ jobs:
           node --check tools/validate-funding.mjs
           node --check tools/validate-funding.test.mjs
           node --check tools/validate-funding-candidates.mjs
+          node --check tools/validate-funding-candidates.test.mjs
 
       - name: Validate provider and opportunity catalogs
         run: |
           set -euo pipefail
           node tools/validate-funding.mjs
-          node tools/validate-funding-candidates.mjs funding/candidates-2026-08-07.json
+          node tools/validate-funding-candidates.mjs funding
 
       - name: Validate fail-closed application and mail policy
         run: node tools/application-operations.mjs
 
       - name: Run hostile policy tests
-        run: node --test tools/validate-funding.test.mjs tools/application-operations.test.mjs
+        run: >-
+          node --test
+          tools/validate-funding.test.mjs
+          tools/validate-funding-candidates.test.mjs
+          tools/application-operations.test.mjs

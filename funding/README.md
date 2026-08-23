@@ -1,26 +1,43 @@
-# Fiducia funding and application operations
+# Fiducia funding, candidate, and application operations
 
 This directory stores public, non-secret metadata for investor, accelerator, cloud,
 AI-model, database, Kubernetes-hosting, source-control, developer-platform, and
 speaking opportunities relevant to Fiducia Cloud.
 
-Two records have intentionally different meanings:
+Three records have intentionally different meanings:
 
 - `providers.json` is a discovery and routing catalog. It prevents duplicate research,
   records official program routes, and maps opportunities to concrete workloads. It is
   **not** a quota ledger.
+- `candidates-YYYY-MM-DD.json` files are dated, public-safe discovery snapshots with
+  bounded official-source or human-routing evidence. They permit only `discovered`
+  and `portal_required` and never become a second application ledger.
 - `application-ledger.json` is the only machine-readable source allowed to produce
   application totals. It remains fail-closed with counting disabled until historical
   correspondence is migrated into receipt-backed records.
 
+## Ownership
+
+- This repository owns the public provider catalog, candidate snapshots, and the
+  evidence-backed application ledger and mail policy.
+- `fiducia-cloud/.github` owns the public opportunity-operations contract; it must not
+  duplicate provider-specific values, deadlines, or application states.
+- The approved private application control plane owns mailbox evidence, portal-only
+  answers, exact-revision approvals, provider receipts, and reconciliation state.
+- Linear owns priority, assignee, blockers, approval state, and acceptance criteria.
+
 ## Files
 
 - `providers.json` — discovery and provider-state catalog; non-authoritative for quotas.
+- `candidates-YYYY-MM-DD.json` — dated public-safe discovery snapshots using schema v2.
 - `application-ledger.json` — de-duplicated, evidence-backed application state.
 - `mail-automation-policy.json` — deny-by-default inbound and outbound mail policy.
 - `AUDIT.md` — security and integrity findings plus the evidence model.
 - `../tools/validate-funding.mjs` — deterministic provider-catalog validator.
 - `../tools/validate-funding.test.mjs` — provider-catalog regression tests.
+- `../tools/validate-funding-candidates.mjs` — exact-schema snapshot validator; a
+  directory argument validates every committed snapshot.
+- `../tools/validate-funding-candidates.test.mjs` — adversarial snapshot tests.
 - `../tools/application-operations.mjs` — strict application and mail-policy engine.
 - `../tools/application-operations.test.mjs` — hostile state, evidence, duplicate, and
   mail-automation tests.
@@ -29,13 +46,16 @@ Two records have intentionally different meanings:
 
 ```sh
 node tools/validate-funding.mjs
-node --test tools/validate-funding.test.mjs
+node tools/validate-funding-candidates.mjs funding
 node tools/application-operations.mjs
-node --test tools/application-operations.test.mjs
+node --test \
+  tools/validate-funding.test.mjs \
+  tools/validate-funding-candidates.test.mjs \
+  tools/application-operations.test.mjs
 ```
 
-GitHub Actions runs all validators and tests whenever funding metadata, policy, or
-workflow code changes.
+GitHub Actions runs all validators and tests whenever funding metadata, policy,
+validators, tests, or workflow code changes.
 
 ## Provider-catalog status meanings
 
@@ -55,6 +75,32 @@ qualify an application for a quota.
 | `blocked` | A prerequisite outside repository code must be resolved. |
 | `waitlisted` | Interest was recorded but the program is not currently available. |
 | `closed` | No further action is planned. |
+
+## Candidate snapshot schema v2
+
+Each snapshot has exactly four top-level fields: `schema_version`, `verified_on`,
+`scope`, and `candidates`. Each candidate has an exact, closed field set including:
+
+- sorted, unique `id`, `name`, and `categories`;
+- one public HTTPS `official_url` without credentials, query parameters, fragments,
+  custom ports, local hosts, or IP literals;
+- bounded `status`, `evidence_type`, `evidence_observed_on`, `evidence`,
+  `next_action`, and `approval_gate` fields;
+- an evidence date no later than the snapshot verification date; and
+- an approval gate that explicitly retains Alex approval.
+
+Supported evidence types are:
+
+- `official_web` — bounded facts from an official public program page;
+- `bounded_human_reply` — a short outcome or routing summary from human
+  correspondence, without copying an email body, sender or recipient address, or
+  message header.
+
+Snapshots are regular files, not symlinks. Their names must match
+`candidates-YYYY-MM-DD.json`, and the filename date must equal `verified_on`.
+Snapshots are sorted by candidate ID; categories are sorted and unique. Unknown
+fields fail closed so private account identifiers or future unreviewed semantics
+cannot silently enter the public format.
 
 ## Application evidence and counting
 
@@ -97,25 +143,31 @@ Never commit:
 
 - passwords or passphrases;
 - OTP or MFA codes;
-- API keys, access tokens, refresh tokens, or recovery codes;
+- API keys, access tokens, refresh tokens, recovery codes, or private keys;
 - card, bank, routing, tax, or private billing data;
-- private application links containing signed tokens;
-- unredacted email bodies, private account IDs, or confidential investor feedback.
+- private application links containing signed tokens or account identifiers;
+- email addresses, mailbox bodies, recipient lists, copied headers, or confidential
+  provider feedback;
+- portal-only answers, legal attestations, identity documents, or unpublished
+  funding, revenue, customer, performance, ownership, or eligibility facts.
 
-The validators reject common secret-bearing keys and values, but validation is not a
-substitute for review.
+The validators reject common credential patterns, unsafe URLs, secret-bearing key
+names, and mailbox-shaped material, but validation is not a substitute for review.
 
 ## Evidence rules
 
 - Use only verified official intake routes and canonical HTTPS URLs.
 - Keep action dates tied to real outreach, portal, provider, or decision events.
 - Keep next actions explicit so stale records remain visible.
-- Record private account, identity, legal, billing, marketing, and data-use prerequisites
-  as manual blockers without publishing their sensitive values.
+- Record private account, identity, legal, billing, marketing, and data-use
+  prerequisites as manual blockers without publishing their sensitive values.
 - Never infer incorporation, legal entity, funding, revenue, customers, traction,
-  headcount, location, valuation, or financing terms.
+  headcount, location, valuation, ownership, eligibility, or financing terms.
 - Never mark an email delivered solely because no immediate bounce appeared.
-- Never derive quota totals from the discovery catalog or sent-message volume.
+- Never derive quota totals from the discovery catalog, candidate snapshots, or
+  sent-message volume.
+- Do not infer sender authentication from To/Cc, forwarding, or lack of a bounce.
+- Do not reuse approval after an application revision changes.
 
 ## Architecture mapping
 
@@ -128,4 +180,4 @@ infrastructure:
 - model inference, coding assistance, and agent orchestration;
 - observability, security validation, storage, and CI capacity.
 
-Linear operations: `DEN-812`. Earlier catalog work: `DEN-519`.
+Linear operations: `DEN-3789`, `DEN-812`, and `DEN-519`.

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "verified_on": "2026-08-07",
   "scope": "Public, non-sensitive opportunity discovery only. This file does not assert company eligibility, submission, acceptance, or contractual commitment.",
   "candidates": [
@@ -7,41 +7,49 @@
       "id": "cloudflare-for-startups",
       "name": "Cloudflare for Startups",
       "official_url": "https://www.cloudflare.com/startups/",
-      "categories": ["cloud", "edge", "developer-tools", "ai-models"],
+      "categories": ["ai-models", "cloud", "developer-tools", "edge"],
       "status": "portal_required",
-      "evidence": "Cloudflare startup team stated on 2026-08-07 that no formal Fiducia application had been received and directed the company to the official startup form.",
-      "next_action": "Prepare the final application with verified company facts and present it for approval before submission.",
-      "approval_gate": "Final application, payment-method implications, overages, marketing/publicity rights, and program terms require Alex approval."
+      "evidence_type": "bounded_human_reply",
+      "evidence_observed_on": "2026-08-07",
+      "evidence": "Cloudflare startup staff stated that no formal Fiducia application had been received and directed the company to the official startup form.",
+      "next_action": "Prepare the final application with verified company facts and present the exact revision for approval before submission.",
+      "approval_gate": "Final application, payment-method implications, overages, marketing or publicity rights, and program terms require Alex approval."
+    },
+    {
+      "id": "github-secure-open-source-fund",
+      "name": "GitHub Secure Open Source Fund",
+      "official_url": "https://github.com/open-source/github-secure-open-source-fund",
+      "categories": ["developer-tools", "funding", "open-source", "security"],
+      "status": "discovered",
+      "evidence_type": "official_web",
+      "evidence_observed_on": "2026-08-07",
+      "evidence": "The official GitHub open-source program page was reviewed for public program information.",
+      "next_action": "Complete public OSS readiness evidence before preparing an application.",
+      "approval_gate": "Final application and any participation, publicity, reporting, or program obligations require Alex approval."
     },
     {
       "id": "grafana-labs-startup-program",
       "name": "Grafana Labs Startup Program",
       "official_url": "https://grafana.com/blog/grafana-labs-startup-program/",
-      "categories": ["observability", "developer-tools", "cloud"],
+      "categories": ["cloud", "developer-tools", "observability"],
       "status": "discovered",
-      "evidence": "Official Grafana Labs program page verified on 2026-08-07.",
-      "next_action": "Verify current eligibility and company facts; prepare observability use-case answers without claiming production adoption.",
+      "evidence_type": "official_web",
+      "evidence_observed_on": "2026-08-07",
+      "evidence": "The official Grafana Labs program page was reviewed for public program information.",
+      "next_action": "Verify current eligibility and company facts and prepare an observability use case without claiming production adoption.",
       "approval_gate": "Reference-customer, publicity, marketing, or other participation obligations require Alex approval."
     },
     {
       "id": "ovhcloud-startup-program",
       "name": "OVHcloud Startup Program",
       "official_url": "https://startup.ovhcloud.com/",
-      "categories": ["cloud", "kubernetes", "developer-tools"],
+      "categories": ["cloud", "developer-tools", "kubernetes"],
       "status": "discovered",
-      "evidence": "Official OVHcloud Startup Program pages verified on 2026-08-07.",
+      "evidence_type": "official_web",
+      "evidence_observed_on": "2026-08-07",
+      "evidence": "The official OVHcloud Startup Program pages were reviewed for public program information.",
       "next_action": "Prepare a provider-portability and multi-cluster testing use case using verified infrastructure requirements only.",
       "approval_gate": "Final application facts, terms, account creation, and any commercial commitment require Alex approval."
-    },
-    {
-      "id": "github-secure-open-source-fund",
-      "name": "GitHub Secure Open Source Fund",
-      "official_url": "https://github.com/open-source/github-secure-open-source-fund",
-      "categories": ["open-source", "security", "funding", "developer-tools"],
-      "status": "discovered",
-      "evidence": "Official GitHub open-source program page verified on 2026-08-07.",
-      "next_action": "Complete public OSS readiness evidence—license, SECURITY.md, CONTRIBUTING.md, governance, releases, supply-chain controls, and adoption evidence—before preparing an application.",
-      "approval_gate": "Final application and any participation, publicity, reporting, or program obligations require Alex approval."
     }
   ]
 }
