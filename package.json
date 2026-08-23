@@ -31,8 +31,18 @@
     "validate:laptop:acceptance": "node tools/laptop-acceptance.mjs",
     "validate:laptop:inventory": "node tools/validate-laptop-inventory.mjs",
     "validate:laptop:jetstream": "node tools/validate-laptop-jetstream-evidence.mjs",
-    "validate:raft:durability": "node tools/validate-fiducia-raft-durability-evidence.mjs"
+    "validate:raft:durability": "node tools/validate-fiducia-raft-durability-evidence.mjs",
+    "lint:ores": "if [ -f .ores-lint/lint.sh ]; then sh .ores-lint/lint.sh; else echo 'ores-lint not installed'; fi",
+    "prepublishOnly": "npm run lint:ores"
   },
   "type": "module",
-  "version": "0.1.0"
+  "version": "0.1.0",
+  "oresLint": {
+    "note": "Declared, not installed. ores-lint resolves these from a global install - see .ores-lint/README.md",
+    "requires": {
+      "eslint": ">=9",
+      "typescript-eslint": ">=8 (optional; without it .ts files are skipped)"
+    },
+    "install": "npm i -g eslint typescript-eslint"
+  }
 }
