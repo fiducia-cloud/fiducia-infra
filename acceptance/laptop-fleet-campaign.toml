@@ -1,0 +1,23 @@
+campaign_id = "den-946-laptop-fleet-v1"
+clusters = "laptop-aws-sim,laptop-gcp-sim,laptop-azure-sim"
+minimum_soak_hours = 168
+minimum_soak_samples = 168
+maximum_sample_gap_minutes = 90
+maximum_observation_age_hours = 24
+maximum_public_failover_rto_seconds = 300
+maximum_member_rebuild_rto_seconds = 7200
+maximum_fleet_restore_rto_seconds = 28800
+maximum_critical_rpo_seconds = 3600
+maximum_acknowledged_message_loss = 0
+maximum_duplicate_protected_mutations = 0
+maximum_unresolved_critical_findings = 0
+minimum_external_probe_regions = 2
+require_distinct_sites_for_limited_production = true
+require_distinct_networks_for_limited_production = true
+require_distinct_power_domains_for_limited_production = true
+require_distinct_operator_and_reviewer = true
+
+required_scenarios = "baseline,invalid-route-identity,nonleader-power-loss,leader-power-loss,isp-loss,asymmetric-partition,tunnel-loss,kubernetes-api-loss,disk-pressure,clock-drift,thermal-pressure,failed-image-pull,interrupted-upgrade,outbox-replay,jetstream-redelivery,member-replacement,clean-room-restore,lost-device-revocation,alert-delivery,rollback"
+required_restore_proofs = "k3s-control-plane,fiducia-state,database,jetstream,object-storage,recovery-key-custody"
+required_alerts = "external-http,tunnel-health,private-mesh,quorum,member-lag,election-churn,jetstream-replica,consumer-lag,redelivery,dlq,disk-space,disk-health,temperature,thermal-throttling,battery,clock-drift,wan-state,backup-failure,backup-age,restore-test-age"
+required_revocations = "private-mesh,ssh,git-registry,tls-mtls,sops-age,cloudflare-tunnel,runtime-secret-store,fiducia-membership,jetstream-membership"

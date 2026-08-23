@@ -1,0 +1,128 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cloudflared
+  namespace: fiducia
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflared
+  namespace: fiducia
+  labels:
+    app: cloudflared
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: cloudflared
+  template:
+    metadata:
+      labels:
+        app: cloudflared
+      annotations:
+        fiducia.cloud/secret-source: external-bootstrap
+    spec:
+      serviceAccountName: cloudflared
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: cloudflared
+          image: cloudflare/cloudflared@sha256:e39ee8da81ad5e05d77f38d2f51c60ca51bf2a8450ac3abab50c17fdb91d91bf
+          imagePullPolicy: IfNotPresent
+          args:
+            - tunnel
+            - --no-autoupdate
+            - --loglevel
+            - info
+            - --metrics
+            - 0.0.0.0:2000
+            - --edge-ip-version
+            - "4"
+            - run
+          env:
+            - name: TUNNEL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: cloudflared-tunnel-token
+                  key: token
+                  optional: false
+          ports:
+            - name: metrics
+              containerPort: 2000
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: metrics
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cloudflared-metrics
+  namespace: fiducia
+spec:
+  type: ClusterIP
+  selector:
+    app: cloudflared
+  ports:
+    - name: http-metrics
+      port: 2000
+      targetPort: metrics
+      protocol: TCP
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cloudflared
+  namespace: fiducia
+spec:
+  maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: cloudflared

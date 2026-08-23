@@ -1,0 +1,61 @@
+# Laptop-only connectivity. Public traffic enters through an outbound-only
+# Cloudflare Tunnel, while cross-cluster Raft traffic is constrained to the
+# Tailscale operator namespace instead of the broad cloud-profile peer rules.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - cloudflared.yaml
+  - networkpolicy.yaml
+patches:
+  - target:
+      group: networking.k8s.io
+      version: v1
+      kind: NetworkPolicy
+      name: fiducia-node-ingress
+      namespace: fiducia
+    patch: |-
+      - op: add
+        path: /spec/ingress/1/from
+        value:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: tailscale
+  - target:
+      group: networking.k8s.io
+      version: v1
+      kind: NetworkPolicy
+      name: fiducia-node-peer-egress
+      namespace: fiducia
+    patch: |-
+      - op: add
+        path: /spec/egress/0/to
+        value:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: tailscale
+  - target:
+      group: networking.k8s.io
+      version: v1
+      kind: NetworkPolicy
+      name: fiducia-brain-ingress
+      namespace: fiducia
+    patch: |-
+      - op: add
+        path: /spec/ingress/1/from
+        value:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: tailscale
+  - target:
+      group: networking.k8s.io
+      version: v1
+      kind: NetworkPolicy
+      name: fiducia-brain-peer-egress
+      namespace: fiducia
+    patch: |-
+      - op: add
+        path: /spec/egress/0/to
+        value:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: tailscale

@@ -33,6 +33,14 @@ function rangesOverlap(a, b) {
   return a.start <= b.end && b.start <= a.end;
 }
 
+function peerTag(cluster) {
+  return `tag:fiducia-peer-${cluster.name.replace(/^laptop-/, "")}`;
+}
+
+function peerServiceName(kind, clusterName) {
+  return `fiducia-${kind}-peer-${clusterName}`;
+}
+
 export function validateLaptopTopology(topology) {
   if (topology.cluster_id !== "fiducia-prod") {
     throw new Error("laptop profile must retain cluster_id=fiducia-prod for rolling migration");
@@ -48,6 +56,7 @@ export function validateLaptopTopology(topology) {
   const providers = new Set();
   const sites = new Set();
   const apiHosts = new Set();
+  const peerTags = new Set();
   const cidrs = [];
 
   for (const cluster of topology.cluster) {
@@ -73,10 +82,15 @@ export function validateLaptopTopology(topology) {
     if (!cluster.lb_endpoint.startsWith("https://") || !cluster.lb_endpoint.endsWith(".laptop.fiducia.cloud")) {
       throw new Error(`${cluster.name} public endpoint must be an HTTPS laptop.fiducia.cloud hostname`);
     }
+    const tag = peerTag(cluster);
+    if (!/^tag:fiducia-peer-(aws|gcp|azure)-sim$/.test(tag) || peerTags.has(tag)) {
+      throw new Error(`${cluster.name} must derive a unique least-privilege Tailscale peer tag`);
+    }
 
     providers.add(cluster.synthetic_provider);
     sites.add(cluster.site);
     apiHosts.add(cluster.kubernetes_api_hostname);
+    peerTags.add(tag);
     cidrs.push({ cluster: cluster.name, kind: "pod", ...cidrRange(cluster.pod_cidr, `${cluster.name}.pod_cidr`) });
     cidrs.push({ cluster: cluster.name, kind: "service", ...cidrRange(cluster.service_cidr, `${cluster.name}.service_cidr`) });
   }
@@ -99,7 +113,7 @@ function hostConfig(cluster) {
     `# Install as /etc/rancher/k3s/config.yaml on ${cluster.name}.\n` +
     `node-name: ${cluster.name}\n` +
     `cluster-init: true\n` +
-    `write-kubeconfig-mode: \"0600\"\n` +
+    `write-kubeconfig-mode: "0600"\n` +
     `cluster-cidr: ${cluster.pod_cidr}\n` +
     `service-cidr: ${cluster.service_cidr}\n` +
     `secrets-encryption: true\n` +
@@ -129,13 +143,28 @@ export function renderLaptopFleet() {
 
   for (const cluster of topology.cluster) {
     const envPath = `laptop/clusters/${cluster.name}/topology.env`;
-    files[envPath] = files[envPath].replace(
-      `FIDUCIA_CLUSTER=${cluster.name}\n`,
-      `FIDUCIA_CLUSTER=${cluster.name}\n` +
-        `FIDUCIA_SUBSTRATE=laptop-k3s\n` +
-        `FIDUCIA_SYNTHETIC_PROVIDER=${cluster.synthetic_provider}\n` +
-        `FIDUCIA_PHYSICAL_SITE=${cluster.site}\n`,
-    );
+    const peers = topology.cluster.filter((candidate) => candidate.name !== cluster.name);
+    const nodePeers = peers
+      .map((peer) => `${peerServiceName("node", peer.name)}.fiducia.svc.cluster.local:9090`)
+      .join(",");
+    const brainPeers = peers
+      .map((peer) => `${peerServiceName("brain", peer.name)}.fiducia.svc.cluster.local:9095`)
+      .join(",");
+
+    files[envPath] = files[envPath]
+      .replace(
+        `FIDUCIA_CLUSTER=${cluster.name}\n`,
+        `FIDUCIA_CLUSTER=${cluster.name}\n` +
+          `FIDUCIA_SUBSTRATE=laptop-k3s\n` +
+          `FIDUCIA_SYNTHETIC_PROVIDER=${cluster.synthetic_provider}\n` +
+          `FIDUCIA_PHYSICAL_SITE=${cluster.site}\n` +
+          `FIDUCIA_TAILSCALE_PEER_TAG=${peerTag(cluster)}\n`,
+      )
+      .replace(/^FIDUCIA_PEERS=.*$/m, `FIDUCIA_PEERS=${nodePeers}`)
+      .replace(/^FIDUCIA_BRAIN_PEERS=.*$/m, `FIDUCIA_BRAIN_PEERS=${brainPeers}`);
+
+    files[`laptop/clusters/${cluster.name}/tailnet-ingress.yaml`] = tailnetIngress(cluster);
+    files[`laptop/hosts/${cluster.name}/tailscale-egress-proxygroup.yaml`] = egressProxyGroup(cluster);
     files[`laptop/hosts/${cluster.name}/k3s-config.yaml`] = hostConfig(cluster);
   }
   return { topology, files };

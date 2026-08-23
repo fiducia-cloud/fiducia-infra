@@ -33,7 +33,7 @@ const forbiddenIdentityTerms = [
 ];
 
 describe("DEN-1404/DEN-1619 managed beta SLO package", () => {
-  it("declares availability records plus trusted location continuity and safety alerts", async () => {
+  it("declares availability records plus per-source history, continuity, and safety alerts", async () => {
     const rules = await text("managed-beta-rules.yml");
     const records = names(rules, "record");
     const alerts = names(rules, "alert");
@@ -41,6 +41,7 @@ describe("DEN-1404/DEN-1619 managed beta SLO package", () => {
     for (const record of [
       "fiducia:sli:public_availability_ratio:28d",
       "fiducia:sli:public_availability_samples:28d",
+      "fiducia:sli:external_probe_samples:28d",
       "fiducia:sli:public_unavailability_ratio:1h",
       "fiducia:sli:public_unavailability_ratio:6h",
       "fiducia:sli:public_availability_burn_rate:1h",
@@ -67,16 +68,44 @@ describe("DEN-1404/DEN-1619 managed beta SLO package", () => {
       assert.ok(alerts.has(alert), `missing alert ${alert}`);
     }
 
-    assert.match(rules, /increase\(fiducia_external_probe_total\{result="success"\}\[28d\]\)/u);
-    assert.match(rules, /fiducia:sli:public_unavailability_ratio:1h \/ 0\.005/u);
-    assert.match(rules, /fiducia:sli:public_availability_burn_rate:1h > 14\.4/u);
-    assert.match(rules, /fiducia:sli:public_availability_burn_rate:6h > 6/u);
+    assert.match(
+      rules,
+      /increase\(fiducia_external_probe_total\{result="success"\}\[28d\]\)/u,
+    );
+    assert.match(
+      rules,
+      /record: fiducia:sli:external_probe_samples:28d[\s\S]*sum by \(probe_location, cell, operation_class\)[\s\S]*increase\(fiducia_external_probe_total\[28d\]\)/u,
+    );
+    assert.match(
+      rules,
+      /fiducia:sli:public_unavailability_ratio:1h \/ 0\.005/u,
+    );
+    assert.match(
+      rules,
+      /fiducia:sli:public_availability_burn_rate:1h > 14\.4/u,
+    );
+    assert.match(
+      rules,
+      /fiducia:sli:public_availability_burn_rate:6h > 6/u,
+    );
     assert.match(rules, /max by \(probe_location, cell, operation_class\)/u);
-    assert.match(rules, /count by \(cell, operation_class\)[\s\S]*external_probe_freshness_seconds <= 300/u);
+    assert.match(
+      rules,
+      /count by \(cell, operation_class\)[\s\S]*external_probe_freshness_seconds <= 300/u,
+    );
     assert.match(rules, /external_probe_fresh_location_count < 2/u);
-    assert.match(rules, /absent\(fiducia_external_probe_last_run_unixtime\)/u);
-    assert.match(rules, /resets\(fiducia_external_probe_total\[1h\]\)/u);
-    assert.match(rules, /count by \(probe_location, cell, operation_class, result\)/u);
+    assert.match(
+      rules,
+      /absent\(fiducia_external_probe_last_run_unixtime\)/u,
+    );
+    assert.match(
+      rules,
+      /resets\(fiducia_external_probe_total\[1h\]\)/u,
+    );
+    assert.match(
+      rules,
+      /count by \(probe_location, cell, operation_class, result\)/u,
+    );
   });
 
   it("keeps rules and dashboard inside the bounded trusted-source boundary", async () => {
@@ -89,12 +118,16 @@ describe("DEN-1404/DEN-1619 managed beta SLO package", () => {
     }
 
     const customerGrouping = /\b(?:by|without)\s*\([^)]*(?:org|tenant|project|environment|key|path|credential|request|trace)/iu;
-    assert.ok(!customerGrouping.test(rules), "rules group by a customer-controlled dimension");
+    assert.ok(
+      !customerGrouping.test(rules),
+      "rules group by a customer-controlled dimension",
+    );
 
     for (const match of combined.matchAll(/\bfiducia(?::|_)[a-z0-9_:]+/gu)) {
       const metric = match[0];
       assert.ok(
-        metric.startsWith("fiducia_external_probe_") || metric.startsWith("fiducia:sli:"),
+        metric.startsWith("fiducia_external_probe_") ||
+          metric.startsWith("fiducia:sli:"),
         `unexpected metric family ${metric}`,
       );
     }
@@ -128,7 +161,9 @@ describe("DEN-1404/DEN-1619 managed beta SLO package", () => {
       assert.ok(serialized.includes(required), `dashboard missing ${required}`);
     }
 
-    const variables = new Set(dashboard.templating.list.map((variable) => variable.name));
+    const variables = new Set(
+      dashboard.templating.list.map((variable) => variable.name),
+    );
     assert.deepEqual(
       variables,
       new Set(["cell", "operation_class", "probe_location"]),
@@ -148,13 +183,22 @@ describe("DEN-1404/DEN-1619 managed beta SLO package", () => {
     ]);
 
     assert.match(kustomization, /- \.\.\/cron-stack/u);
-    assert.match(kustomization, /name: fiducia-prometheus-config[\s\S]+behavior: merge/u);
+    assert.match(
+      kustomization,
+      /name: fiducia-prometheus-config[\s\S]+behavior: merge/u,
+    );
     assert.match(kustomization, /managed-beta-rules\.yml/u);
     assert.match(kustomization, /managed-beta-overview\.json/u);
     assert.match(prometheusPatch, /\/etc\/prometheus\/cron-rules\.yml/u);
-    assert.match(prometheusPatch, /\/etc\/prometheus\/managed-beta-rules\.yml/u);
+    assert.match(
+      prometheusPatch,
+      /\/etc\/prometheus\/managed-beta-rules\.yml/u,
+    );
     assert.match(grafanaPatch, /fiducia-grafana-managed-beta-dashboard/u);
-    assert.match(grafanaPatch, /\/var\/lib\/grafana\/dashboards\/managed-beta-overview\.json/u);
+    assert.match(
+      grafanaPatch,
+      /\/var\/lib\/grafana\/dashboards\/managed-beta-overview\.json/u,
+    );
   });
 
   it("documents maturity, trusted identity, freshness, and physical-independence limits", async () => {
@@ -168,7 +212,7 @@ describe("DEN-1404/DEN-1619 managed beta SLO package", () => {
       "probe_location",
       "honor_labels: false",
       "fresh",
-      "Missing or stale sources",
+      "historically under-covered sources",
       "do not prove physical independence",
     ]) {
       assert.ok(readme.includes(required), `README missing ${required}`);

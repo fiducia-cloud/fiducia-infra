@@ -1,0 +1,18 @@
+{
+  "evidenceMode": "example",
+  "observedAt": "2026-08-03T16:00:00Z",
+  "clusters": {
+    "laptop-aws-sim": {
+      "nodeFqdn": "node-laptop-aws-sim.fiducia-example.ts.net",
+      "brainFqdn": "brain-laptop-aws-sim.fiducia-example.ts.net"
+    },
+    "laptop-gcp-sim": {
+      "nodeFqdn": "node-laptop-gcp-sim.fiducia-example.ts.net",
+      "brainFqdn": "brain-laptop-gcp-sim.fiducia-example.ts.net"
+    },
+    "laptop-azure-sim": {
+      "nodeFqdn": "node-laptop-azure-sim.fiducia-example.ts.net",
+      "brainFqdn": "brain-laptop-azure-sim.fiducia-example.ts.net"
+    }
+  }
+}

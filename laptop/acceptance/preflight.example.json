@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "evidenceMode": "example",
+  "observedAt": "2026-08-03T18:10:00Z",
+  "pinnedRevision": "1111111111111111111111111111111111111111",
+  "rollbackRevision": "0000000000000000000000000000000000000000",
+  "fiduciaLeader": "laptop-azure-sim",
+  "jetstreamMetaLeader": "laptop-gcp-sim",
+  "jetstreamStreamLeader": "laptop-gcp-sim",
+  "healthyPublicOrigins": [
+    "laptop-aws-sim",
+    "laptop-gcp-sim",
+    "laptop-azure-sim"
+  ],
+  "healthyFiduciaVoters": [
+    "laptop-aws-sim",
+    "laptop-gcp-sim",
+    "laptop-azure-sim"
+  ],
+  "healthyJetStreamMembers": [
+    "laptop-aws-sim",
+    "laptop-gcp-sim",
+    "laptop-azure-sim"
+  ],
+  "externalProbeRegions": [
+    "us-east",
+    "eu-west"
+  ],
+  "fingerprints": {
+    "hostInventory": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "tailnetPolicy": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "gitopsRoots": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "jetstreamEvidence": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "backups": {
+    "k3sSnapshot": "example:acceptance:k3s-snapshot",
+    "fiduciaSnapshot": "example:acceptance:fiducia-snapshot",
+    "databaseBackup": "example:acceptance:database-backup",
+    "jetstreamSnapshot": "example:acceptance:jetstream-snapshot",
+    "offlineRecoveryKeys": "example:acceptance:offline-recovery-keys"
+  },
+  "gates": {
+    "exclusiveFaultLease": true,
+    "freshRolesAndHealth": true,
+    "externalProbes": true,
+    "alertDelivery": true,
+    "currentBackups": true,
+    "offlineRecoveryKeys": true,
+    "fiduciaFencing": true,
+    "protectedMutationIdempotency": true,
+    "databaseOutboxReplay": true,
+    "jetstreamDlqReplay": true,
+    "rollbackRevision": true,
+    "operatorAndPhysicalAccess": true,
+    "stopAuthority": true
+  },
+  "clusterReadiness": {
+    "laptop-aws-sim": {
+      "kubernetes": true,
+      "gitops": true,
+      "tailnet": true,
+      "cloudflareTunnel": true,
+      "fiducia": true,
+      "jetstream": true,
+      "storage": true,
+      "hostMonitoring": true,
+      "backupUpload": true
+    },
+    "laptop-gcp-sim": {
+      "kubernetes": true,
+      "gitops": true,
+      "tailnet": true,
+      "cloudflareTunnel": true,
+      "fiducia": true,
+      "jetstream": true,
+      "storage": true,
+      "hostMonitoring": true,
+      "backupUpload": true
+    },
+    "laptop-azure-sim": {
+      "kubernetes": true,
+      "gitops": true,
+      "tailnet": true,
+      "cloudflareTunnel": true,
+      "fiducia": true,
+      "jetstream": true,
+      "storage": true,
+      "hostMonitoring": true,
+      "backupUpload": true
+    }
+  }
+}

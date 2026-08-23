@@ -5,6 +5,7 @@ kind: Kustomization
 namespace: fiducia
 resources:
   - ../../../base
+  - tailnet-ingress.yaml
 components:
   - ../../../base/components/brain
   - ../../components/substrate
