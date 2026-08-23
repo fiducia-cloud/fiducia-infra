@@ -32,6 +32,16 @@
     "check:laptop:cloud": "node --test tools/laptop-cloud-migration.test.mjs && node tools/plan-laptop-cloud-migration.mjs --observations migration/rehearsal-observations.example.json --allow-example --report-only",
     "check:laptop:acceptance": "node --test tools/laptop-acceptance.test.mjs && node tools/laptop-acceptance.mjs --evidence acceptance/laptop-fleet/evidence.example.json --allow-example --now 2026-08-03T19:00:00Z >/dev/null && bash -n scripts/capture-laptop-acceptance-checkpoint.sh",
     "check:vcluster": "node tools/render-vcluster-hetzner-e2e.mjs --check",
-    "test": "node --test tools/*.test.mjs"
+    "test": "node --test tools/*.test.mjs",
+    "lint:ores": "if [ -f .ores-lint/lint.sh ]; then sh .ores-lint/lint.sh; else echo 'ores-lint not installed'; fi",
+    "prepublishOnly": "npm run lint:ores"
+  },
+  "oresLint": {
+    "note": "Declared, not installed. ores-lint resolves these from a global install - see .ores-lint/README.md",
+    "requires": {
+      "eslint": ">=9",
+      "typescript-eslint": ">=8 (optional; without it .ts files are skipped)"
+    },
+    "install": "npm i -g eslint typescript-eslint"
   }
 }
