@@ -7,6 +7,24 @@ import { test } from "node:test";
 
 import { renderLaptopFleet, validateLaptopTopology } from "./render-laptop-fleet.mjs";
 
+function parseEnv(text) {
+  return Object.fromEntries(
+    text
+      .split(/\r?\n/u)
+      .filter((line) => line && !line.startsWith("#"))
+      .map((line) => {
+        const separator = line.indexOf("=");
+        assert.notEqual(separator, -1, `invalid environment line: ${line}`);
+        return [line.slice(0, separator), line.slice(separator + 1)];
+      }),
+  );
+}
+
+const nodePeerService = (clusterName) =>
+  `fiducia-node-peer-${clusterName}.fiducia.svc.cluster.local:9090`;
+const brainPeerService = (clusterName) =>
+  `fiducia-brain-peer-${clusterName}.fiducia.svc.cluster.local:9095`;
+
 test("laptop topology models exactly three synthetic providers at three sites", () => {
   const { topology } = renderLaptopFleet();
   assert.deepEqual(topology.cluster.map((cluster) => cluster.synthetic_provider).sort(), ["aws", "azure", "gcp"]);
@@ -35,16 +53,24 @@ test("rendered laptop membership excludes self and retains 2-of-3 quorum setting
   const { topology, files } = renderLaptopFleet();
   for (const cluster of topology.cluster) {
     const env = files[`laptop/clusters/${cluster.name}/topology.env`];
-    assert.match(env, new RegExp(`FIDUCIA_CLUSTER=${cluster.name}`));
-    assert.match(env, /FIDUCIA_REPLICATION_FACTOR=3/);
-    assert.match(env, /FIDUCIA_TARGET_NODES=3/);
-    assert.match(env, /FIDUCIA_RAFT_CHECK_QUORUM=on/);
-    assert.match(env, new RegExp(`FIDUCIA_SYNTHETIC_PROVIDER=${cluster.synthetic_provider}`));
-    assert.doesNotMatch(env, new RegExp(`FIDUCIA_PEERS=[^\\n]*${cluster.node_peer_endpoint.replaceAll(".", "\\.")}`));
-    for (const peer of topology.cluster.filter((candidate) => candidate.name !== cluster.name)) {
-      assert.ok(env.includes(peer.node_peer_endpoint), `${cluster.name} must include ${peer.name} node peer`);
-      assert.ok(env.includes(peer.brain_endpoint), `${cluster.name} must include ${peer.name} brain peer`);
-    }
+    const values = parseEnv(env);
+    const peers = topology.cluster.filter((candidate) => candidate.name !== cluster.name);
+
+    assert.equal(values.FIDUCIA_CLUSTER, cluster.name);
+    assert.equal(values.FIDUCIA_REPLICATION_FACTOR, "3");
+    assert.equal(values.FIDUCIA_TARGET_NODES, "3");
+    assert.equal(values.FIDUCIA_RAFT_CHECK_QUORUM, "on");
+    assert.equal(values.FIDUCIA_SYNTHETIC_PROVIDER, cluster.synthetic_provider);
+    assert.deepEqual(
+      values.FIDUCIA_PEERS.split(",").sort(),
+      peers.map((peer) => nodePeerService(peer.name)).sort(),
+    );
+    assert.deepEqual(
+      values.FIDUCIA_BRAIN_PEERS.split(",").sort(),
+      peers.map((peer) => brainPeerService(peer.name)).sort(),
+    );
+    assert.equal(values.FIDUCIA_PEERS.includes(nodePeerService(cluster.name)), false);
+    assert.equal(values.FIDUCIA_BRAIN_PEERS.includes(brainPeerService(cluster.name)), false);
   }
 });
 

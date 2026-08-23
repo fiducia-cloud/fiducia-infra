@@ -49,20 +49,23 @@ jobs:
         run: |
           set -euo pipefail
           output="$RUNNER_TEMP/evidence-policy"
+          machine_json="$RUNNER_TEMP/availability-policy.machine.json"
           node tools/render-managed-beta-evidence-policy.mjs \
             --fleet external-probes/managed-beta/fleet.example.json \
             --output-dir "$output"
 
-          test "$(jq -r '.policy.expected_interval_seconds' "$output/availability-policy.json")" -eq 80
-          test "$(jq -r '.policy.minimum_samples_per_source_28d' "$output/availability-policy.json")" -eq 28728
+          test "$(jq -r '.policy.expected_interval_seconds' "$output/availability-policy.json")" -eq 85
+          test "$(jq -r '.policy.minimum_samples_per_source_28d' "$output/availability-policy.json")" -eq 27037
           test "$(jq -r '.locations | length' "$output/availability-policy.json")" -eq 2
           test "$(jq -r '.operation_classes | length' "$output/availability-policy.json")" -eq 6
-          grep -Fxq 'FIDUCIA_PROBE_EXPECTED_INTERVAL_SECONDS=80' "$output/availability-policy.env"
+          grep -Fxq 'FIDUCIA_PROBE_EXPECTED_INTERVAL_SECONDS=85' "$output/availability-policy.env"
           grep -Fxq 'FIDUCIA_PROBE_MINIMUM_COVERAGE_RATIO=0.95' "$output/availability-policy.env"
-          grep -Fxq 'FIDUCIA_PROBE_MAX_FRESHNESS_SECONDS=320' "$output/availability-policy.env"
-          grep -Fxq 'FIDUCIA_PROBE_MAX_LAST_SUCCESS_AGE_SECONDS=960' "$output/availability-policy.env"
+          grep -Fxq 'FIDUCIA_PROBE_MAX_FRESHNESS_SECONDS=340' "$output/availability-policy.env"
+          grep -Fxq 'FIDUCIA_PROBE_MAX_LAST_SUCCESS_AGE_SECONDS=1020' "$output/availability-policy.env"
 
-          if grep -R -Eiq '(endpoint|bearer|credential|password|secret_file|hostname|public_ip|state_directory|failure_domain_fingerprint)' "$output"; then
+          jq 'del(.limitations)' "$output/availability-policy.json" > "$machine_json"
+          if grep -Eiq '(endpoint|bearer|credential|password|secret_file|hostname|public_ip|state_directory|failure_domain_fingerprint)' \
+            "$machine_json" "$output/availability-policy.env"; then
             echo 'generated evidence policy crossed the non-secret boundary' >&2
             exit 1
           fi

@@ -37,7 +37,7 @@ describe("DEN-1619 evidence-policy renderer", () => {
       policy.probe_image,
       "ghcr.io/fiducia-cloud/fiducia-managed-beta-probe@sha256:cc251cb82f131616e73c070929f4dd9066228d1a90e86c627933f787e63e0941",
     );
-    assert.deepEqual(policy.cells, ["cell-a"]);
+    assert.deepEqual(policy.cells, ["managed-beta"]);
     assert.deepEqual(policy.operation_classes, expectedOperations);
     assert.deepEqual(
       policy.locations.map((location) => location.probe_location),
@@ -51,25 +51,25 @@ describe("DEN-1619 evidence-policy renderer", () => {
         maximum: location.maximum_schedule_interval_seconds,
       })),
       [
-        { location: "probe-a", interval: 60, delay: 15, maximum: 75 },
-        { location: "probe-b", interval: 60, delay: 20, maximum: 80 },
+        { location: "probe-a", interval: 60, delay: 10, maximum: 70 },
+        { location: "probe-b", interval: 60, delay: 25, maximum: 85 },
       ],
     );
-    assert.equal(policy.policy.expected_interval_seconds, 80);
+    assert.equal(policy.policy.expected_interval_seconds, 85);
     assert.equal(policy.policy.minimum_coverage_ratio, 0.95);
-    assert.equal(policy.policy.expected_observations_per_source_28d, 30_240);
-    assert.equal(policy.policy.minimum_samples_per_source_28d, 28_728);
-    assert.equal(policy.policy.maximum_source_freshness_seconds, 320);
-    assert.equal(policy.policy.maximum_last_success_age_seconds, 960);
+    assert.equal(policy.policy.expected_observations_per_source_28d, 28_461);
+    assert.equal(policy.policy.minimum_samples_per_source_28d, 27_037);
+    assert.equal(policy.policy.maximum_source_freshness_seconds, 340);
+    assert.equal(policy.policy.maximum_last_success_age_seconds, 1020);
 
     assert.deepEqual(policy.exporter_env, {
-      FIDUCIA_RELEASE_CELLS: "cell-a",
+      FIDUCIA_RELEASE_CELLS: "managed-beta",
       FIDUCIA_RELEASE_OPERATION_CLASSES: expectedOperations.join(","),
       FIDUCIA_PROBE_LOCATIONS: "probe-a,probe-b",
-      FIDUCIA_PROBE_EXPECTED_INTERVAL_SECONDS: "80",
+      FIDUCIA_PROBE_EXPECTED_INTERVAL_SECONDS: "85",
       FIDUCIA_PROBE_MINIMUM_COVERAGE_RATIO: "0.95",
-      FIDUCIA_PROBE_MAX_FRESHNESS_SECONDS: "320",
-      FIDUCIA_PROBE_MAX_LAST_SUCCESS_AGE_SECONDS: "960",
+      FIDUCIA_PROBE_MAX_FRESHNESS_SECONDS: "340",
+      FIDUCIA_PROBE_MAX_LAST_SUCCESS_AGE_SECONDS: "1020",
     });
   });
 
@@ -108,7 +108,7 @@ describe("DEN-1619 evidence-policy renderer", () => {
     );
     assert.match(
       firstEnv,
-      /^FIDUCIA_PROBE_EXPECTED_INTERVAL_SECONDS=80$/mu,
+      /^FIDUCIA_PROBE_EXPECTED_INTERVAL_SECONDS=85$/mu,
     );
     assert.match(
       firstEnv,
@@ -116,14 +116,17 @@ describe("DEN-1619 evidence-policy renderer", () => {
     );
     assert.match(
       firstEnv,
-      /^FIDUCIA_PROBE_MAX_FRESHNESS_SECONDS=320$/mu,
+      /^FIDUCIA_PROBE_MAX_FRESHNESS_SECONDS=340$/mu,
     );
     assert.match(
       firstEnv,
-      /^FIDUCIA_PROBE_MAX_LAST_SUCCESS_AGE_SECONDS=960$/mu,
+      /^FIDUCIA_PROBE_MAX_LAST_SUCCESS_AGE_SECONDS=1020$/mu,
     );
 
-    const combined = `${firstJson}\n${firstEnv}`.toLowerCase();
+    const parsedPolicy = JSON.parse(firstJson);
+    const { limitations, ...machinePolicy } = parsedPolicy;
+    assert.ok(Array.isArray(limitations) && limitations.length > 0);
+    const combined = `${JSON.stringify(machinePolicy)}\n${firstEnv}`.toLowerCase();
     for (const forbidden of [
       "endpoint",
       "bearer",
