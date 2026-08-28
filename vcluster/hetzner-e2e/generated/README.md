@@ -17,7 +17,7 @@ Git does **not** persist the write bit (only the executable bit). A fresh clone 
 writable until you re-freeze:
 
 ```sh
-find generated -type f ! -name 'README.md' ! -name 'readme.md' -exec chmod a-w {} +
+scripts/freeze-generated.sh
 ```
 
 To regenerate, change the **primary source** (`.cli-flags.toml`, route map, OpenAPI,
@@ -37,7 +37,8 @@ generated/**
 
 ## Runtime contract (not just compile-time)
 
-JSON Schema is a **cross-check**, not always the primary generator input. Unit tests
-should validate fixtures/examples against Draft 2020-12 at runtime (valid must pass,
-invalid must fail) and compare schema keys to `.cli-flags.toml` env names or
-route-map keys when those exist.
+JSON Schema is a **cross-check**, not always the primary generator input. Runtime
+`validate()` / `check_os_env` / `f2e check-contract` must pass on real payloads.
+Unit tests should validate fixtures/examples against Draft 2020-12 at runtime
+(valid must pass, invalid must fail) and compare schema keys to `.cli-flags.toml`
+env names or route-map keys when those exist.

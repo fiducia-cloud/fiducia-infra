@@ -4,6 +4,7 @@
 
 Do **not** hand-edit files in this directory. They are produced by tooling such as:
 
+- `node tools/render.mjs` from `topology.toml` (`edge-regions.json` / `FIDUCIA_REGIONS`)
 - https://github.com/flags-2-env/flags-2-env (typical Dart path: `generated/dart/env.dart`)
 - https://github.com/oresoftware/api-docs
 - JSON Schema / OpenAPI / route-map generators in this repository
@@ -17,12 +18,12 @@ Git does **not** persist the write bit (only the executable bit). A fresh clone 
 writable until you re-freeze:
 
 ```sh
-find generated -type f ! -name 'README.md' ! -name 'readme.md' -exec chmod a-w {} +
+scripts/freeze-generated.sh
 ```
 
-To regenerate, change the **primary source** (`.cli-flags.toml`, route map, OpenAPI,
-`schema/*.schema.json`, …) and re-run the generator. Preferred generators thaw,
-write, then `chmod a-w` themselves.
+To regenerate, change the **primary source** (`topology.toml`, `.cli-flags.toml`,
+route map, OpenAPI, `schema/*.schema.json`, …) and re-run the generator. Preferred
+generators thaw, write, then `chmod a-w` themselves.
 
 ## Gitignored trees
 
