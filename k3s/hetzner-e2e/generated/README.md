@@ -1,51 +1,44 @@
-# `generated/` — frozen artifacts (read-only)
+<!-- generated-policy: frozen -->
 
-This tree is **generated**. Do not hand-edit adapters here.
+# Generated files — read-only
 
-Typical producers:
+Do **not** hand-edit files in this directory. They are produced by tooling such as:
 
-- [`flags-2-env`](https://github.com/flags-2-env/flags-2-env-cli) (`f2e generate`)
-- [`api-docs` / `ridl`](https://github.com/oresoftware/api-docs)
-- interface adapters from `schema/tables.json` (`node src/generate.mjs`)
+- https://github.com/flags-2-env/flags-2-env (typical Dart path: `generated/dart/env.dart`)
+- https://github.com/oresoftware/api-docs
+- JSON Schema / OpenAPI / route-map generators in this repository
 
-## Read-only on disk
+## Disk permissions
 
-After generate, artifact files are `chmod a-w` (0444). Directories stay
-writable so the generator can add files.
+After generation, files here are frozen with `chmod a-w` (not writable). Directories
+and this `README.md` stay writable so generators can replace files.
 
-**Git does not store the Unix write bit** — only the executable bit
-(100644 vs 100755). After `git clone` / `git checkout`, files come back
-writable. Restore the policy with the generator (`f2e generate`,
-`ridl generate`, `node src/generate.mjs`) or:
+Git does **not** persist the write bit (only the executable bit). A fresh clone is
+writable until you re-freeze:
 
 ```sh
 scripts/freeze-generated.sh
 ```
 
-Do not `chmod u+w` and then commit a hand-edit. Change the source catalog
-(`.cli-flags.toml`, route map, `schema/tables.json`) and regenerate.
-
-## JSON Schema (the contract)
-
-If `json-schema/` is present, those documents are JSON Schema 2020-12.
-Compile-time types are generated from that catalog. Runtime
-`check_os_env` / `checkOsEnv` / `validate()` must pass on real payloads,
-not only on types that compile. Unit tests should feed **valid** and
-**invalid** instances (missing required keys, wrong types, extra properties).
-
-```sh
-f2e check-contract --config .cli-flags.toml --json env.fixture.json
-```
+To regenerate, change the **primary source** (`.cli-flags.toml`, route map, OpenAPI,
+`schema/*.schema.json`, …) and re-run the generator. Preferred generators thaw,
+write, then `chmod a-w` themselves.
 
 ## Gitignored trees
 
-If this folder is listed in `.gitignore`, artifacts stay local. Keep this
-README tracked with:
+If `generated/` is in `.gitignore`, generated artifacts stay off VCS. Still commit
+this `README.md` (`git add -f generated/README.md` or a `.gitignore` exception) so
+the freeze policy is visible. Example exception:
 
 ```
-generated/*
+generated/**
 !generated/README.md
 ```
 
-(Do not ignore the directory node itself as `generated/` — that prevents
-the `!README.md` exception from working.)
+## Runtime contract (not just compile-time)
+
+JSON Schema is a **cross-check**, not always the primary generator input. Runtime
+`validate()` / `check_os_env` / `f2e check-contract` must pass on real payloads.
+Unit tests should validate fixtures/examples against Draft 2020-12 at runtime
+(valid must pass, invalid must fail) and compare schema keys to `.cli-flags.toml`
+env names or route-map keys when those exist.
