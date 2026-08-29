@@ -87,7 +87,8 @@ f2e check-contract --config .cli-flags.toml --json env.fixture.json
 ## Gitignored trees
 
 If a `generated/` folder is listed in `.gitignore`, its artifacts stay local and the
-tree's policy is `ignored`, not `frozen`. Keep the README tracked with:
+tree's policy is `ignored`, not `frozen`. Still commit the README so the policy stays
+visible — `git add -f generated/README.md`, or a `.gitignore` exception:
 
 ```
 generated/*
