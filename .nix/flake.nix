@@ -3,9 +3,14 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+
+    # Pin the organization-wide encrypted-env contract. Updating this revision
+    # is a reviewed supply-chain change, not an implicit network-time upgrade.
+    ores-sops.url = "github:ORESoftware/ores-sops/f152c11f76cc14b2af440b47c756b6c97c0aa36b";
+    ores-sops.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = { nixpkgs, ... }:
+  outputs = { nixpkgs, ores-sops, ... }:
     let
       systems = [
         "x86_64-linux"
@@ -54,46 +59,18 @@
               cilium-cli
               jq
 
-              # encrypted env files — env/enc/*.env.enc, see env/README.md
-              sops
-              age
+              # encrypted env files — env/enc/{dev,prod}.env.enc. The helper
+              # owns env/dec creation, verification, hooks, and activation.
+              ores-sops.packages.${system}.default
               python3 # .just/dotenv.py — the shared dotenv parser
             ];
 
-            shellHook = ''
-              # `env/dec/` is an ignored plaintext boundary. Entering a dev shell
-              # must never create it with a second implementation: recipes that
-              # intentionally write plaintext call `ores-sops ensure-dec`, which
-              # owns the symlink, ownership, and permission checks. Read-only
-              # work only rejects an already-dangerous filesystem shape.
-              _repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-              for _rel in env env/enc env/dec; do
-                if [ -L "$_repo_root/$_rel" ]; then
-                  echo "refusing symlinked $_rel" >&2
-                  return 1 2>/dev/null || exit 1
-                fi
-                if [ -e "$_repo_root/$_rel" ] && [ ! -d "$_repo_root/$_rel" ]; then
-                  echo "refusing non-directory $_rel" >&2
-                  return 1 2>/dev/null || exit 1
-                fi
-              done
-              unset _rel _repo_root
-
+            # Never duplicate env/dec mkdir/chmod logic in a consumer. The
+            # pinned helper performs symlink-safe creation and mode checks,
+            # installs its managed hooks, and refreshes only an already-selected
+            # environment. It does not auto-select or auto-decrypt a default.
+            shellHook = ores-sops.lib.shellHook + ''
               echo "Fiducia dev shell (${system})"
-
-              # Point sops at this machine's age key. sops finds the platform
-              # default on its own, but exporting it makes the path explicit in
-              # error messages and keeps macOS/Linux checkouts interchangeable.
-              if [ -z "''${SOPS_AGE_KEY_FILE:-}" ]; then
-                for _k in "''${XDG_CONFIG_HOME:-$HOME/.config}/sops/age/keys.txt" \
-                          "$HOME/Library/Application Support/sops/age/keys.txt"; do
-                  if [ -f "$_k" ]; then export SOPS_AGE_KEY_FILE="$_k"; break; fi
-                done
-                unset _k
-              fi
-              if [ -z "''${SOPS_AGE_KEY_FILE:-}" ]; then
-                echo "  no age key yet — run 'just env-keygen' to create one"
-              fi
             '';
           };
         });
