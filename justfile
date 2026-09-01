@@ -3,16 +3,11 @@
 # Environment secrets live in env/enc/*.env.enc, encrypted with sops + age and
 # committed to this repo. See env/README.md for the workflow.
 
-# Exported assignments are always evaluated by Just, even if lazy evaluation is
-# enabled later. Empty ignored directories do not survive Git, so prepare the
-# owner-only plaintext boundary before parsing or running any recipe.
-export FIDUCIA_ENV_DEC := ```
-  set -eu
-  root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-  command -v ores-sops >/dev/null 2>&1 || { echo "ores-sops is required to create env/dec" >&2; exit 1; }
-  ores-sops ensure-dec >/dev/null
-  printf '%s' "$root/env/dec"
-```
+# Path metadata is safe to export at parse time. The shared env recipes invoke
+# `ores-sops ensure-dec` only when they intentionally materialize plaintext in
+# env/dec; read-only audits and in-memory decryption must remain runnable in CI
+# without an age key or the ores-sops binary.
+export FIDUCIA_ENV_DEC := justfile_directory() / "env" / "dec"
 
 import '.just/env.just'
 
