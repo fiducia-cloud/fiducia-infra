@@ -1,0 +1,84 @@
+name: agent-topology-properties-migration
+
+on:
+  push:
+    branches:
+      - agent/den-3512-env-audit-boundary-20260901
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.event.head_commit.message == 'chore(DEN-3512): stage topology properties migration'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-3512-env-audit-boundary-20260901
+          fetch-depth: 0
+
+      - name: Migrate generated topology inputs away from dotenv paths
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          render = Path('tools/render.mjs')
+          text = render.read_text()
+          before = text
+          text = text.replace('clusters/<name>/topology.env', 'clusters/<name>/topology.properties')
+          text = text.replace('${clusterRoot}/${c.name}/topology.env', '${clusterRoot}/${c.name}/topology.properties')
+          if text == before:
+              raise SystemExit('tools/render.mjs did not contain the expected topology.env contract')
+          render.write_text(text)
+
+          for path in [
+              Path('clusters/civo/kustomization.yaml'),
+              Path('clusters/vultr/kustomization.yaml'),
+              Path('clusters/hetzner/kustomization.yaml'),
+              Path('clusters/civo/README.md'),
+              Path('clusters/vultr/README.md'),
+              Path('clusters/hetzner/README.md'),
+          ]:
+              value = path.read_text()
+              updated = value.replace('topology.env', 'topology.properties')
+              if value == updated:
+                  raise SystemExit(f'{path} did not contain the expected topology.env reference')
+              path.write_text(updated)
+
+          ignore = Path('.gitignore')
+          value = ignore.read_text()
+          value = value.replace(
+              '# Cluster topology is generated, non-secret config (see tools/render.mjs), not a\n'
+              '# dotenv secret. It stays tracked — deny by default, permit narrowly.\n'
+              '!**/topology.env\n\n',
+              '',
+          )
+          value = value.replace(
+              '# Re-assert the narrow, pre-existing exception so broad generated-file rules do\n'
+              '# not swallow it (deny by default, permit narrowly).\n'
+              '!**/topology.env\n',
+              '',
+          )
+          ignore.write_text(value)
+          PY
+
+          node tools/render.mjs
+          find clusters -type f -name topology.env -delete
+          node tools/render.mjs --check
+
+          tracked_env="$(git ls-files '*.env')"
+          if [ -n "$tracked_env" ]; then
+            echo 'tracked plaintext dotenv paths remain:' >&2
+            printf '%s\n' "$tracked_env" >&2
+            exit 1
+          fi
+
+          rm .github/workflows/agent-topology-properties-migration.yml
+          git config user.name 'fiducia-cloud security agent'
+          git config user.email 'security-agent@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix(DEN-3512): replace tracked topology dotenv artifacts'
+          git push origin HEAD:agent/den-3512-env-audit-boundary-20260901
