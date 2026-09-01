@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/ORESoftware/k8s-cluster/5d1a6cc9a6ae7c9bc3a90336ca025f673e3da6a0/remote/gcp/fleet-rust-service-target.schema.json
+# Declarative deployment intent only. Live GKE/Cloud Run resources remain in
+# ORESoftware/k8s-cluster; never place credentials or concrete secret values here.
+apiVersion: platform.oresoftware.com/v1alpha1
+kind: GcpFleetRustServiceTarget
+metadata:
+  name: fiducia-cloud
+  githubOwner: fiducia-cloud
+  linearIssue: DEN-3443
+spec:
+  controlPlane:
+    repository: ORESoftware/k8s-cluster
+    profile: rust-http-service
+  runtimes:
+    - cloud-run
+    - gke
+  serviceDiscovery:
+    repositoryGlobs:
+      - "*-web-server.rs"
+      - "*-admin-web-server.rs"
+      - "*-api-server.rs"
+      - "*-admin-api-server.rs"
+  httpContract:
+    liveness: /healthz
+    readiness: /readyz
+    version: /version
+    metrics: /metrics
+  probePolicy:
+    startupFailureThreshold: 30
+    startupPeriodSeconds: 2
+    livenessPeriodSeconds: 10
+    readinessPeriodSeconds: 5
+  shutdown:
+    readinessBeforeDrain: true
+    terminationGraceSeconds: 45
+  secretDelivery:
+    source: gcp-secret-manager
+    gkeProjection: external-secrets
+    cloudRunProjection: secret-manager
+  database:
+    provider: neon
+    organization: fiducia-cloud
+    project: canonical
+    connectionEnv: NEON_DB_CONNECTION_URI
