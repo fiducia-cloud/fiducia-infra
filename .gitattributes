@@ -1,0 +1,2 @@
+# Keep encrypted dotenv blobs byte-stable and portable across platforms.
+/env/enc/*.env.enc text eol=lf
