@@ -20,10 +20,6 @@
 !/env/enc/dev.env.enc
 !/env/enc/prod.env.enc
 
-# Cluster topology is generated, non-secret config (see tools/render.mjs), not a
-# dotenv secret. It stays tracked — deny by default, permit narrowly.
-!**/topology.env
-
 # age private keys — never commit these.
 *.agekey
 *.age-key
@@ -73,7 +69,3 @@ tmp
 temp
 tmp/worktrees
 temp/worktrees
-
-# Re-assert the narrow, pre-existing exception so broad generated-file rules do
-# not swallow it (deny by default, permit narrowly).
-!**/topology.env
