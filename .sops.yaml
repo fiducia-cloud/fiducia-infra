@@ -5,7 +5,7 @@
 #
 # To add someone:
 #   1. they run `just env-whoami` and send you the age1… line
-#   2. add an anchor below and reference it in the key_groups block
+#   2. add an anchor below and reference it in both exact creation rules
 #   3. run `just env-rekey` and commit — this rewrites only key metadata, so
 #      the encrypted values stay byte-identical and the diff stays reviewable
 #
@@ -22,8 +22,16 @@ keys:
   # printed and stored physically) and is not used day to day.
   - &recovery age1txv6jzlds2s03advmdtnm5l93qh4rkqs50nwvzk9yfvsartzue8se8t7jv # offline recovery — see env/README.md
 
+# The version-controlled secret contract is intentionally exact: dev and prod
+# only. Broad env/enc globs let misspelled or one-off environments become a
+# second, unaudited configuration authority.
 creation_rules:
-  - path_regex: env/enc/.*\.env\.enc$
+  - path_regex: ^env/enc/dev\.env\.enc$
+    key_groups:
+      - age:
+          - *alex
+          - *recovery
+  - path_regex: ^env/enc/prod\.env\.enc$
     key_groups:
       - age:
           - *alex
