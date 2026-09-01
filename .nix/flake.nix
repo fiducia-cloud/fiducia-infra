@@ -61,18 +61,23 @@
             ];
 
             shellHook = ''
-              # `env/dec/` is intentionally ignored, so a fresh clone cannot
-              # contain it. Recreate the owner-only plaintext boundary before
-              # SOPS, Just, hooks, or application tooling can need it.
+              # `env/dec/` is an ignored plaintext boundary. Entering a dev shell
+              # must never create it with a second implementation: recipes that
+              # intentionally write plaintext call `ores-sops ensure-dec`, which
+              # owns the symlink, ownership, and permission checks. Read-only
+              # work only rejects an already-dangerous filesystem shape.
               _repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-              if [ -L "$_repo_root/env" ] || [ -L "$_repo_root/env/dec" ]; then
-                echo "refusing to prepare symlinked env/dec" >&2
-                return 1 2>/dev/null || exit 1
-              fi
-              umask 077
-              mkdir -p "$_repo_root/env/dec"
-              chmod 700 "$_repo_root/env/dec"
-              unset _repo_root
+              for _rel in env env/enc env/dec; do
+                if [ -L "$_repo_root/$_rel" ]; then
+                  echo "refusing symlinked $_rel" >&2
+                  return 1 2>/dev/null || exit 1
+                fi
+                if [ -e "$_repo_root/$_rel" ] && [ ! -d "$_repo_root/$_rel" ]; then
+                  echo "refusing non-directory $_rel" >&2
+                  return 1 2>/dev/null || exit 1
+                fi
+              done
+              unset _rel _repo_root
 
               echo "Fiducia dev shell (${system})"
 
