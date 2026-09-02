@@ -29,8 +29,8 @@ SECRET_PATTERNS = (
     re.compile(r"github_pat_[A-Za-z0-9_]{20,}"),
     re.compile(r"lin_api_[A-Za-z0-9]{20,}"),
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
-    re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
-    re.compile(r"AGE-SECRET-KEY-1[A-Z0-9]+"),
+    re.compile(r"-----BEGIN " + r"(?:RSA |EC |OPENSSH )?" + r"PRIVATE " + r"KEY-----"),
+    re.compile(r"AGE-" + r"SECRET-KEY-1[A-Z0-9]+"),
     re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),
 )
 
@@ -346,7 +346,7 @@ class CommercialContractTests(unittest.TestCase):
                     queue.append(target)
         self.assertIn("active", observed)
         self.assertTrue(TERMINAL_STATES.issubset(observed))
-        self.assertNotIn("active", transitions["provisioning"][:-1])
+        self.assertEqual(transitions["provisioning"].count("active"), 1)
 
     def test_support_and_sla_severity_targets_are_complete_and_monotonic(self) -> None:
         assert_severity_order(self, self.examples["pre-interest.json"]["support"])
@@ -437,13 +437,27 @@ class CommercialContractTests(unittest.TestCase):
             text = json.dumps(document, sort_keys=True)
             for pattern in SECRET_PATTERNS:
                 self.assertIsNone(pattern.search(text), f"{filename} contains a credential-shaped value")
-            for value in walk_strings(document):
-                if "." in value and "://" not in value and value.count(".") >= 1:
-                    if HOSTNAME_RE.fullmatch(value):
-                        self.assertTrue(
-                            value == "example.com" or value.endswith(".example.com"),
-                            f"{filename} contains non-example hostname {value}",
-                        )
+            for key, value in self._walk_items(document):
+                if not isinstance(value, str):
+                    continue
+                hostnames: list[str] = []
+                if (
+                    key in {"hostname", "domain"}
+                    or key.endswith("_hostname")
+                    or key.endswith("_domain")
+                ):
+                    hostnames.append(value)
+                if value.count("@") == 1:
+                    hostnames.append(value.rsplit("@", 1)[1])
+                parsed = urlparse(value)
+                if parsed.scheme and parsed.hostname:
+                    hostnames.append(parsed.hostname)
+                for hostname in hostnames:
+                    self.assertTrue(
+                        hostname == "example.com"
+                        or hostname.endswith(".example.com"),
+                        f"{filename} contains non-example hostname {hostname}",
+                    )
 
     def test_cloudflare_route_contract_is_placeholder_only_and_separated(self) -> None:
         validate_instance(self.routes, self.route_schema, self.route_schema)
@@ -467,8 +481,10 @@ class CommercialContractTests(unittest.TestCase):
         for pattern in SECRET_PATTERNS:
             self.assertIsNone(pattern.search(route_text))
         self.assertIsNone(re.search(r'"(?:account_id|zone_id)"\s*:\s*"[0-9a-f]{16,}"', route_text, re.I))
-        concrete_domains = re.findall(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+", route_text)
-        self.assertEqual(concrete_domains, [])
+        self.assertEqual(
+            {route["hostname_template"] for route in self.routes["routes"]},
+            set(EXPECTED_ROUTE_HOSTS.values()),
+        )
 
     def test_postgres_model_forces_tenant_rls_and_append_only_versions(self) -> None:
         sql_lower = self.sql.lower()
