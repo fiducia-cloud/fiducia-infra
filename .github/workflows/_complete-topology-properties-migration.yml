@@ -1,0 +1,92 @@
+name: one-shot topology properties migration
+
+on:
+  push:
+    branches:
+      - agent/den-3512-env-audit-boundary-20260901
+    paths:
+      - .github/workflows/_complete-topology-properties-migration.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: topology-properties-migration-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the remediation branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Complete the non-secret topology file migration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          workflow=.github/workflows/_complete-topology-properties-migration.yml
+          branch=${GITHUB_REF_NAME}
+          moved=0
+
+          while IFS= read -r -d '' old; do
+            case "$old" in
+              topology.env|*/topology.env)
+                new=${old%.env}.properties
+                if [[ -e "$new" ]]; then
+                  echo "refusing topology rename collision: $old -> $new" >&2
+                  exit 1
+                fi
+                git mv -- "$old" "$new"
+                moved=$((moved + 1))
+                ;;
+            esac
+          done < <(git ls-files -z)
+
+          while IFS= read -r file; do
+            [[ -n "$file" ]] || continue
+            python3 - "$file" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          text = path.read_text(encoding="utf-8")
+          updated = text.replace("topology.env", "topology.properties")
+          if updated != text:
+              path.write_text(updated, encoding="utf-8")
+          PY
+          done < <(git grep -Il 'topology\.env' -- . ":!$workflow" || true)
+
+          git rm -- "$workflow"
+
+          remaining_paths=$(git ls-files | grep -E '(^|/)topology\.env$' || true)
+          if [[ -n "$remaining_paths" ]]; then
+            echo "tracked topology.env paths remain:" >&2
+            printf '%s\n' "$remaining_paths" >&2
+            exit 1
+          fi
+          if git grep -n 'topology\.env' -- .; then
+            echo "tracked topology.env references remain" >&2
+            exit 1
+          fi
+          if [[ "$moved" -eq 0 ]]; then
+            echo "expected at least one remaining topology.env file to migrate" >&2
+            exit 1
+          fi
+
+          npm test
+          npm run check
+          npm run check:laptop
+          npm run check:vcluster
+          node tools/render-hetzner-e2e.mjs --check
+          git diff --check
+
+          git add -A
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(security): finish topology properties migration'
+          git push origin "HEAD:$branch"
