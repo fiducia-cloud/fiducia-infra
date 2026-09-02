@@ -1,0 +1,20 @@
+[package]
+name = "fiducia-commercial-models"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[features]
+default = ["sql-models"]
+sql-models = ["dep:fiducia-commercial-contracts"]
+seaorm-models = ["dep:fiducia-commercial-seaorm"]
+diesel-models = ["dep:fiducia-commercial-diesel"]
+all-models = ["sql-models", "seaorm-models", "diesel-models"]
+
+[dependencies]
+fiducia-commercial-contracts = { path = "../fiducia-commercial-contracts", optional = true }
+fiducia-commercial-diesel = { path = "../fiducia-commercial-diesel", optional = true }
+fiducia-commercial-seaorm = { path = "../fiducia-commercial-seaorm", optional = true }
