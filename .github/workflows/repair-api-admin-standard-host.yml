@@ -1,0 +1,78 @@
+name: Repair Fiducia api-admin standard host
+
+on:
+  push:
+    branches:
+      - fix/den-608-api-admin-standard-host
+    paths:
+      - .github/workflows/repair-api-admin-standard-host.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-fiducia-api-admin-standard-host
+  cancel-in-progress: false
+
+jobs:
+  patch-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact branch head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Replace the legacy administrative API hostname
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              Path('quote-system/README.md'): (
+                  'admin-api.${FIDUCIA_ZONE_APEX}',
+                  'api-admin.${FIDUCIA_ZONE_APEX}',
+              ),
+              Path('quote-system/cloudflare/routes.template.json'): (
+                  'admin-api.${FIDUCIA_ZONE_APEX}',
+                  'api-admin.${FIDUCIA_ZONE_APEX}',
+              ),
+              Path('quote-system/tests/test_contracts.py'): (
+                  '"admin-api": "admin-api.${FIDUCIA_ZONE_APEX}",',
+                  '"admin-api": "api-admin.${FIDUCIA_ZONE_APEX}",',
+              ),
+          }
+
+          for path, (old, new) in replacements.items():
+              source = path.read_text(encoding='utf-8')
+              matches = source.count(old)
+              if matches != 1:
+                  raise SystemExit(f'{path}: expected one legacy host anchor, found {matches}')
+              path.write_text(source.replace(old, new, 1), encoding='utf-8')
+          PY
+
+          ! grep -R --line-number --fixed-strings 'admin-api.${FIDUCIA_ZONE_APEX}' quote-system
+          test "$(grep -R --line-number --fixed-strings 'api-admin.${FIDUCIA_ZONE_APEX}' quote-system | wc -l)" -eq 3
+          python3 -m py_compile quote-system/tests/test_contracts.py
+          python3 -m unittest -v quote-system/tests/test_contracts.py
+          git diff --check
+          test "$(git diff --name-only | sort)" = "$(printf '%s\n' quote-system/README.md quote-system/cloudflare/routes.template.json quote-system/tests/test_contracts.py | sort)"
+
+      - name: Commit the verified correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin "${GITHUB_REF_NAME}"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          git config user.name 'fiducia-contract-bot'
+          git config user.email 'fiducia-contract-bot@users.noreply.github.com'
+          git add quote-system/README.md quote-system/cloudflare/routes.template.json quote-system/tests/test_contracts.py
+          git diff --cached --check
+          git commit -m 'fix(DEN-608): use standard api-admin host placeholder'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
