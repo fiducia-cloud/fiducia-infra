@@ -1,4 +1,4 @@
-# Regenerate checked-in projections with the repository's exact Rustfmt attribute heuristics.
+# Regenerate checked-in projections with exact Rustfmt heuristics; Python bytecode is ignored as non-source.
 name: DEN-3330 one-shot renderer repair
 
 on:
