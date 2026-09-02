@@ -1,0 +1,19 @@
+{
+  "name": "@fiducia-cloud/commercial-intake-contract",
+  "version": "0.0.0-private",
+  "private": true,
+  "description": "Locked TypeSpec compiler boundary for the Fiducia commercial intake contract.",
+  "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "typespec:compile": "tsp compile contracts/main.tsp --config tspconfig.yaml --warn-as-error"
+  },
+  "devDependencies": {
+    "@typespec/compiler": "1.15.0",
+    "@typespec/http": "1.15.0",
+    "@typespec/openapi3": "1.15.0",
+    "@typespec/rest": "1.15.0"
+  }
+}
