@@ -58,6 +58,17 @@ comparing all generated Rust outputs byte-for-byte. Checked-in generated Rust
 must remain `cargo fmt`-normalized, and both generation drift and formatting
 checks must pass on the exact pull-request head.
 
+### Deterministic rendering contract
+
+The renderer emits Rust in the canonical layout expected by the pinned Rustfmt
+toolchain, including multiline SeaORM and Diesel attributes where Rustfmt would
+wrap them. This keeps regeneration, formatting, Clippy, and checked-in output in
+one agreement instead of relying on a second manual formatting commit.
+
+Python bytecode and `__pycache__` directories are ignored as local build
+artifacts. They are not source, generated-model evidence, or permitted inputs to
+the bounded projection diff.
+
 ## Ownership and extraction
 
 This code is colocated with the current canonical quote-system contract because
