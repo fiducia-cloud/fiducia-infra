@@ -1,0 +1,221 @@
+name: Lock and compile quote TypeSpec
+
+on:
+  push:
+    branches:
+      - feat/den-4058-quote-intake-contract
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-quote-contract-tests-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  lock-compile-and-publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact branch head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Resolve one aligned official TypeSpec release and write exact dependencies
+        working-directory: quote-system
+        shell: bash
+        run: |
+          set -euo pipefail
+          node_major="$(node -p 'Number(process.versions.node.split(".")[0])')"
+          if (( node_major < 20 )); then
+            echo 'TypeSpec contract requires Node.js 20 or newer.' >&2
+            exit 1
+          fi
+
+          version="$(npm view '@typespec/compiler@latest' version --silent)"
+          if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo 'Unable to resolve a bounded stable TypeSpec version.' >&2
+            exit 1
+          fi
+
+          for package in '@typespec/http' '@typespec/rest' '@typespec/openapi3'; do
+            resolved="$(npm view "${package}@${version}" version --silent)"
+            if [[ "${resolved}" != "${version}" ]]; then
+              echo "${package} does not publish the aligned compiler version ${version}." >&2
+              exit 1
+            fi
+          done
+
+          TYPESPEC_VERSION="${version}" python3 <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          version = os.environ['TYPESPEC_VERSION']
+          document = {
+              'name': 'fiducia-commercial-intake-contract',
+              'version': '0.0.0-private',
+              'private': True,
+              'description': 'Locked TypeSpec compiler boundary for the Fiducia commercial intake contract.',
+              'type': 'module',
+              'engines': {'node': '>=20'},
+              'scripts': {
+                  'typespec:compile': 'tsp compile contracts/main.tsp --config tspconfig.yaml --warn-as-error',
+              },
+              'devDependencies': {
+                  '@typespec/compiler': version,
+                  '@typespec/http': version,
+                  '@typespec/openapi3': version,
+                  '@typespec/rest': version,
+              },
+          }
+          Path('package.json').write_text(json.dumps(document, indent=2) + '\n', encoding='utf-8')
+          PY
+
+          npm install \
+            --package-lock-only \
+            --ignore-scripts \
+            --no-audit \
+            --no-fund \
+            --save-exact
+
+      - name: Install exact lockfile and compile OpenAPI output
+        working-directory: quote-system
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          output_dir="${RUNNER_TEMP}/fiducia-typespec"
+          rm -rf -- "${output_dir}"
+          ./node_modules/.bin/tsp compile \
+            contracts/main.tsp \
+            --config tspconfig.yaml \
+            --output-dir "${output_dir}" \
+            --warn-as-error
+          test -s "${output_dir}/openapi3/fiducia-commercial-intake.openapi.yaml"
+          grep -q '/v1/pre-interest' "${output_dir}/openapi3/fiducia-commercial-intake.openapi.yaml"
+          grep -q '/v1/admin/quotes' "${output_dir}/openapi3/fiducia-commercial-intake.openapi.yaml"
+
+      - name: Install permanent read-only TypeSpec verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > .github/workflows/quote-system-typespec.yml <<'WORKFLOW'
+          name: Fiducia quote TypeSpec
+
+          on:
+            pull_request:
+              paths:
+                - 'quote-system/contracts/**'
+                - 'quote-system/package.json'
+                - 'quote-system/package-lock.json'
+                - 'quote-system/tspconfig.yaml'
+                - '.github/workflows/quote-system-typespec.yml'
+            push:
+              branches:
+                - main
+              paths:
+                - 'quote-system/contracts/**'
+                - 'quote-system/package.json'
+                - 'quote-system/package-lock.json'
+                - 'quote-system/tspconfig.yaml'
+                - '.github/workflows/quote-system-typespec.yml'
+            workflow_dispatch:
+
+          permissions:
+            contents: read
+
+          concurrency:
+            group: fiducia-quote-typespec-${{ github.workflow }}-${{ github.ref }}
+            cancel-in-progress: true
+
+          jobs:
+            compile:
+              runs-on: ubuntu-latest
+              timeout-minutes: 15
+              steps:
+                - name: Check out exact revision
+                  uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+                  with:
+                    persist-credentials: false
+
+                - name: Require an exact dependency set
+                  working-directory: quote-system
+                  shell: bash
+                  run: |
+                    set -euo pipefail
+                    python3 <<'PY'
+                    import json
+                    import re
+                    from pathlib import Path
+
+                    exact = re.compile(r'^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$')
+                    package = json.loads(Path('package.json').read_text(encoding='utf-8'))
+                    dependencies = package.get('devDependencies')
+                    required = {
+                        '@typespec/compiler',
+                        '@typespec/http',
+                        '@typespec/openapi3',
+                        '@typespec/rest',
+                    }
+                    if not isinstance(dependencies, dict) or set(dependencies) != required:
+                        raise SystemExit('TypeSpec devDependencies must contain exactly the reviewed official package set')
+                    versions = set(dependencies.values())
+                    if len(versions) != 1 or not all(isinstance(value, str) and exact.fullmatch(value) for value in versions):
+                        raise SystemExit('TypeSpec packages must use one aligned exact version without ranges')
+                    PY
+
+                - name: Install the exact lockfile without lifecycle scripts
+                  working-directory: quote-system
+                  shell: bash
+                  run: |
+                    set -euo pipefail
+                    npm ci --ignore-scripts --no-audit --no-fund
+
+                - name: Compile and inspect generated OpenAPI
+                  working-directory: quote-system
+                  shell: bash
+                  run: |
+                    set -euo pipefail
+                    output_dir="${RUNNER_TEMP}/fiducia-typespec"
+                    ./node_modules/.bin/tsp compile \
+                      contracts/main.tsp \
+                      --config tspconfig.yaml \
+                      --output-dir "${output_dir}" \
+                      --warn-as-error
+                    test -s "${output_dir}/openapi3/fiducia-commercial-intake.openapi.yaml"
+                    grep -q '/v1/pre-interest' "${output_dir}/openapi3/fiducia-commercial-intake.openapi.yaml"
+                    grep -q '/v1/admin/quotes' "${output_dir}/openapi3/fiducia-commercial-intake.openapi.yaml"
+          WORKFLOW
+
+      - name: Re-run dependency-free and PostgreSQL contract suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile quote-system/tests/test_contracts.py
+          python3 -m unittest -v quote-system/tests/test_contracts.py
+
+      - name: Remove one-shot workflows and publish only verified files
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f -- \
+            .github/workflows/repair-quote-contract-tests.yml \
+            .github/workflows/finalize-quote-contract.yml \
+            .github/workflows/lock-and-compile-quote-typespec.yml
+          git config user.name 'fiducia-contract-bot'
+          git config user.email 'fiducia-contract-bot@users.noreply.github.com'
+          git add \
+            quote-system/package.json \
+            quote-system/package-lock.json \
+            .github/workflows/quote-system-typespec.yml \
+            .github/workflows/repair-quote-contract-tests.yml \
+            .github/workflows/finalize-quote-contract.yml \
+            .github/workflows/lock-and-compile-quote-typespec.yml
+          if ! git diff --cached --quiet; then
+            git commit -m 'build(DEN-4058): lock and compile TypeSpec contracts'
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
