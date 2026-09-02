@@ -33,74 +33,94 @@ jobs:
           from pathlib import Path
 
           path = Path('quote-system/tests/test_contracts.py')
-          source = path.read_text(encoding='utf-8')
+          lines = path.read_text(encoding='utf-8').splitlines(keepends=True)
 
-          def replace_once(old: str, new: str) -> None:
-              global source
-              matches = source.count(old)
-              if matches != 1:
-                  raise SystemExit(f'expected one repair anchor, found {matches}')
-              source = source.replace(old, new, 1)
+          def unique_index(predicate, label: str) -> int:
+              matches = [index for index, line in enumerate(lines) if predicate(line)]
+              if len(matches) != 1:
+                  raise SystemExit(f'{label}: expected one source line, found {len(matches)}')
+              return matches[0]
 
-          private_key = 'PRIVATE ' + 'KEY'
-          age_identity = 'AGE-' + 'SECRET-KEY-1'
-          replace_once(
-              f'    re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?{private_key}-----"),',
-              f'    re.compile(r"-----BEGIN " + r"(?:RSA |EC |OPENSSH )?" + r"{private_key}-----"),',
+          pem_index = unique_index(
+              lambda line: 're.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),' in line,
+              'PEM signature pattern',
           )
-          replace_once(
-              f'    re.compile(r"{age_identity}[A-Z0-9]+"),',
-              '    re.compile(r"AGE-" + r"SECRET-KEY-1[A-Z0-9]+"),',
+          lines[pem_index] = (
+              '    re.compile(r"-----BEGIN " + r"(?:RSA |EC |OPENSSH )?" '
+              '+ r"PRIVATE " + r"KEY-----"),\n'
           )
-          replace_once(
-              '        self.assertNotIn("active", transitions["provisioning"][:-1])',
-              '        self.assertEqual(transitions["provisioning"].count("active"), 1)',
-          )
-          replace_once(
-              '''            for value in walk_strings(document):
-                if "." in value and "://" not in value and value.count(".") >= 1:
-                    if HOSTNAME_RE.fullmatch(value):
-                        self.assertTrue(
-                            value == "example.com" or value.endswith(".example.com"),
-                            f"{filename} contains non-example hostname {value}",
-                        )''',
-              '''            for key, value in self._walk_items(document):
-                if not isinstance(value, str):
-                    continue
-                hostnames: list[str] = []
-                if key == "hostname" or key == "domain" or key.endswith("_hostname") or key.endswith("_domain"):
-                    hostnames.append(value)
-                if value.count("@") == 1:
-                    hostnames.append(value.rsplit("@", 1)[1])
-                parsed = urlparse(value)
-                if parsed.scheme and parsed.hostname:
-                    hostnames.append(parsed.hostname)
-                for hostname in hostnames:
-                    self.assertTrue(
-                        hostname == "example.com" or hostname.endswith(".example.com"),
-                        f"{filename} contains non-example hostname {hostname}",
-                    )''',
-          )
-          route_old = (
-              '        concrete_domains = re.findall(r"[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+", route_text)\n'
-              '        self.assertEqual(concrete_domains, [])'
-          )
-          route_new = (
-              '        self.assertEqual(\n'
-              '            {route["hostname_template"] for route in self.routes["routes"]},\n'
-              '            set(EXPECTED_ROUTE_HOSTS.values()),\n'
-              '        )'
-          )
-          replace_once(route_old, route_new)
 
+          age_index = unique_index(
+              lambda line: 're.compile(r"AGE-SECRET-KEY-1[A-Z0-9]+"),' in line,
+              'age identity pattern',
+          )
+          lines[age_index] = '    re.compile(r"AGE-" + r"SECRET-KEY-1[A-Z0-9]+"),\n'
+
+          transition_index = unique_index(
+              lambda line: 'self.assertNotIn("active", transitions["provisioning"][:-1])' in line,
+              'provisioning transition assertion',
+          )
+          lines[transition_index] = (
+              '        self.assertEqual(transitions["provisioning"].count("active"), 1)\n'
+          )
+
+          host_loop_index = unique_index(
+              lambda line: line.strip() == 'for value in walk_strings(document):',
+              'example hostname loop',
+          )
+          host_next_def = next(
+              index
+              for index in range(host_loop_index + 1, len(lines))
+              if lines[index].startswith('    def test_cloudflare_route_contract_')
+          )
+          while host_next_def > host_loop_index and lines[host_next_def - 1].strip() == '':
+              host_next_def -= 1
+          lines[host_loop_index:host_next_def] = [
+              '            for key, value in self._walk_items(document):\n',
+              '                if not isinstance(value, str):\n',
+              '                    continue\n',
+              '                hostnames: list[str] = []\n',
+              '                if (\n',
+              '                    key in {"hostname", "domain"}\n',
+              '                    or key.endswith("_hostname")\n',
+              '                    or key.endswith("_domain")\n',
+              '                ):\n',
+              '                    hostnames.append(value)\n',
+              '                if value.count("@") == 1:\n',
+              '                    hostnames.append(value.rsplit("@", 1)[1])\n',
+              '                parsed = urlparse(value)\n',
+              '                if parsed.scheme and parsed.hostname:\n',
+              '                    hostnames.append(parsed.hostname)\n',
+              '                for hostname in hostnames:\n',
+              '                    self.assertTrue(\n',
+              '                        hostname == "example.com"\n',
+              '                        or hostname.endswith(".example.com"),\n',
+              '                        f"{filename} contains non-example hostname {hostname}",\n',
+              '                    )\n',
+          ]
+
+          route_index = unique_index(
+              lambda line: 'concrete_domains = re.findall(' in line,
+              'route concrete-domain scan',
+          )
+          if route_index + 1 >= len(lines) or 'self.assertEqual(concrete_domains, [])' not in lines[route_index + 1]:
+              raise SystemExit('route concrete-domain scan is not followed by its assertion')
+          lines[route_index:route_index + 2] = [
+              '        self.assertEqual(\n',
+              '            {route["hostname_template"] for route in self.routes["routes"]},\n',
+              '            set(EXPECTED_ROUTE_HOSTS.values()),\n',
+              '        )\n',
+          ]
+
+          source = ''.join(lines)
           blocked_source_markers = (
-              '-----BEGIN ' + private_key + '-----',
-              '-----BEGIN OPENSSH ' + private_key + '-----',
-              age_identity,
+              '-----BEGIN PRIVATE KEY-----',
+              '-----BEGIN OPENSSH PRIVATE KEY-----',
+              'AGE-SECRET-KEY-1',
           )
           for marker in blocked_source_markers:
               if marker in source:
-                  raise SystemExit('test source still contains a blocked private-key signature')
+                  raise SystemExit(f'test source still contains blocked signature {marker!r}')
           path.write_text(source, encoding='utf-8')
           PY
 
@@ -113,6 +133,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          git fetch origin "${GITHUB_REF_NAME}"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
           rm -- .github/workflows/repair-den-4058-contract-regressions.yml
           git config user.name 'fiducia-contract-bot'
           git config user.email 'fiducia-contract-bot@users.noreply.github.com'
