@@ -56,7 +56,7 @@ EXPECTED_ROUTE_HOSTS = {
     "public-app": "app.${FIDUCIA_ZONE_APEX}",
     "public-api": "api.${FIDUCIA_ZONE_APEX}",
     "admin-app": "admin.${FIDUCIA_ZONE_APEX}",
-    "admin-api": "admin-api.${FIDUCIA_ZONE_APEX}",
+    "admin-api": "api-admin.${FIDUCIA_ZONE_APEX}",
     "auth": "auth.${FIDUCIA_ZONE_APEX}",
     "user": "user.${FIDUCIA_ZONE_APEX}",
     "organization": "org.${FIDUCIA_ZONE_APEX}",

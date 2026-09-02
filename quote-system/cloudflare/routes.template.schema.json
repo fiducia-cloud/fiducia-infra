@@ -152,7 +152,7 @@
         },
         "hostname_template": {
           "type": "string",
-          "pattern": "^(?:app|api|admin|admin-api|auth|user|org|status)\\.\\$\\{FIDUCIA_ZONE_APEX\\}$"
+          "pattern": "^(?:app|api|admin|api-admin|auth|user|org|status)\\.\\$\\{FIDUCIA_ZONE_APEX\\}$"
         },
         "origin_env": {
           "type": "string",

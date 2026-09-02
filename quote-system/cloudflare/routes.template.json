@@ -42,7 +42,7 @@
     },
     {
       "role": "admin-api",
-      "hostname_template": "admin-api.${FIDUCIA_ZONE_APEX}",
+      "hostname_template": "api-admin.${FIDUCIA_ZONE_APEX}",
       "origin_env": "FIDUCIA_ADMIN_API_ORIGIN",
       "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       "cache": "no-store",
