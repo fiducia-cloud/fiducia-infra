@@ -1,4 +1,4 @@
-# Regenerate checked-in projections with the repository's 100-column Rustfmt contract.
+# Regenerate checked-in projections with the repository's exact Rustfmt attribute heuristics.
 name: DEN-3330 one-shot renderer repair
 
 on:
