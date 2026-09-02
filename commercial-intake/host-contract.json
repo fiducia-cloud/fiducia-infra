@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract": "fiducia-commercial-intake-hosts-v1",
+  "domain": "fiducia.cloud",
+  "activation": {
+    "enabled": false,
+    "reason": "Declaration only. Production remains fail-closed until origin TLS, database migration, deployment read-back, synthetic canaries, and legal/privacy review pass."
+  },
+  "hosts": [
+    {
+      "hostname": "auth.fiducia.cloud",
+      "surface": "shared-auth",
+      "origin": "shared-auth",
+      "proxy_enabled": false,
+      "routes": ["/healthz", "/readyz", "/version"]
+    },
+    {
+      "hostname": "org.fiducia.cloud",
+      "surface": "organization-console",
+      "origin": "fiducia-org-web",
+      "proxy_enabled": false,
+      "routes": ["/", "/healthz", "/readyz", "/version"]
+    },
+    {
+      "hostname": "user.fiducia.cloud",
+      "surface": "customer-application",
+      "origin": "fiducia-web-server",
+      "proxy_enabled": false,
+      "routes": [
+        "/",
+        "/quote",
+        "/pre-interest",
+        "/apply",
+        "/support",
+        "/contract",
+        "/healthz",
+        "/readyz",
+        "/version"
+      ]
+    },
+    {
+      "hostname": "api.fiducia.cloud",
+      "surface": "public-write-api",
+      "origin": "fiducia-api-server",
+      "proxy_enabled": false,
+      "routes": [
+        "/v1/service-tiers",
+        "/v1/quotes",
+        "/v1/pre-interest-registrations",
+        "/v1/enterprise-applications",
+        "/healthz",
+        "/readyz",
+        "/version"
+      ]
+    },
+    {
+      "hostname": "admin.fiducia.cloud",
+      "surface": "admin-console",
+      "origin": "fiducia-admin-web-server",
+      "proxy_enabled": false,
+      "routes": ["/", "/healthz", "/readyz", "/version"]
+    },
+    {
+      "hostname": "api-admin.fiducia.cloud",
+      "surface": "admin-write-api",
+      "origin": "fiducia-admin-api-server",
+      "proxy_enabled": false,
+      "routes": ["/healthz", "/readyz", "/version"]
+    },
+    {
+      "hostname": "app.fiducia.cloud",
+      "surface": "compatibility-redirect",
+      "origin": "cloudflare-redirect-worker",
+      "proxy_enabled": false,
+      "redirect": {
+        "status": 308,
+        "target_origin": "https://user.fiducia.cloud",
+        "preserve_path_and_query": true
+      }
+    }
+  ],
+  "gates": [
+    "fiducia-interfaces commercial-intake-v1 merged and generated bindings verified",
+    "commercial intake migrations independently reviewed and applied with backup and rollback evidence",
+    "web and API origins deployed from reviewed immutable revisions",
+    "origin healthz and readyz return expected service and revision payloads",
+    "valid origin TLS proved without disabling certificate verification",
+    "Cloudflare records and routes applied through an authorized account connection",
+    "synthetic example.test quote, pre-interest, and application canaries pass",
+    "idempotency replay and same-key different-payload conflict behavior pass",
+    "CORS, CSP, redirect, rate-limit, and security-header canaries pass",
+    "privacy notice, retention policy, B2B terms, and requested SLA/SLO language receive human review"
+  ],
+  "forbidden_actions": [
+    "commit credentials or production connection strings",
+    "proxy customer or API traffic before origin TLS and readyz proof",
+    "apply database migrations from an unreviewed working tree",
+    "treat an engineering SLO or intake preference as a signed contractual SLA",
+    "submit real customer PII during infrastructure validation"
+  ],
+  "linear": "DEN-1390"
+}
