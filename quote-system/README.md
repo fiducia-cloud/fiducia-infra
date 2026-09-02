@@ -13,7 +13,7 @@ The route template uses `${FIDUCIA_ZONE_APEX}` and named origin inputs. Deployme
 | `app.${FIDUCIA_ZONE_APEX}` | Public pre-interest, application, quote, and contract UI | no-store for authenticated/private responses |
 | `api.${FIDUCIA_ZONE_APEX}` | Public write API | no-store |
 | `admin.${FIDUCIA_ZONE_APEX}` | Staff qualification, solutioning, pricing, legal, and provisioning UI | no-store |
-| `admin-api.${FIDUCIA_ZONE_APEX}` | Privileged staff API with separate audience and role checks | no-store |
+| `api-admin.${FIDUCIA_ZONE_APEX}` | Privileged staff API with separate audience and role checks | no-store |
 | `auth.${FIDUCIA_ZONE_APEX}` | Shared-auth entry point | provider-defined, never cache credentials |
 | `user.${FIDUCIA_ZONE_APEX}` | User profile/account surface | no-store |
 | `org.${FIDUCIA_ZONE_APEX}` | Organization/tenant administration | no-store |
