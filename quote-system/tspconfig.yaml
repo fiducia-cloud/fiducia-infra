@@ -1,0 +1,7 @@
+emit:
+  - "@typespec/openapi3"
+
+options:
+  "@typespec/openapi3":
+    emitter-output-dir: "{output-dir}/openapi3"
+    output-file: "fiducia-commercial-intake.openapi.yaml"
