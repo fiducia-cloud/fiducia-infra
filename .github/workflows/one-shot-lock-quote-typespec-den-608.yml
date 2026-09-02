@@ -110,30 +110,24 @@ jobs:
                   with:
                     node-version-file: '.nvmrc'
 
-                - name: Require one exact aligned official TypeSpec release
+                - name: Require the reviewed stable TypeSpec package family
                   working-directory: quote-system
                   shell: bash
                   run: |
                     set -euo pipefail
                     python3 <<'PY'
                     import json
-                    import re
                     from pathlib import Path
 
-                    exact = re.compile(r'^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$')
                     package = json.loads(Path('package.json').read_text(encoding='utf-8'))
-                    dependencies = package.get('devDependencies')
-                    required = {
-                        '@typespec/compiler',
-                        '@typespec/http',
-                        '@typespec/openapi3',
-                        '@typespec/rest',
+                    expected = {
+                        '@typespec/compiler': '1.15.0',
+                        '@typespec/http': '1.15.0',
+                        '@typespec/openapi3': '1.15.0',
+                        '@typespec/rest': '0.85.0',
                     }
-                    if not isinstance(dependencies, dict) or set(dependencies) != required:
-                        raise SystemExit('TypeSpec devDependencies must contain exactly the reviewed official package set')
-                    versions = set(dependencies.values())
-                    if len(versions) != 1 or not all(isinstance(value, str) and exact.fullmatch(value) for value in versions):
-                        raise SystemExit('TypeSpec packages must use one aligned exact version without ranges')
+                    if package.get('devDependencies') != expected:
+                        raise SystemExit('TypeSpec dependencies differ from the reviewed stable package family')
                     PY
 
                 - name: Install exact lockfile without lifecycle scripts
