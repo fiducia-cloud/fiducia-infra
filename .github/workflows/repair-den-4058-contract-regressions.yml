@@ -1,49 +1,52 @@
-name: repair DEN-4058 contract regression assertions
+name: Repair DEN-4058 contract regression assertions
 
 on:
   push:
-    branches: [feat/den-4058-quote-intake-contract]
-    paths: [.github/workflows/repair-den-4058-contract-regressions.yml]
+    branches:
+      - feat/den-4058-quote-intake-contract
 
 permissions:
   contents: write
 
 concurrency:
-  group: repair-den-4058-contract-regressions
+  group: repair-den-4058-contract-regressions-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  repair:
+  patch-and-verify:
     if: github.actor != 'github-actions[bot]'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Check out exact feature head
+      - name: Check out exact branch head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: feat/den-4058-quote-intake-contract
-      - name: Repair narrowly scoped regression assertions
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Repair security and semantic assertions
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          python3 - <<'PY'
+          python3 <<'PY'
           from pathlib import Path
 
-          path = Path("quote-system/tests/test_contracts.py")
-          source = path.read_text(encoding="utf-8")
+          path = Path('quote-system/tests/test_contracts.py')
+          source = path.read_text(encoding='utf-8')
 
           def replace_once(old: str, new: str) -> None:
               global source
-              if source.count(old) != 1:
-                  raise SystemExit(f"expected one repair anchor, found {source.count(old)}")
+              matches = source.count(old)
+              if matches != 1:
+                  raise SystemExit(f'expected one repair anchor, found {matches}')
               source = source.replace(old, new, 1)
 
-          private_key = "PRIVATE " + "KEY"
-          age_identity = "AGE-" + "SECRET-KEY-1"
+          private_key = 'PRIVATE ' + 'KEY'
+          age_identity = 'AGE-' + 'SECRET-KEY-1'
           replace_once(
               f'    re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?{private_key}-----"),',
-              f'    re.compile("-----BEGIN " + r"(?:RSA |EC |OPENSSH )?" + "{private_key}-----"),',
+              f'    re.compile(r"-----BEGIN " + r"(?:RSA |EC |OPENSSH )?" + r"{private_key}-----"),',
           )
           replace_once(
               f'    re.compile(r"{age_identity}[A-Z0-9]+"),',
@@ -87,26 +90,30 @@ jobs:
         )''',
           )
 
-          forbidden = (
-              "-----BEGIN " + private_key + "-----",
-              "-----BEGIN OPENSSH " + private_key + "-----",
+          blocked_source_markers = (
+              '-----BEGIN ' + private_key + '-----',
+              '-----BEGIN OPENSSH ' + private_key + '-----',
               age_identity,
           )
-          for marker in forbidden:
+          for marker in blocked_source_markers:
               if marker in source:
-                  raise SystemExit("test source still contains a blocked private-key signature")
-          path.write_text(source, encoding="utf-8")
+                  raise SystemExit('test source still contains a blocked private-key signature')
+          path.write_text(source, encoding='utf-8')
           PY
+
           python3 -m py_compile quote-system/tests/test_contracts.py
           python3 -m unittest -v quote-system/tests/test_contracts.py
           git diff --check
           test "$(git diff --name-only)" = "quote-system/tests/test_contracts.py"
-      - name: Commit the tested repair and remove this one-shot workflow
+
+      - name: Remove one-shot workflow and commit verified repair
         shell: bash
         run: |
           set -euo pipefail
-          git rm -- .github/workflows/repair-den-4058-contract-regressions.yml
-          git add -- quote-system/tests/test_contracts.py
+          rm -- .github/workflows/repair-den-4058-contract-regressions.yml
+          git config user.name 'fiducia-contract-bot'
+          git config user.email 'fiducia-contract-bot@users.noreply.github.com'
+          git add quote-system/tests/test_contracts.py .github/workflows/repair-den-4058-contract-regressions.yml
           git diff --cached --check
-          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'test(DEN-4058): repair quote contract security assertions'
-          git push origin HEAD:refs/heads/feat/den-4058-quote-intake-contract
+          git commit -m 'test(DEN-4058): repair quote contract security assertions'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
