@@ -95,6 +95,14 @@ An SLA policy defines measurement source/window, availability formula, latency/e
 
 A quote references immutable support-plan and SLA-policy versions. Acceptance binds their hashes with the exact quote/order-form/contract versions and signer evidence.
 
+## Security-test invariants
+
+The dependency-free contract oracle distinguishes data-bearing endpoints from schema and role identifiers. Example-host checks inspect explicit hostname/domain fields, email domains, and absolute-URL hosts; strings such as schema names are not treated as DNS. The Cloudflare contract is instead checked against the exact placeholder host set above.
+
+Credential-shape regexes are assembled from non-signature source fragments. They still recognize complete private-key and age-identity shapes at runtime, while preventing repository-wide secret scanners from mistaking the test oracle itself for a credential.
+
+Lifecycle assertions validate reachability, closed terminal states, duplicate-free edges, and the presence of exactly one `provisioning -> active` transition. Array ordering is not used as a semantic substitute for the declared state graph.
+
 ## Release gate
 
 This directory is a contract and infrastructure boundary, not proof that production DNS or services are active. Activation requires:
