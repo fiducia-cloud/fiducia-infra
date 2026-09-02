@@ -81,14 +81,17 @@ jobs:
                         f"{filename} contains non-example hostname {hostname}",
                     )''',
           )
-          replace_once(
-              '''        concrete_domains = re.findall(r"[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+", route_text)
-        self.assertEqual(concrete_domains, [])''',
-              '''        self.assertEqual(
-            {route["hostname_template"] for route in self.routes["routes"]},
-            set(EXPECTED_ROUTE_HOSTS.values()),
-        )''',
+          route_old = (
+              '        concrete_domains = re.findall(r"[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+", route_text)\n'
+              '        self.assertEqual(concrete_domains, [])'
           )
+          route_new = (
+              '        self.assertEqual(\n'
+              '            {route["hostname_template"] for route in self.routes["routes"]},\n'
+              '            set(EXPECTED_ROUTE_HOSTS.values()),\n'
+              '        )'
+          )
+          replace_once(route_old, route_new)
 
           blocked_source_markers = (
               '-----BEGIN ' + private_key + '-----',
