@@ -1,4 +1,4 @@
-# Regenerate checked-in projections after repairing the canonical renderer.
+# Regenerate checked-in projections with the repository's 100-column Rustfmt contract.
 name: DEN-3330 one-shot renderer repair
 
 on:
