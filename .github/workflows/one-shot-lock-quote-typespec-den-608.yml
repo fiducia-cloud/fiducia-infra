@@ -9,14 +9,14 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: one-shot-lock-fiducia-typespec-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  lock-compile-and-remove-self:
+  lock-compile-and-export:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -24,8 +24,7 @@ jobs:
       - name: Check out exact branch head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
-          persist-credentials: true
+          persist-credentials: false
 
       - name: Install repository Node version
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -161,13 +160,23 @@ jobs:
           python3 -m py_compile quote-system/tests/test_contracts.py
           python3 -m unittest -v quote-system/tests/test_contracts.py
 
-      - name: Commit lock and permanent gate, then remove this workflow
+      - name: Stage verified publication bundle
         shell: bash
         run: |
           set -euo pipefail
-          rm -f .github/workflows/one-shot-lock-quote-typespec-den-608.yml
-          git config user.name 'fiducia-contract-bot'
-          git config user.email 'fiducia-contract-bot@users.noreply.github.com'
-          git add -A
-          git commit -m 'build(DEN-608): lock and compile Fiducia TypeSpec contract'
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          bundle="${RUNNER_TEMP}/fiducia-typespec-publication"
+          mkdir -p "${bundle}/quote-system" "${bundle}/.github/workflows"
+          cp quote-system/package-lock.json "${bundle}/quote-system/package-lock.json"
+          cp .github/workflows/quote-system-typespec.yml "${bundle}/.github/workflows/quote-system-typespec.yml"
+          sha256sum \
+            "${bundle}/quote-system/package-lock.json" \
+            "${bundle}/.github/workflows/quote-system-typespec.yml" \
+            > "${bundle}/SHA256SUMS"
+
+      - name: Export verified lockfile and permanent gate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fiducia-typespec-publication
+          path: ${{ runner.temp }}/fiducia-typespec-publication
+          if-no-files-found: error
+          retention-days: 3
