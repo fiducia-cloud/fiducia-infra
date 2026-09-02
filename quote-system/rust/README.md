@@ -54,7 +54,9 @@ cargo clippy --manifest-path quote-system/rust/Cargo.toml --all-targets --all-fe
 `--write` refuses to run unless the checked-in model manifest exactly matches
 the SQL table, column, type, nullability, and primary-key shape. `--check` also
 verifies the required TypeSpec models and JSON Schema definitions before
-comparing all generated Rust outputs byte-for-byte.
+comparing all generated Rust outputs byte-for-byte. Checked-in generated Rust
+must remain `cargo fmt`-normalized, and both generation drift and formatting
+checks must pass on the exact pull-request head.
 
 ## Ownership and extraction
 
