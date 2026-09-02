@@ -9,14 +9,14 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: one-shot-lock-fiducia-typespec-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  lock-compile-and-export:
+  lock-compile-and-persist:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -24,7 +24,8 @@ jobs:
       - name: Check out exact branch head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          persist-credentials: false
+          fetch-depth: 0
+          persist-credentials: true
 
       - name: Install repository Node version
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -61,98 +62,6 @@ jobs:
           grep -q '/v1/pre-interest' "${output}"
           grep -q '/v1/admin/quotes' "${output}"
 
-      - name: Install permanent read-only TypeSpec verification
-        shell: bash
-        run: |
-          set -euo pipefail
-          cat > .github/workflows/quote-system-typespec.yml <<'WORKFLOW'
-          name: Fiducia quote TypeSpec
-
-          on:
-            pull_request:
-              paths:
-                - 'quote-system/contracts/**'
-                - 'quote-system/package.json'
-                - 'quote-system/package-lock.json'
-                - 'quote-system/tspconfig.yaml'
-                - '.github/workflows/quote-system-typespec.yml'
-            push:
-              branches:
-                - main
-              paths:
-                - 'quote-system/contracts/**'
-                - 'quote-system/package.json'
-                - 'quote-system/package-lock.json'
-                - 'quote-system/tspconfig.yaml'
-                - '.github/workflows/quote-system-typespec.yml'
-            workflow_dispatch:
-
-          permissions:
-            contents: read
-
-          concurrency:
-            group: fiducia-quote-typespec-${{ github.workflow }}-${{ github.ref }}
-            cancel-in-progress: true
-
-          jobs:
-            compile:
-              runs-on: ubuntu-24.04
-              timeout-minutes: 15
-              steps:
-                - name: Check out exact revision
-                  uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-                  with:
-                    persist-credentials: false
-
-                - name: Install repository Node version
-                  uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-                  with:
-                    node-version-file: '.nvmrc'
-
-                - name: Require the reviewed stable TypeSpec package family
-                  working-directory: quote-system
-                  shell: bash
-                  run: |
-                    set -euo pipefail
-                    python3 <<'PY'
-                    import json
-                    from pathlib import Path
-
-                    package = json.loads(Path('package.json').read_text(encoding='utf-8'))
-                    expected = {
-                        '@typespec/compiler': '1.15.0',
-                        '@typespec/http': '1.15.0',
-                        '@typespec/openapi3': '1.15.0',
-                        '@typespec/rest': '0.85.0',
-                    }
-                    if package.get('devDependencies') != expected:
-                        raise SystemExit('TypeSpec dependencies differ from the reviewed stable package family')
-                    PY
-
-                - name: Install exact lockfile without lifecycle scripts
-                  working-directory: quote-system
-                  shell: bash
-                  run: |
-                    set -euo pipefail
-                    npm ci --ignore-scripts --no-audit --no-fund
-
-                - name: Compile and inspect generated OpenAPI
-                  working-directory: quote-system
-                  shell: bash
-                  run: |
-                    set -euo pipefail
-                    output_dir="${RUNNER_TEMP}/fiducia-typespec"
-                    ./node_modules/.bin/tsp compile \
-                      contracts/main.tsp \
-                      --config tspconfig.yaml \
-                      --output-dir "${output_dir}" \
-                      --warn-as-error
-                    output="${output_dir}/openapi3/fiducia-commercial-intake.openapi.yaml"
-                    test -s "${output}"
-                    grep -q '/v1/pre-interest' "${output}"
-                    grep -q '/v1/admin/quotes' "${output}"
-          WORKFLOW
-
       - name: Re-run dependency-free contract oracle
         shell: bash
         run: |
@@ -160,23 +69,16 @@ jobs:
           python3 -m py_compile quote-system/tests/test_contracts.py
           python3 -m unittest -v quote-system/tests/test_contracts.py
 
-      - name: Stage verified publication bundle
+      - name: Commit only the verified npm lockfile
         shell: bash
         run: |
           set -euo pipefail
-          bundle="${RUNNER_TEMP}/fiducia-typespec-publication"
-          mkdir -p "${bundle}/quote-system" "${bundle}/.github/workflows"
-          cp quote-system/package-lock.json "${bundle}/quote-system/package-lock.json"
-          cp .github/workflows/quote-system-typespec.yml "${bundle}/.github/workflows/quote-system-typespec.yml"
-          sha256sum \
-            "${bundle}/quote-system/package-lock.json" \
-            "${bundle}/.github/workflows/quote-system-typespec.yml" \
-            > "${bundle}/SHA256SUMS"
-
-      - name: Export verified lockfile and permanent gate
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: fiducia-typespec-publication
-          path: ${{ runner.temp }}/fiducia-typespec-publication
-          if-no-files-found: error
-          retention-days: 3
+          git config user.name 'fiducia-contract-bot'
+          git config user.email 'fiducia-contract-bot@users.noreply.github.com'
+          git add -- quote-system/package-lock.json
+          git diff --cached --quiet && {
+            echo 'Expected a newly generated package-lock.json' >&2
+            exit 1
+          }
+          git commit -m 'build(DEN-608): lock Fiducia TypeSpec dependencies'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
