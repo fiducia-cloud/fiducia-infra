@@ -1,0 +1,95 @@
+{
+  "schema": "fiducia.sla-policy.v1",
+  "document_type": "sla_policy",
+  "sla_policy_id": "sla_01J7FQ2M9A4K8D3N6P0R",
+  "version": 1,
+  "status": "approved",
+  "name": "Example Enterprise Availability SLA",
+  "availability_target_bps": 9995,
+  "measurement_window": "calendar-month",
+  "measurement_source": "Customer-visible synthetic probes and server-side successful request telemetry, reconciled against the incident ledger.",
+  "availability_formula": "10000 * (eligible_window_seconds - unavailable_seconds) / eligible_window_seconds, rounded down to whole basis points.",
+  "latency_objectives": [
+    {
+      "operation": "lease acquisition API",
+      "percentile": "p99",
+      "maximum_ms": 250
+    },
+    {
+      "operation": "read-only status API",
+      "percentile": "p99",
+      "maximum_ms": 500
+    }
+  ],
+  "error_rate_max_bps": 10,
+  "severity_targets": [
+    {
+      "severity": "P1",
+      "initial_response_minutes": 15,
+      "update_interval_minutes": 30,
+      "mitigation_target_minutes": 60,
+      "restoration_target_minutes": 240
+    },
+    {
+      "severity": "P2",
+      "initial_response_minutes": 30,
+      "update_interval_minutes": 60,
+      "mitigation_target_minutes": 240,
+      "restoration_target_minutes": 480
+    },
+    {
+      "severity": "P3",
+      "initial_response_minutes": 240,
+      "update_interval_minutes": 480,
+      "mitigation_target_minutes": 1440,
+      "restoration_target_minutes": 4320
+    },
+    {
+      "severity": "P4",
+      "initial_response_minutes": 480,
+      "update_interval_minutes": 1440,
+      "mitigation_target_minutes": 4320,
+      "restoration_target_minutes": 10080
+    }
+  ],
+  "rto_minutes": 60,
+  "rpo_minutes": 5,
+  "planned_maintenance": {
+    "excluded": true,
+    "notice_hours": 120,
+    "maximum_hours_per_month": 4
+  },
+  "exclusions": [
+    "customer-controlled network or identity-provider failure",
+    "customer-requested emergency change",
+    "documented force majeure",
+    "unauthorized or unsupported use outside the order form"
+  ],
+  "incident_communication": {
+    "status_page": true,
+    "initial_notice_minutes": 30,
+    "update_interval_minutes": 30,
+    "postmortem_business_days": 5
+  },
+  "service_credits": {
+    "tiers": [
+      {
+        "availability_below_bps": 9995,
+        "credit_percent": 10
+      },
+      {
+        "availability_below_bps": 9900,
+        "credit_percent": 25
+      },
+      {
+        "availability_below_bps": 9500,
+        "credit_percent": 50
+      }
+    ],
+    "monthly_cap_percent": 50,
+    "applies_to_fees": "Monthly recurring fees for the affected production service.",
+    "automatic": false
+  },
+  "claim_window_days": 30,
+  "content_sha256": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+}

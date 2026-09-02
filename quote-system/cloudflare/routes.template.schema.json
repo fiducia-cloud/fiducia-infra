@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fiducia.invalid/schemas/cloudflare-routes.template.schema.json",
+  "title": "Fiducia placeholder-only Cloudflare route contract",
+  "type": "object",
+  "required": [
+    "schema",
+    "zone_apex_env",
+    "account_id_env",
+    "zone_id_env",
+    "defaults",
+    "routes",
+    "required_security_headers",
+    "prohibited_literals"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema": {
+      "const": "fiducia.cloudflare.quote-routes.v1"
+    },
+    "zone_apex_env": {
+      "const": "FIDUCIA_ZONE_APEX"
+    },
+    "account_id_env": {
+      "const": "CLOUDFLARE_ACCOUNT_ID"
+    },
+    "zone_id_env": {
+      "const": "CLOUDFLARE_ZONE_ID"
+    },
+    "defaults": {
+      "type": "object",
+      "required": [
+        "tls_mode",
+        "origin_authentication",
+        "request_body_limit_bytes",
+        "cache_control",
+        "health_path",
+        "readiness_path"
+      ],
+      "properties": {
+        "tls_mode": {
+          "const": "strict"
+        },
+        "origin_authentication": {
+          "enum": [
+            "service-token-or-mtls",
+            "mtls"
+          ]
+        },
+        "request_body_limit_bytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 16777216
+        },
+        "cache_control": {
+          "const": "no-store"
+        },
+        "health_path": {
+          "const": "/healthz"
+        },
+        "readiness_path": {
+          "const": "/readyz"
+        }
+      },
+      "additionalProperties": false
+    },
+    "routes": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/route"
+      }
+    },
+    "required_security_headers": {
+      "type": "object",
+      "required": [
+        "strict-transport-security",
+        "x-content-type-options",
+        "referrer-policy",
+        "permissions-policy",
+        "content-security-policy_source"
+      ],
+      "properties": {
+        "strict-transport-security": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "x-content-type-options": {
+          "const": "nosniff"
+        },
+        "referrer-policy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "permissions-policy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "content-security-policy_source": {
+          "const": "per-application-reviewed-policy"
+        }
+      },
+      "additionalProperties": false
+    },
+    "prohibited_literals": {
+      "type": "array",
+      "minItems": 6,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "cloudflare_api_token",
+          "cloudflare_api_key",
+          "account_id_value",
+          "zone_id_value",
+          "production_hostname_value",
+          "origin_secret_value"
+        ]
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "route": {
+      "type": "object",
+      "required": [
+        "role",
+        "hostname_template",
+        "origin_env",
+        "methods",
+        "cache",
+        "turnstile",
+        "rate_limit_policy"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "public-app",
+            "public-api",
+            "admin-app",
+            "admin-api",
+            "auth",
+            "user",
+            "organization",
+            "status"
+          ]
+        },
+        "hostname_template": {
+          "type": "string",
+          "pattern": "^(?:app|api|admin|admin-api|auth|user|org|status)\\.\\$\\{FIDUCIA_ZONE_APEX\\}$"
+        },
+        "origin_env": {
+          "type": "string",
+          "pattern": "^FIDUCIA_[A-Z0-9_]+_ORIGIN$"
+        },
+        "methods": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "GET",
+              "HEAD",
+              "POST",
+              "PUT",
+              "PATCH",
+              "DELETE",
+              "OPTIONS"
+            ]
+          }
+        },
+        "cache": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "turnstile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "rate_limit_policy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

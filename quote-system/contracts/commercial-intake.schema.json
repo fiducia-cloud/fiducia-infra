@@ -1,0 +1,796 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fiducia.invalid/schemas/commercial-intake.schema.json",
+  "title": "Fiducia commercial intake and contracting documents",
+  "description": "Portable validation contract for pre-interest, full applications, support plans, SLA policies, versioned quotes, and contract acceptance.",
+  "oneOf": [
+    { "$ref": "#/$defs/preInterest" },
+    { "$ref": "#/$defs/application" },
+    { "$ref": "#/$defs/supportPlan" },
+    { "$ref": "#/$defs/slaPolicy" },
+    { "$ref": "#/$defs/quote" },
+    { "$ref": "#/$defs/contractAcceptance" }
+  ],
+  "$defs": {
+    "opaqueId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{15,127}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "isoDateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "countryCode": {
+      "type": "string",
+      "pattern": "^[A-Z]{2}$"
+    },
+    "currencyCode": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "email": {
+      "type": "string",
+      "format": "email",
+      "maxLength": 320
+    },
+    "nonEmptyText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 10000
+    },
+    "boundedStringArray": {
+      "type": "array",
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+      }
+    },
+    "money": {
+      "type": "object",
+      "required": ["currency", "minor_units"],
+      "properties": {
+        "currency": { "$ref": "#/$defs/currencyCode" },
+        "minor_units": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "additionalProperties": false
+    },
+    "address": {
+      "type": "object",
+      "required": ["country"],
+      "properties": {
+        "line1": { "type": "string", "maxLength": 300 },
+        "line2": { "type": "string", "maxLength": 300 },
+        "city": { "type": "string", "maxLength": 200 },
+        "region": { "type": "string", "maxLength": 200 },
+        "postal_code": { "type": "string", "maxLength": 50 },
+        "country": { "$ref": "#/$defs/countryCode" }
+      },
+      "additionalProperties": false
+    },
+    "contact": {
+      "type": "object",
+      "required": ["full_name", "work_email", "title", "preferred_language", "time_zone"],
+      "properties": {
+        "contact_id": { "$ref": "#/$defs/opaqueId" },
+        "full_name": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "department": { "type": "string", "maxLength": 200 },
+        "work_email": { "$ref": "#/$defs/email" },
+        "phone": { "type": "string", "maxLength": 80 },
+        "preferred_language": { "type": "string", "pattern": "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$" },
+        "time_zone": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "preferred_channel": {
+          "enum": ["email", "phone", "video", "secure_portal"]
+        },
+        "roles": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 10,
+          "items": {
+            "enum": ["requester", "business_owner", "technical_owner", "security_owner", "legal_owner", "procurement_owner", "billing_owner", "executive_sponsor", "signer"]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "organization": {
+      "type": "object",
+      "required": ["legal_name", "website", "jurisdiction", "entity_type", "headquarters", "industries", "employee_band"],
+      "properties": {
+        "organization_id": { "$ref": "#/$defs/opaqueId" },
+        "legal_name": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "doing_business_as": { "type": "string", "maxLength": 500 },
+        "website": { "type": "string", "format": "uri", "maxLength": 2000 },
+        "verified_email_domains": {
+          "type": "array",
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": { "type": "string", "format": "hostname", "maxLength": 253 }
+        },
+        "jurisdiction": { "$ref": "#/$defs/countryCode" },
+        "entity_type": {
+          "enum": ["corporation", "llc", "partnership", "nonprofit", "government", "educational", "sole_proprietorship", "other"]
+        },
+        "registration_number": { "type": "string", "maxLength": 200 },
+        "tax_identifier": { "type": "string", "maxLength": 200 },
+        "headquarters": { "$ref": "#/$defs/address" },
+        "operating_countries": {
+          "type": "array",
+          "maxItems": 250,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/countryCode" }
+        },
+        "industries": { "$ref": "#/$defs/boundedStringArray" },
+        "employee_band": {
+          "enum": ["1-10", "11-50", "51-200", "201-500", "501-1000", "1001-5000", "5001-10000", "10001+"]
+        },
+        "annual_revenue_band": {
+          "enum": ["pre-revenue", "under-1m", "1m-10m", "10m-50m", "50m-250m", "250m-1b", "1b-plus", "not-disclosed"]
+        },
+        "parent_organization": { "type": "string", "maxLength": 500 },
+        "subsidiaries_in_scope": { "$ref": "#/$defs/boundedStringArray" }
+      },
+      "additionalProperties": false
+    },
+    "needSummary": {
+      "type": "object",
+      "required": ["problem_statement", "desired_outcomes", "use_cases", "target_launch_date", "procurement_stage"],
+      "properties": {
+        "problem_statement": { "$ref": "#/$defs/nonEmptyText" },
+        "desired_outcomes": { "$ref": "#/$defs/boundedStringArray" },
+        "use_cases": { "$ref": "#/$defs/boundedStringArray" },
+        "current_systems": { "$ref": "#/$defs/boundedStringArray" },
+        "current_vendors": { "$ref": "#/$defs/boundedStringArray" },
+        "business_impact": { "type": "string", "maxLength": 10000 },
+        "urgency": { "enum": ["exploratory", "this-quarter", "six-months", "twelve-months", "urgent"] },
+        "target_launch_date": { "type": "string", "format": "date" },
+        "decision_deadline": { "type": "string", "format": "date" },
+        "procurement_stage": { "enum": ["research", "requirements", "rfp", "vendor-selection", "legal-review", "budget-approved", "replacement-emergency"] },
+        "success_metrics": { "$ref": "#/$defs/boundedStringArray" }
+      },
+      "additionalProperties": false
+    },
+    "usageForecast": {
+      "type": "object",
+      "required": ["environments", "monthly_active_users", "peak_concurrency", "requests_per_month", "storage_gib", "egress_gib", "regions"],
+      "properties": {
+        "environments": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "uniqueItems": true,
+          "items": { "enum": ["development", "test", "staging", "production", "disaster_recovery", "regulated"] }
+        },
+        "tenants": { "type": "integer", "minimum": 1, "maximum": 1000000000 },
+        "monthly_active_users": { "type": "integer", "minimum": 0, "maximum": 1000000000000 },
+        "peak_concurrency": { "type": "integer", "minimum": 0, "maximum": 1000000000000 },
+        "requests_per_month": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "storage_gib": { "type": "number", "minimum": 0, "maximum": 1000000000000 },
+        "egress_gib": { "type": "number", "minimum": 0, "maximum": 1000000000000 },
+        "events_per_second_peak": { "type": "number", "minimum": 0, "maximum": 1000000000000 },
+        "data_growth_percent_monthly": { "type": "number", "minimum": 0, "maximum": 10000 },
+        "regions": { "$ref": "#/$defs/boundedStringArray" },
+        "seasonality_notes": { "type": "string", "maxLength": 5000 }
+      },
+      "additionalProperties": false
+    },
+    "technicalRequirements": {
+      "type": "object",
+      "required": ["deployment_models", "clouds", "identity", "integrations", "observability"],
+      "properties": {
+        "deployment_models": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["saas", "single-tenant-saas", "customer-cloud", "on-premises", "hybrid", "edge"] }
+        },
+        "clouds": { "$ref": "#/$defs/boundedStringArray" },
+        "kubernetes_distributions": { "$ref": "#/$defs/boundedStringArray" },
+        "databases": { "$ref": "#/$defs/boundedStringArray" },
+        "message_buses": { "$ref": "#/$defs/boundedStringArray" },
+        "identity": {
+          "type": "object",
+          "required": ["sso_required", "scim_required", "providers"],
+          "properties": {
+            "sso_required": { "type": "boolean" },
+            "scim_required": { "type": "boolean" },
+            "mfa_required": { "type": "boolean" },
+            "providers": { "$ref": "#/$defs/boundedStringArray" },
+            "protocols": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "enum": ["oidc", "saml", "scim", "webauthn", "totp", "3fa"] }
+            }
+          },
+          "additionalProperties": false
+        },
+        "network_connectivity": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["public-internet", "ip-allowlist", "vpn", "private-link", "peering", "customer-egress-proxy", "offline"] }
+        },
+        "integrations": { "$ref": "#/$defs/boundedStringArray" },
+        "client_platforms": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["web", "ios", "android", "flutter", "desktop", "cli", "server-to-server"] }
+        },
+        "api_styles": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["rest", "json-rpc", "grpc", "graphql", "websocket", "webhook", "file-transfer"] }
+        },
+        "observability": {
+          "type": "object",
+          "required": ["logs", "metrics", "traces", "audit_events"],
+          "properties": {
+            "logs": { "type": "boolean" },
+            "metrics": { "type": "boolean" },
+            "traces": { "type": "boolean" },
+            "audit_events": { "type": "boolean" },
+            "otel_required": { "type": "boolean" },
+            "destinations": { "$ref": "#/$defs/boundedStringArray" }
+          },
+          "additionalProperties": false
+        },
+        "custom_requirements": { "type": "string", "maxLength": 20000 }
+      },
+      "additionalProperties": false
+    },
+    "dataSecurityRequirements": {
+      "type": "object",
+      "required": ["classifications", "regulated_data", "residency_countries", "encryption", "retention", "compliance_frameworks"],
+      "properties": {
+        "classifications": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["public", "internal", "confidential", "restricted", "customer-controlled"] }
+        },
+        "regulated_data": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["none", "pii", "phi", "pci", "financial", "biometric", "children", "government", "export-controlled"] }
+        },
+        "residency_countries": {
+          "type": "array",
+          "maxItems": 250,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/countryCode" }
+        },
+        "encryption": {
+          "type": "object",
+          "required": ["at_rest", "in_transit", "customer_managed_keys"],
+          "properties": {
+            "at_rest": { "type": "boolean" },
+            "in_transit": { "type": "boolean" },
+            "customer_managed_keys": { "type": "boolean" },
+            "hsm_required": { "type": "boolean" },
+            "key_rotation_days": { "type": "integer", "minimum": 1, "maximum": 3650 }
+          },
+          "additionalProperties": false
+        },
+        "retention": {
+          "type": "object",
+          "required": ["default_days", "deletion_sla_days", "legal_hold_required"],
+          "properties": {
+            "default_days": { "type": "integer", "minimum": 1, "maximum": 36500 },
+            "deletion_sla_days": { "type": "integer", "minimum": 0, "maximum": 3650 },
+            "legal_hold_required": { "type": "boolean" },
+            "backup_retention_days": { "type": "integer", "minimum": 0, "maximum": 36500 }
+          },
+          "additionalProperties": false
+        },
+        "compliance_frameworks": { "$ref": "#/$defs/boundedStringArray" },
+        "security_assessments": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["questionnaire", "soc2", "iso27001", "penetration-test", "architecture-review", "code-review", "onsite-audit"] }
+        },
+        "incident_notification_hours": { "type": "integer", "minimum": 1, "maximum": 720 },
+        "vulnerability_remediation": {
+          "type": "object",
+          "properties": {
+            "critical_days": { "type": "integer", "minimum": 0, "maximum": 365 },
+            "high_days": { "type": "integer", "minimum": 0, "maximum": 730 },
+            "medium_days": { "type": "integer", "minimum": 0, "maximum": 1825 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "migrationRequirements": {
+      "type": "object",
+      "required": ["migration_required", "cutover_strategy", "rollback_required"],
+      "properties": {
+        "migration_required": { "type": "boolean" },
+        "source_systems": { "$ref": "#/$defs/boundedStringArray" },
+        "data_volume_gib": { "type": "number", "minimum": 0, "maximum": 1000000000000 },
+        "cutover_strategy": { "enum": ["not-applicable", "big-bang", "phased", "parallel-run", "blue-green", "customer-defined"] },
+        "downtime_budget_minutes": { "type": "integer", "minimum": 0, "maximum": 525600 },
+        "rollback_required": { "type": "boolean" },
+        "validation_plan": { "type": "string", "maxLength": 10000 },
+        "professional_services_requested": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "commercialRequirements": {
+      "type": "object",
+      "required": ["budget_band", "currency", "term_months", "billing_frequency", "procurement_stage"],
+      "properties": {
+        "budget_band": { "enum": ["under-10k", "10k-50k", "50k-250k", "250k-1m", "1m-plus", "not-disclosed"] },
+        "currency": { "$ref": "#/$defs/currencyCode" },
+        "term_months": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "billing_frequency": { "enum": ["monthly", "quarterly", "annual", "prepaid", "milestone"] },
+        "payment_terms_days": { "type": "integer", "minimum": 0, "maximum": 180 },
+        "purchase_order_required": { "type": "boolean" },
+        "invoice_portal": { "type": "string", "maxLength": 2000 },
+        "tax_exempt": { "type": "boolean" },
+        "minimum_commitment_acceptable": { "type": "boolean" },
+        "pilot_requested": { "type": "boolean" },
+        "pilot_duration_days": { "type": "integer", "minimum": 1, "maximum": 365 },
+        "procurement_stage": { "enum": ["research", "requirements", "rfp", "vendor-selection", "legal-review", "budget-approved", "replacement-emergency"] }
+      },
+      "additionalProperties": false
+    },
+    "supportRequirements": {
+      "type": "object",
+      "required": ["tier", "coverage", "channels", "severity_targets", "rto_minutes", "rpo_minutes"],
+      "properties": {
+        "tier": { "enum": ["self-service", "business", "enterprise", "mission-critical", "custom"] },
+        "coverage": { "enum": ["business-hours", "extended-hours", "24x5", "24x7"] },
+        "coverage_time_zones": { "$ref": "#/$defs/boundedStringArray" },
+        "channels": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["portal", "email", "chat", "phone", "video", "incident-bridge"] }
+        },
+        "named_tam": { "type": "boolean" },
+        "onboarding_hours": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "training_hours": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "severity_targets": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": { "$ref": "#/$defs/severityTarget" }
+        },
+        "rto_minutes": { "type": "integer", "minimum": 0, "maximum": 525600 },
+        "rpo_minutes": { "type": "integer", "minimum": 0, "maximum": 525600 },
+        "maintenance_window_preferences": { "$ref": "#/$defs/boundedStringArray" },
+        "service_credit_expected": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "severityTarget": {
+      "type": "object",
+      "required": ["severity", "initial_response_minutes", "update_interval_minutes", "mitigation_target_minutes", "restoration_target_minutes"],
+      "properties": {
+        "severity": { "enum": ["P1", "P2", "P3", "P4"] },
+        "initial_response_minutes": { "type": "integer", "minimum": 1, "maximum": 10080 },
+        "update_interval_minutes": { "type": "integer", "minimum": 1, "maximum": 10080 },
+        "mitigation_target_minutes": { "type": "integer", "minimum": 1, "maximum": 525600 },
+        "restoration_target_minutes": { "type": "integer", "minimum": 1, "maximum": 525600 }
+      },
+      "additionalProperties": false
+    },
+    "legalRequirements": {
+      "type": "object",
+      "required": ["msa_required", "dpa_required", "governing_law_preferences", "signature_method"],
+      "properties": {
+        "msa_required": { "type": "boolean" },
+        "dpa_required": { "type": "boolean" },
+        "baa_required": { "type": "boolean" },
+        "security_addendum_required": { "type": "boolean" },
+        "subprocessor_review_required": { "type": "boolean" },
+        "accessibility_standard": { "type": "string", "maxLength": 200 },
+        "governing_law_preferences": { "$ref": "#/$defs/boundedStringArray" },
+        "liability_cap_preference": { "type": "string", "maxLength": 1000 },
+        "indemnity_requirements": { "type": "string", "maxLength": 10000 },
+        "insurance_requirements": { "type": "string", "maxLength": 10000 },
+        "export_control_requirements": { "type": "string", "maxLength": 10000 },
+        "signature_method": { "enum": ["electronic", "wet-ink", "customer-procurement-platform"] }
+      },
+      "additionalProperties": false
+    },
+    "attachment": {
+      "type": "object",
+      "required": ["attachment_id", "purpose", "filename", "media_type", "size_bytes", "content_sha256", "malware_scan_status"],
+      "properties": {
+        "attachment_id": { "$ref": "#/$defs/opaqueId" },
+        "purpose": { "enum": ["architecture", "security-questionnaire", "compliance-report", "requirements", "rfp", "legal-redline", "pricing-input", "other"] },
+        "filename": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "media_type": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "size_bytes": { "type": "integer", "minimum": 1, "maximum": 52428800 },
+        "content_sha256": { "$ref": "#/$defs/sha256" },
+        "malware_scan_status": { "enum": ["pending", "clean", "rejected", "error"] },
+        "created_at": { "$ref": "#/$defs/isoDateTime" }
+      },
+      "additionalProperties": false
+    },
+    "consent": {
+      "type": "object",
+      "required": ["privacy_policy_version", "terms_version", "contact_consent", "submitted_at"],
+      "properties": {
+        "privacy_policy_version": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "terms_version": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "contact_consent": { "type": "boolean", "const": true },
+        "marketing_consent": { "type": "boolean" },
+        "submitted_at": { "$ref": "#/$defs/isoDateTime" }
+      },
+      "additionalProperties": false
+    },
+    "preInterest": {
+      "type": "object",
+      "required": ["schema", "document_type", "submission_id", "idempotency_key", "contact", "organization", "need", "usage_forecast", "commercial", "support", "consent"],
+      "properties": {
+        "schema": { "const": "fiducia.pre-interest.v1" },
+        "document_type": { "const": "pre_interest" },
+        "submission_id": { "$ref": "#/$defs/opaqueId" },
+        "idempotency_key": { "type": "string", "minLength": 16, "maxLength": 128 },
+        "contact": { "$ref": "#/$defs/contact" },
+        "organization": { "$ref": "#/$defs/organization" },
+        "need": { "$ref": "#/$defs/needSummary" },
+        "usage_forecast": { "$ref": "#/$defs/usageForecast" },
+        "commercial": { "$ref": "#/$defs/commercialRequirements" },
+        "support": { "$ref": "#/$defs/supportRequirements" },
+        "referral_source": { "type": "string", "maxLength": 500 },
+        "consent": { "$ref": "#/$defs/consent" }
+      },
+      "additionalProperties": false
+    },
+    "application": {
+      "type": "object",
+      "required": ["schema", "document_type", "application_id", "organization_id", "version", "status", "etag", "organization", "stakeholders", "need", "usage_forecast", "technical", "data_security", "migration", "commercial", "support", "legal", "attachments", "attestations", "updated_at"],
+      "properties": {
+        "schema": { "const": "fiducia.application.v1" },
+        "document_type": { "const": "application" },
+        "application_id": { "$ref": "#/$defs/opaqueId" },
+        "organization_id": { "$ref": "#/$defs/opaqueId" },
+        "version": { "type": "integer", "minimum": 1 },
+        "status": {
+          "enum": ["application_draft", "application_submitted", "needs_information", "security_review", "solution_design", "pricing_review", "quote_issued", "legal_procurement", "signed", "provisioning", "active", "withdrawn", "expired", "declined", "superseded"]
+        },
+        "etag": { "$ref": "#/$defs/sha256" },
+        "organization": { "$ref": "#/$defs/organization" },
+        "stakeholders": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/contact" }
+        },
+        "need": { "$ref": "#/$defs/needSummary" },
+        "usage_forecast": { "$ref": "#/$defs/usageForecast" },
+        "technical": { "$ref": "#/$defs/technicalRequirements" },
+        "data_security": { "$ref": "#/$defs/dataSecurityRequirements" },
+        "migration": { "$ref": "#/$defs/migrationRequirements" },
+        "commercial": { "$ref": "#/$defs/commercialRequirements" },
+        "support": { "$ref": "#/$defs/supportRequirements" },
+        "legal": { "$ref": "#/$defs/legalRequirements" },
+        "attachments": {
+          "type": "array",
+          "maxItems": 200,
+          "items": { "$ref": "#/$defs/attachment" }
+        },
+        "attestations": {
+          "type": "object",
+          "required": ["authorized_to_submit", "information_accurate", "privacy_policy_version"],
+          "properties": {
+            "authorized_to_submit": { "type": "boolean", "const": true },
+            "information_accurate": { "type": "boolean", "const": true },
+            "privacy_policy_version": { "type": "string", "minLength": 1, "maxLength": 100 }
+          },
+          "additionalProperties": false
+        },
+        "updated_at": { "$ref": "#/$defs/isoDateTime" },
+        "submitted_at": { "$ref": "#/$defs/isoDateTime" }
+      },
+      "additionalProperties": false
+    },
+    "supportPlan": {
+      "type": "object",
+      "required": ["schema", "document_type", "support_plan_id", "version", "status", "name", "tier", "coverage", "channels", "severity_targets", "onboarding", "content_sha256"],
+      "properties": {
+        "schema": { "const": "fiducia.support-plan.v1" },
+        "document_type": { "const": "support_plan" },
+        "support_plan_id": { "$ref": "#/$defs/opaqueId" },
+        "version": { "type": "integer", "minimum": 1 },
+        "status": { "enum": ["draft", "approved", "retired", "superseded"] },
+        "name": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "tier": { "enum": ["self-service", "business", "enterprise", "mission-critical", "custom"] },
+        "coverage": { "enum": ["business-hours", "extended-hours", "24x5", "24x7"] },
+        "coverage_time_zones": { "$ref": "#/$defs/boundedStringArray" },
+        "channels": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["portal", "email", "chat", "phone", "video", "incident-bridge"] }
+        },
+        "severity_targets": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": { "$ref": "#/$defs/severityTarget" }
+        },
+        "onboarding": {
+          "type": "object",
+          "required": ["included_hours", "training_hours", "named_tam"],
+          "properties": {
+            "included_hours": { "type": "integer", "minimum": 0, "maximum": 100000 },
+            "training_hours": { "type": "integer", "minimum": 0, "maximum": 100000 },
+            "named_tam": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        "content_sha256": { "$ref": "#/$defs/sha256" },
+        "supersedes_version": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "creditTier": {
+      "type": "object",
+      "required": ["availability_below_bps", "credit_percent"],
+      "properties": {
+        "availability_below_bps": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "credit_percent": { "type": "number", "minimum": 0, "maximum": 100 }
+      },
+      "additionalProperties": false
+    },
+    "slaPolicy": {
+      "type": "object",
+      "required": ["schema", "document_type", "sla_policy_id", "version", "status", "name", "availability_target_bps", "measurement_window", "measurement_source", "availability_formula", "severity_targets", "rto_minutes", "rpo_minutes", "planned_maintenance", "exclusions", "incident_communication", "service_credits", "claim_window_days", "content_sha256"],
+      "properties": {
+        "schema": { "const": "fiducia.sla-policy.v1" },
+        "document_type": { "const": "sla_policy" },
+        "sla_policy_id": { "$ref": "#/$defs/opaqueId" },
+        "version": { "type": "integer", "minimum": 1 },
+        "status": { "enum": ["draft", "approved", "retired", "superseded"] },
+        "name": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "availability_target_bps": { "type": "integer", "minimum": 9000, "maximum": 10000 },
+        "measurement_window": { "enum": ["calendar-month", "rolling-30-days", "calendar-quarter"] },
+        "measurement_source": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "availability_formula": { "type": "string", "minLength": 1, "maxLength": 5000 },
+        "latency_objectives": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "required": ["operation", "percentile", "maximum_ms"],
+            "properties": {
+              "operation": { "type": "string", "minLength": 1, "maxLength": 300 },
+              "percentile": { "enum": ["p50", "p90", "p95", "p99", "p99.9"] },
+              "maximum_ms": { "type": "integer", "minimum": 1, "maximum": 86400000 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "error_rate_max_bps": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "severity_targets": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": { "$ref": "#/$defs/severityTarget" }
+        },
+        "rto_minutes": { "type": "integer", "minimum": 0, "maximum": 525600 },
+        "rpo_minutes": { "type": "integer", "minimum": 0, "maximum": 525600 },
+        "planned_maintenance": {
+          "type": "object",
+          "required": ["excluded", "notice_hours", "maximum_hours_per_month"],
+          "properties": {
+            "excluded": { "type": "boolean" },
+            "notice_hours": { "type": "integer", "minimum": 0, "maximum": 8760 },
+            "maximum_hours_per_month": { "type": "number", "minimum": 0, "maximum": 744 }
+          },
+          "additionalProperties": false
+        },
+        "exclusions": { "$ref": "#/$defs/boundedStringArray" },
+        "incident_communication": {
+          "type": "object",
+          "required": ["status_page", "initial_notice_minutes", "update_interval_minutes", "postmortem_business_days"],
+          "properties": {
+            "status_page": { "type": "boolean" },
+            "initial_notice_minutes": { "type": "integer", "minimum": 1, "maximum": 10080 },
+            "update_interval_minutes": { "type": "integer", "minimum": 1, "maximum": 10080 },
+            "postmortem_business_days": { "type": "integer", "minimum": 1, "maximum": 365 }
+          },
+          "additionalProperties": false
+        },
+        "service_credits": {
+          "type": "object",
+          "required": ["tiers", "monthly_cap_percent", "applies_to_fees", "automatic"],
+          "properties": {
+            "tiers": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 20,
+              "items": { "$ref": "#/$defs/creditTier" }
+            },
+            "monthly_cap_percent": { "type": "number", "minimum": 0, "maximum": 100 },
+            "applies_to_fees": { "type": "string", "minLength": 1, "maxLength": 500 },
+            "automatic": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        "claim_window_days": { "type": "integer", "minimum": 1, "maximum": 365 },
+        "content_sha256": { "$ref": "#/$defs/sha256" },
+        "supersedes_version": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "quoteLineItem": {
+      "type": "object",
+      "required": ["line_item_id", "category", "description", "metric", "quantity", "unit_price", "extended_price", "billing_frequency"],
+      "properties": {
+        "line_item_id": { "$ref": "#/$defs/opaqueId" },
+        "category": { "enum": ["subscription", "usage", "minimum-commitment", "support", "onboarding", "professional-services", "migration", "training", "discount", "tax", "credit", "other"] },
+        "description": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "metric": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "quantity": { "type": "number", "minimum": 0, "maximum": 9007199254740991 },
+        "unit_price": { "$ref": "#/$defs/money" },
+        "extended_price": { "$ref": "#/$defs/money" },
+        "billing_frequency": { "enum": ["one-time", "monthly", "quarterly", "annual", "milestone"] },
+        "minimum_quantity": { "type": "number", "minimum": 0 },
+        "maximum_quantity": { "type": "number", "minimum": 0 },
+        "notes": { "type": "string", "maxLength": 5000 }
+      },
+      "additionalProperties": false
+    },
+    "contractReference": {
+      "type": "object",
+      "required": ["kind", "template_id", "version", "content_sha256"],
+      "properties": {
+        "kind": { "enum": ["msa", "order-form", "dpa", "baa", "sla", "support-policy", "security-addendum", "subprocessor-list"] },
+        "template_id": { "$ref": "#/$defs/opaqueId" },
+        "version": { "type": "integer", "minimum": 1 },
+        "content_sha256": { "$ref": "#/$defs/sha256" }
+      },
+      "additionalProperties": false
+    },
+    "quote": {
+      "type": "object",
+      "required": ["schema", "document_type", "quote_id", "application_id", "organization_id", "version", "status", "currency", "issued_at", "valid_until", "term_months", "line_items", "subtotal", "discount_total", "tax_total", "total", "support_plan", "sla_policy", "contract_references", "assumptions", "exclusions", "content_sha256"],
+      "properties": {
+        "schema": { "const": "fiducia.quote.v1" },
+        "document_type": { "const": "quote" },
+        "quote_id": { "$ref": "#/$defs/opaqueId" },
+        "application_id": { "$ref": "#/$defs/opaqueId" },
+        "organization_id": { "$ref": "#/$defs/opaqueId" },
+        "version": { "type": "integer", "minimum": 1 },
+        "status": { "enum": ["draft", "pricing_review", "approved", "issued", "accepted", "declined", "expired", "superseded", "withdrawn"] },
+        "currency": { "$ref": "#/$defs/currencyCode" },
+        "issued_at": { "$ref": "#/$defs/isoDateTime" },
+        "valid_until": { "$ref": "#/$defs/isoDateTime" },
+        "term_months": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "billing_start": { "type": "string", "format": "date" },
+        "line_items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1000,
+          "items": { "$ref": "#/$defs/quoteLineItem" }
+        },
+        "subtotal": { "$ref": "#/$defs/money" },
+        "discount_total": { "$ref": "#/$defs/money" },
+        "tax_total": { "$ref": "#/$defs/money" },
+        "total": { "$ref": "#/$defs/money" },
+        "minimum_commitment": { "$ref": "#/$defs/money" },
+        "support_plan": {
+          "type": "object",
+          "required": ["support_plan_id", "version", "content_sha256"],
+          "properties": {
+            "support_plan_id": { "$ref": "#/$defs/opaqueId" },
+            "version": { "type": "integer", "minimum": 1 },
+            "content_sha256": { "$ref": "#/$defs/sha256" }
+          },
+          "additionalProperties": false
+        },
+        "sla_policy": {
+          "type": "object",
+          "required": ["sla_policy_id", "version", "content_sha256"],
+          "properties": {
+            "sla_policy_id": { "$ref": "#/$defs/opaqueId" },
+            "version": { "type": "integer", "minimum": 1 },
+            "content_sha256": { "$ref": "#/$defs/sha256" }
+          },
+          "additionalProperties": false
+        },
+        "contract_references": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "items": { "$ref": "#/$defs/contractReference" }
+        },
+        "assumptions": { "$ref": "#/$defs/boundedStringArray" },
+        "exclusions": { "$ref": "#/$defs/boundedStringArray" },
+        "dependencies": { "$ref": "#/$defs/boundedStringArray" },
+        "implementation_milestones": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "required": ["name", "target_date", "acceptance_criteria"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1, "maxLength": 300 },
+              "target_date": { "type": "string", "format": "date" },
+              "acceptance_criteria": { "$ref": "#/$defs/boundedStringArray" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "supersedes_quote_version": { "type": "integer", "minimum": 1 },
+        "content_sha256": { "$ref": "#/$defs/sha256" }
+      },
+      "additionalProperties": false
+    },
+    "signer": {
+      "type": "object",
+      "required": ["full_name", "work_email", "title", "authority_attested"],
+      "properties": {
+        "full_name": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "work_email": { "$ref": "#/$defs/email" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "authority_attested": { "type": "boolean", "const": true }
+      },
+      "additionalProperties": false
+    },
+    "contractAcceptance": {
+      "type": "object",
+      "required": ["schema", "document_type", "acceptance_id", "organization_id", "quote_id", "quote_version", "quote_sha256", "contract_references", "signer", "signature_provider", "signature_evidence_id", "accepted_at", "source_ip_hash", "user_agent_hash"],
+      "properties": {
+        "schema": { "const": "fiducia.contract-acceptance.v1" },
+        "document_type": { "const": "contract_acceptance" },
+        "acceptance_id": { "$ref": "#/$defs/opaqueId" },
+        "organization_id": { "$ref": "#/$defs/opaqueId" },
+        "quote_id": { "$ref": "#/$defs/opaqueId" },
+        "quote_version": { "type": "integer", "minimum": 1 },
+        "quote_sha256": { "$ref": "#/$defs/sha256" },
+        "contract_references": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "items": { "$ref": "#/$defs/contractReference" }
+        },
+        "signer": { "$ref": "#/$defs/signer" },
+        "signature_provider": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "signature_evidence_id": { "$ref": "#/$defs/opaqueId" },
+        "accepted_at": { "$ref": "#/$defs/isoDateTime" },
+        "source_ip_hash": { "$ref": "#/$defs/sha256" },
+        "user_agent_hash": { "$ref": "#/$defs/sha256" },
+        "withdrawal_rights": { "type": "string", "maxLength": 5000 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "x-fiducia-state-transitions": {
+    "interest_draft": ["email_verification_pending", "withdrawn", "expired"],
+    "email_verification_pending": ["interest_verified", "withdrawn", "expired"],
+    "interest_verified": ["qualified", "declined", "needs_information", "withdrawn", "expired"],
+    "qualified": ["application_draft", "declined", "withdrawn"],
+    "application_draft": ["application_submitted", "withdrawn", "expired"],
+    "application_submitted": ["needs_information", "security_review", "declined", "withdrawn"],
+    "needs_information": ["application_draft", "application_submitted", "declined", "withdrawn", "expired"],
+    "security_review": ["needs_information", "solution_design", "declined", "withdrawn"],
+    "solution_design": ["needs_information", "pricing_review", "declined", "withdrawn"],
+    "pricing_review": ["quote_issued", "solution_design", "declined", "withdrawn"],
+    "quote_issued": ["legal_procurement", "pricing_review", "expired", "declined", "withdrawn", "superseded"],
+    "legal_procurement": ["signed", "pricing_review", "declined", "withdrawn", "expired", "superseded"],
+    "signed": ["provisioning"],
+    "provisioning": ["active", "needs_information"],
+    "active": [],
+    "declined": [],
+    "withdrawn": [],
+    "expired": [],
+    "superseded": []
+  }
+}

@@ -1,0 +1,104 @@
+{
+  "$schema": "./routes.template.schema.json",
+  "schema": "fiducia.cloudflare.quote-routes.v1",
+  "zone_apex_env": "FIDUCIA_ZONE_APEX",
+  "account_id_env": "CLOUDFLARE_ACCOUNT_ID",
+  "zone_id_env": "CLOUDFLARE_ZONE_ID",
+  "defaults": {
+    "tls_mode": "strict",
+    "origin_authentication": "service-token-or-mtls",
+    "request_body_limit_bytes": 2097152,
+    "cache_control": "no-store",
+    "health_path": "/healthz",
+    "readiness_path": "/readyz"
+  },
+  "routes": [
+    {
+      "role": "public-app",
+      "hostname_template": "app.${FIDUCIA_ZONE_APEX}",
+      "origin_env": "FIDUCIA_PUBLIC_APP_ORIGIN",
+      "methods": ["GET", "HEAD", "OPTIONS"],
+      "cache": "private-no-store",
+      "turnstile": "pre-interest-and-anonymous-submit",
+      "rate_limit_policy": "public-ui"
+    },
+    {
+      "role": "public-api",
+      "hostname_template": "api.${FIDUCIA_ZONE_APEX}",
+      "origin_env": "FIDUCIA_PUBLIC_API_ORIGIN",
+      "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      "cache": "no-store",
+      "turnstile": "anonymous-write-routes",
+      "rate_limit_policy": "public-write-api"
+    },
+    {
+      "role": "admin-app",
+      "hostname_template": "admin.${FIDUCIA_ZONE_APEX}",
+      "origin_env": "FIDUCIA_ADMIN_APP_ORIGIN",
+      "methods": ["GET", "HEAD", "OPTIONS"],
+      "cache": "no-store",
+      "turnstile": "disabled-authenticated-only",
+      "rate_limit_policy": "admin-ui"
+    },
+    {
+      "role": "admin-api",
+      "hostname_template": "admin-api.${FIDUCIA_ZONE_APEX}",
+      "origin_env": "FIDUCIA_ADMIN_API_ORIGIN",
+      "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      "cache": "no-store",
+      "turnstile": "disabled-authenticated-only",
+      "rate_limit_policy": "admin-api-separate-audience"
+    },
+    {
+      "role": "auth",
+      "hostname_template": "auth.${FIDUCIA_ZONE_APEX}",
+      "origin_env": "FIDUCIA_AUTH_ORIGIN",
+      "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      "cache": "no-store",
+      "turnstile": "provider-policy",
+      "rate_limit_policy": "auth"
+    },
+    {
+      "role": "user",
+      "hostname_template": "user.${FIDUCIA_ZONE_APEX}",
+      "origin_env": "FIDUCIA_USER_ORIGIN",
+      "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      "cache": "no-store",
+      "turnstile": "disabled-authenticated-only",
+      "rate_limit_policy": "authenticated-user"
+    },
+    {
+      "role": "organization",
+      "hostname_template": "org.${FIDUCIA_ZONE_APEX}",
+      "origin_env": "FIDUCIA_ORG_ORIGIN",
+      "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      "cache": "no-store",
+      "turnstile": "disabled-authenticated-only",
+      "rate_limit_policy": "authenticated-org"
+    },
+    {
+      "role": "status",
+      "hostname_template": "status.${FIDUCIA_ZONE_APEX}",
+      "origin_env": "FIDUCIA_STATUS_ORIGIN",
+      "methods": ["GET", "HEAD", "OPTIONS"],
+      "cache": "public-max-age-60-stale-while-revalidate-300",
+      "turnstile": "disabled",
+      "rate_limit_policy": "public-status"
+    }
+  ],
+  "required_security_headers": {
+    "strict-transport-security": "max-age=63072000; includeSubDomains; preload",
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "permissions-policy": "camera=(), microphone=(), geolocation=()",
+    "content-security-policy_source": "per-application-reviewed-policy"
+  },
+  "prohibited_literals": [
+    "cloudflare_api_token",
+    "cloudflare_api_key",
+    "account_id_value",
+    "zone_id_value",
+    "production_hostname_value",
+    "origin_secret_value"
+  ]
+}

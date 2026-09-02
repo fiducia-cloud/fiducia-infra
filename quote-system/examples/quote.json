@@ -1,0 +1,176 @@
+{
+  "schema": "fiducia.quote.v1",
+  "document_type": "quote",
+  "quote_id": "quo_01J7FQ2M9A4K8D3N6P0R",
+  "application_id": "app_01J7FQ2M9A4K8D3N6P0R",
+  "organization_id": "org_01J7FQ2M9A4K8D3N6P0R",
+  "version": 1,
+  "status": "issued",
+  "currency": "USD",
+  "issued_at": "2026-09-01T21:00:00Z",
+  "valid_until": "2026-10-01T21:00:00Z",
+  "term_months": 24,
+  "billing_start": "2027-03-01",
+  "line_items": [
+    {
+      "line_item_id": "lin_01J7FQ2M9A4K8D3N6P0R",
+      "category": "subscription",
+      "description": "Annual platform subscription for the committed production capacity band.",
+      "metric": "committed platform month",
+      "quantity": 12,
+      "unit_price": {
+        "currency": "USD",
+        "minor_units": 10000
+      },
+      "extended_price": {
+        "currency": "USD",
+        "minor_units": 120000
+      },
+      "billing_frequency": "annual",
+      "minimum_quantity": 12,
+      "maximum_quantity": 12
+    },
+    {
+      "line_item_id": "lin_01J7FQ2M9A4K8D3N6P1S",
+      "category": "support",
+      "description": "Enterprise 24x7 support with named technical account management.",
+      "metric": "support month",
+      "quantity": 12,
+      "unit_price": {
+        "currency": "USD",
+        "minor_units": 2500
+      },
+      "extended_price": {
+        "currency": "USD",
+        "minor_units": 30000
+      },
+      "billing_frequency": "annual",
+      "minimum_quantity": 12,
+      "maximum_quantity": 12
+    },
+    {
+      "line_item_id": "lin_01J7FQ2M9A4K8D3N6P2T",
+      "category": "onboarding",
+      "description": "Implementation, architecture review, migration planning, and launch readiness.",
+      "metric": "professional service hour",
+      "quantity": 40,
+      "unit_price": {
+        "currency": "USD",
+        "minor_units": 500
+      },
+      "extended_price": {
+        "currency": "USD",
+        "minor_units": 20000
+      },
+      "billing_frequency": "one-time",
+      "minimum_quantity": 40,
+      "maximum_quantity": 80
+    }
+  ],
+  "subtotal": {
+    "currency": "USD",
+    "minor_units": 170000
+  },
+  "discount_total": {
+    "currency": "USD",
+    "minor_units": 10000
+  },
+  "tax_total": {
+    "currency": "USD",
+    "minor_units": 0
+  },
+  "total": {
+    "currency": "USD",
+    "minor_units": 160000
+  },
+  "minimum_commitment": {
+    "currency": "USD",
+    "minor_units": 150000
+  },
+  "support_plan": {
+    "support_plan_id": "sup_01J7FQ2M9A4K8D3N6P0R",
+    "version": 1,
+    "content_sha256": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+  },
+  "sla_policy": {
+    "sla_policy_id": "sla_01J7FQ2M9A4K8D3N6P0R",
+    "version": 1,
+    "content_sha256": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+  },
+  "contract_references": [
+    {
+      "kind": "msa",
+      "template_id": "msa_01J7FQ2M9A4K8D3N6P0R",
+      "version": 3,
+      "content_sha256": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+    },
+    {
+      "kind": "order-form",
+      "template_id": "ord_01J7FQ2M9A4K8D3N6P0R",
+      "version": 1,
+      "content_sha256": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+    },
+    {
+      "kind": "dpa",
+      "template_id": "dpa_01J7FQ2M9A4K8D3N6P0R",
+      "version": 2,
+      "content_sha256": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+    },
+    {
+      "kind": "sla",
+      "template_id": "sla_01J7FQ2M9A4K8D3N6P1S",
+      "version": 1,
+      "content_sha256": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    {
+      "kind": "support-policy",
+      "template_id": "spt_01J7FQ2M9A4K8D3N6P0R",
+      "version": 1,
+      "content_sha256": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    }
+  ],
+  "assumptions": [
+    "Customer provides timely identity-provider and network access for implementation.",
+    "The committed usage band remains within the application forecast during the initial term.",
+    "Production launch follows completion of the agreed security review."
+  ],
+  "exclusions": [
+    "Customer-specific custom hardware",
+    "Migration of data not identified in the application",
+    "Third-party license fees not expressly listed as a line item"
+  ],
+  "dependencies": [
+    "completed security questionnaire",
+    "approved data-processing addendum",
+    "named customer implementation owner"
+  ],
+  "implementation_milestones": [
+    {
+      "name": "Architecture and security review",
+      "target_date": "2026-11-15",
+      "acceptance_criteria": [
+        "approved reference architecture",
+        "closed critical security findings"
+      ]
+    },
+    {
+      "name": "Pilot completion",
+      "target_date": "2027-01-31",
+      "acceptance_criteria": [
+        "failover canary passes",
+        "execution ledger reconciles",
+        "support escalation drill completes"
+      ]
+    },
+    {
+      "name": "Production launch",
+      "target_date": "2027-03-01",
+      "acceptance_criteria": [
+        "production readiness review approved",
+        "rollback plan tested",
+        "customer sign-off recorded"
+      ]
+    }
+  ],
+  "content_sha256": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+}

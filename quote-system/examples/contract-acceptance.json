@@ -1,0 +1,53 @@
+{
+  "schema": "fiducia.contract-acceptance.v1",
+  "document_type": "contract_acceptance",
+  "acceptance_id": "acc_01J7FQ2M9A4K8D3N6P0R",
+  "organization_id": "org_01J7FQ2M9A4K8D3N6P0R",
+  "quote_id": "quo_01J7FQ2M9A4K8D3N6P0R",
+  "quote_version": 1,
+  "quote_sha256": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+  "contract_references": [
+    {
+      "kind": "msa",
+      "template_id": "msa_01J7FQ2M9A4K8D3N6P0R",
+      "version": 3,
+      "content_sha256": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+    },
+    {
+      "kind": "order-form",
+      "template_id": "ord_01J7FQ2M9A4K8D3N6P0R",
+      "version": 1,
+      "content_sha256": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+    },
+    {
+      "kind": "dpa",
+      "template_id": "dpa_01J7FQ2M9A4K8D3N6P0R",
+      "version": 2,
+      "content_sha256": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+    },
+    {
+      "kind": "sla",
+      "template_id": "sla_01J7FQ2M9A4K8D3N6P1S",
+      "version": 1,
+      "content_sha256": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    {
+      "kind": "support-policy",
+      "template_id": "spt_01J7FQ2M9A4K8D3N6P0R",
+      "version": 1,
+      "content_sha256": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    }
+  ],
+  "signer": {
+    "full_name": "Example Legal Owner",
+    "work_email": "legal@example.com",
+    "title": "Associate General Counsel",
+    "authority_attested": true
+  },
+  "signature_provider": "example-electronic-signature-sandbox",
+  "signature_evidence_id": "sig_01J7FQ2M9A4K8D3N6P0R",
+  "accepted_at": "2026-09-15T16:30:00Z",
+  "source_ip_hash": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+  "user_agent_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "withdrawal_rights": "This synthetic example records no unilateral withdrawal right after counter-signature except as stated in the referenced agreements."
+}
