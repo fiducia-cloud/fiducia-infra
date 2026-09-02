@@ -14,7 +14,7 @@ Checked-in artifacts:
 - `edge-regions.json` — the `FIDUCIA_REGIONS` list (each cluster's public LB endpoint)
   consumed by the Cloudflare edge (`fiducia-edge`).
 
-Per-cluster generated inputs (`topology.env`, `patches.yaml`) live next to each
+Per-cluster generated inputs (`topology.properties`, `patches.yaml`) live next to each
 overlay under `clusters/<name>/`, not here. Regenerate with `node tools/render.mjs`
 and let CI `--check` catch drift.
 

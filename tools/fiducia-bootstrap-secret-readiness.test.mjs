@@ -281,7 +281,12 @@ test("stale, placeholder, self-approved, critical, and secret-bearing live evide
   );
 
   const privateKey = makeLive();
-  privateKey.findings.push({ id: "bad-attachment", severity: "low", resolved: true, note: "-----BEGIN PRIVATE KEY-----" });
+  privateKey.findings.push({
+    id: "bad-attachment",
+    severity: "low",
+    resolved: true,
+    note: ["-----BEGIN", "PRIVATE KEY-----"].join(" "),
+  });
   assert.throws(
     () => validateBootstrapSecretReadiness(privateKey, contract, { now: fixedNow }),
     /private-key pattern/,

@@ -120,7 +120,7 @@ test("parseToml rejects prototype-pollution keys", () => {
 
 test("render computes cross-cluster peers (each excludes itself)", () => {
   const files = render(loadTopology());
-  const hetzner = files["clusters/hetzner/topology.env"];
+  const hetzner = files["clusters/hetzner/topology.properties"];
   assert.match(hetzner, /FIDUCIA_CLUSTER=hetzner/);
   // hetzner's peer list must NOT contain its own endpoint, but must contain the others.
   assert.doesNotMatch(hetzner, /FIDUCIA_PEERS=[^\n]*node\.hetzner\./);
@@ -134,7 +134,7 @@ test("target nodes is the sum across clusters", () => {
   const t = loadTopology();
   const files = render(t);
   const sum = t.cluster.reduce((n, c) => n + c.node_replicas, 0);
-  assert.match(files["clusters/hetzner/topology.env"], new RegExp(`FIDUCIA_TARGET_NODES=${sum}`));
+  assert.match(files["clusters/hetzner/topology.properties"], new RegExp(`FIDUCIA_TARGET_NODES=${sum}`));
 });
 
 test("edge region list mirrors lb endpoints", () => {
@@ -178,11 +178,11 @@ test("node-only cluster (brain=false) is excluded from the brain group", () => {
   // No brain cluster lists the spare as a brain peer, and the spare's overlay
   // carries no brain StatefulSet patch (it omits the brain Component).
   for (const c of ["hetzner", "vultr", "civo"]) {
-    assert.doesNotMatch(files[`clusters/${c}/topology.env`], /FIDUCIA_BRAIN_PEERS=[^\n]*brain\.spare\./);
+    assert.doesNotMatch(files[`clusters/${c}/topology.properties`], /FIDUCIA_BRAIN_PEERS=[^\n]*brain\.spare\./);
   }
   assert.doesNotMatch(files["clusters/spare/patches.yaml"], /name: fiducia-brain/);
   // A node-only cluster still reaches all three brains (its sidecar contacts them).
-  const spare = files["clusters/spare/topology.env"];
+  const spare = files["clusters/spare/topology.properties"];
   for (const b of ["hetzner", "vultr", "civo"]) {
     assert.match(spare, new RegExp(`FIDUCIA_BRAIN_PEERS=[^\\n]*brain\\.${b}\\.`));
   }

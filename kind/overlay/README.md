@@ -8,4 +8,4 @@ by `topologySpread`, kind's `local-path` storage class, and a fixed NodePort so
 
 - `kustomization.yaml` — the overlay wiring.
 - `patches.yaml` — replica count, storage class, NodePort.
-- `topology.env` — the single in-cluster peer list for the local Raft group.
+- `topology.properties` — the single in-cluster peer list for the local Raft group.

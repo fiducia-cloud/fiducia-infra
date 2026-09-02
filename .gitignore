@@ -1,20 +1,24 @@
 *.log
 .DS_Store
 
-# --- environment / secrets (sops + age) -------------------------------------
-# Only env/enc/*.env.enc is tracked. Every plaintext form stays out of git;
-# `just env-check` enforces it. See env/README.md.
-# (`*.env` already matches at any depth — `**/*.env` is stated for clarity.)
-.env
-.env.*
+# --- environment / secrets (ores-sops + age) -------------------------------
+# Plaintext dotenv is local-only at every depth, including common suffixes.
 *.env
-**/*.env
-env/dec/
+*/*.env
+*/**/*.env
+.env.*
+*.env.*
 !.env.example
 
-# Cluster topology is generated, non-secret config (see tools/render.mjs), not a
-# dotenv secret. It stays tracked — deny by default, permit narrowly.
-!**/topology.env
+# Decrypted material is runtime-only.
+/env/dec/
+
+# Deny every encrypted environment path, then permit only the two canonical
+# version-controlled stores. This prevents one-off/misspelled env names from
+# becoming an unaudited configuration authority.
+/env/enc/*
+!/env/enc/dev.env.enc
+!/env/enc/prod.env.enc
 
 # age private keys — never commit these.
 *.agekey
@@ -65,11 +69,3 @@ tmp
 temp
 tmp/worktrees
 temp/worktrees
-
-# ores-sops dotenv hardening: plaintext dotenv is local-only at every depth;
-# only env/enc/*.env.enc (sops ciphertext) is tracked. See env/README.md.
-**/**/*.env
-env/dec
-# Re-assert the narrow, pre-existing exception above so the broad rules do not
-# swallow it (deny by default, permit narrowly).
-!**/topology.env

@@ -5,9 +5,9 @@
 //   node tools/render.mjs --check  # CI: fail if any generated file is stale
 //
 // topology.toml is the single source of truth. Generated, checked-in outputs:
-//   clusters/<name>/topology.env   <- configMapGenerator envs (cluster id, peers)
-//   clusters/<name>/patches.yaml   <- storage class + node replicas
-//   generated/edge-regions.json    <- FIDUCIA_REGIONS for fiducia-edge
+//   clusters/<name>/topology.properties <- configMapGenerator envs (cluster id, peers)
+//   clusters/<name>/patches.yaml         <- storage class + node replicas
+//   generated/edge-regions.json          <- FIDUCIA_REGIONS for fiducia-edge
 
 import fs from "node:fs";
 import path from "node:path";
@@ -185,7 +185,7 @@ export function render(t, {
       .map((o) => o.brain_endpoint)
       .join(",");
 
-    files[`${clusterRoot}/${c.name}/topology.env`] = [
+    files[`${clusterRoot}/${c.name}/topology.properties`] = [
       `# ${banner}`,
       `FIDUCIA_CLUSTER=${c.name}`,
       `FIDUCIA_CLUSTER_ID=${t.cluster_id}`,

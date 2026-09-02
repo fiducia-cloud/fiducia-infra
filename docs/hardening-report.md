@@ -45,7 +45,7 @@ tree (the repos' own Dockerfiles git-fetch sibling crates at pinned SHAs that
 trail local checkouts).
 
 > **Open (prod):** the base brain StatefulSet still defaults the id to
-> `$(POD_NAME).$(FIDUCIA_CLUSTER)` and prod `topology.env` has no per-cluster
+> `$(POD_NAME).$(FIDUCIA_CLUSTER)` and prod `topology.properties` has no per-cluster
 > dialable brain URL. Wire an advertised brain URL before replicated brains ship
 > to prod. Tracked with the shared-secret-identity follow-up.
 

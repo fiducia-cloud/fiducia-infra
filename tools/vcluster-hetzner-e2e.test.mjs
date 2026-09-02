@@ -46,7 +46,7 @@ test("each logical member has two replicated-service peers and excludes itself",
   const files = renderVclusterHetznerE2e();
   for (const cluster of ["hetzner-fsn1", "hetzner-nbg1", "hetzner-hel1"]) {
     const short = cluster.replace("hetzner-", "");
-    const env = files[`vcluster/hetzner-e2e/clusters/${cluster}/topology.env`];
+    const env = files[`vcluster/hetzner-e2e/clusters/${cluster}/topology.properties`];
     const nodePeers = env.match(/^FIDUCIA_PEERS=(.*)$/m)[1].split(",");
     const brainPeers = env.match(/^FIDUCIA_BRAIN_PEERS=(.*)$/m)[1].split(",");
     assert.equal(nodePeers.length, 2);

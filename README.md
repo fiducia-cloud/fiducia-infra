@@ -87,7 +87,7 @@ Generated, checked-in outputs (do not hand-edit):
 
 | File | Feeds |
 |------|-------|
-| `clusters/<name>/topology.env` | the `fiducia-cluster` ConfigMap → `FIDUCIA_CLUSTER`, `FIDUCIA_PEERS`, `FIDUCIA_BRAIN_PEERS`, shard count, RF, target nodes |
+| `clusters/<name>/topology.properties` | the `fiducia-cluster` ConfigMap → `FIDUCIA_CLUSTER`, `FIDUCIA_PEERS`, `FIDUCIA_BRAIN_PEERS`, shard count, RF, target nodes |
 | `clusters/<name>/patches.yaml` | per-cluster storage class + node replicas |
 | `generated/edge-regions.json` | `FIDUCIA_REGIONS` for [`fiducia-edge`](https://github.com/fiducia-cloud/fiducia-edge) |
 
@@ -218,7 +218,7 @@ base/                      shared manifests (don't apply directly)
   brain/       StatefulSet (1 member/cluster) + headless service
   load-balance/ Deployment + LoadBalancer service
 clusters/                  per-cluster Kustomize overlays
-  hetzner/ vultr/ civo/    kustomization.yaml + GENERATED topology.env & patches.yaml
+  hetzner/ vultr/ civo/    kustomization.yaml + GENERATED topology.properties & patches.yaml
 generated/edge-regions.json  FIDUCIA_REGIONS for fiducia-edge (generated)
 argocd/                    ApplicationSet fanning out clusters/<name> -> cluster
 kind/                      LOCAL test clusters (no cloud spend)
