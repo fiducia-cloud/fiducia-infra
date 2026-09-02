@@ -1,3 +1,4 @@
+# Regenerate checked-in projections after repairing the canonical renderer.
 name: DEN-3330 one-shot renderer repair
 
 on:
@@ -15,7 +16,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  repair-validate-and-clean-up:
+  regenerate-validate-and-clean-up:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -33,84 +34,6 @@ jobs:
           set -euo pipefail
           rustup toolchain install 1.88.0 --profile minimal --component rustfmt,clippy
           rustup default 1.88.0
-
-      - name: Make the renderer emit canonical Rust formatting
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('quote-system/rust/scripts/model_render.py')
-          text = path.read_text(encoding='utf-8')
-
-          replacements = [
-              (
-                  '        "/// SeaORM entities projected from `db/0001_commercial_intake.sql`.\\n",\n'
-                  '        "///\\n",\n'
-                  '        "/// Public API payloads remain owned by TypeSpec and JSON Schema. These models\\n",\n'
-                  '        "/// intentionally represent encrypted persistence rows only.\\n",',
-                  '        "// SeaORM entities projected from `db/0001_commercial_intake.sql`.\\n",\n'
-                  '        "//\\n",\n'
-                  '        "// Public API payloads remain owned by TypeSpec and JSON Schema. These models\\n",\n'
-                  '        "// intentionally represent encrypted persistence rows only.\\n",',
-              ),
-              (
-                  '''        output.append(
-                      f'    #[sea_orm(table_name = "{table["table"]}", '
-                      'schema_name = "fiducia_commercial")]\\n'
-                  )''',
-                  '''        sea_orm_attribute = (
-                      f'    #[sea_orm(table_name = "{table["table"]}", '
-                      'schema_name = "fiducia_commercial")]'
-                  )
-                  if len(sea_orm_attribute) <= 80:
-                      output.append(f"{sea_orm_attribute}\\n")
-                  else:
-                      output.extend(
-                          [
-                              "    #[sea_orm(\\n",
-                              f'        table_name = "{table["table"]}",\\n',
-                              '        schema_name = "fiducia_commercial"\\n',
-                              "    )]\\n",
-                          ]
-                      )''',
-              ),
-              (
-                  '''        output.append("    }\\n")
-                  output.append("}\\n\\n")
-              return "".join(output)
-
-
-              def render_diesel_models''',
-                  '''        output.append("    }\\n")
-                  output.append("}\\n\\n")
-              return "".join(output).rstrip() + "\\n"
-
-
-              def render_diesel_models''',
-              ),
-              (
-                  '''        output.append(f"#[diesel(primary_key({primary_key}))]\\n")''',
-                  '''        primary_key_attribute = f"#[diesel(primary_key({primary_key}))]"
-                  if len(primary_key_attribute) <= 80:
-                      output.append(f"{primary_key_attribute}\\n")
-                  else:
-                      output.append("#[diesel(primary_key(\\n")
-                      for primary_key_column in table["primary_key"]:
-                          output.append(f"    {primary_key_column},\\n")
-                      output.append("))]\\n")''',
-              ),
-          ]
-
-          for before, after in replacements:
-              count = text.count(before)
-              if count != 1:
-                  raise SystemExit(f'expected exactly one renderer match, found {count}: {before[:100]!r}')
-              text = text.replace(before, after, 1)
-
-          path.write_text(text, encoding='utf-8')
-          PY
 
       - name: Regenerate and prove all model gates
         shell: bash
@@ -132,7 +55,7 @@ jobs:
         run: |
           set -euo pipefail
           rm -- '.github/workflows/den-3330-one-shot-renderer-fix.yml'
-          allowed='^(\.github/workflows/den-3330-one-shot-renderer-fix\.yml|quote-system/rust/scripts/model_render\.py|quote-system/rust/crates/fiducia-commercial-diesel/src/(models|schema)\.rs|quote-system/rust/crates/fiducia-commercial-seaorm/src/entities/part_0[1-4]\.rs)$'
+          allowed='^(\.github/workflows/den-3330-one-shot-renderer-fix\.yml|quote-system/rust/crates/fiducia-commercial-diesel/src/(models|schema)\.rs|quote-system/rust/crates/fiducia-commercial-seaorm/src/entities/part_0[1-4]\.rs)$'
           unexpected="$({ git diff --name-only; git ls-files --others --exclude-standard; } | sort -u | grep -Ev "${allowed}" || true)"
           if [[ -n "${unexpected}" ]]; then
             printf 'Unexpected renderer output:\n%s\n' "${unexpected}" >&2
@@ -140,7 +63,6 @@ jobs:
           fi
           git add -- \
             '.github/workflows/den-3330-one-shot-renderer-fix.yml' \
-            'quote-system/rust/scripts/model_render.py' \
             'quote-system/rust/crates/fiducia-commercial-diesel/src/models.rs' \
             'quote-system/rust/crates/fiducia-commercial-diesel/src/schema.rs' \
             'quote-system/rust/crates/fiducia-commercial-seaorm/src/entities/part_01.rs' \
@@ -149,11 +71,11 @@ jobs:
             'quote-system/rust/crates/fiducia-commercial-seaorm/src/entities/part_04.rs'
           git diff --cached --check
 
-      - name: Commit the validated renderer repair to PR 61
+      - name: Commit the validated generated outputs to PR 61
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'fix(DEN-3330): emit clippy-clean canonical projections'
+          git commit -m 'fix(DEN-3330): regenerate canonical model projections'
           git push origin HEAD:alexanderdmills/den-3330-commercial-model-projections
