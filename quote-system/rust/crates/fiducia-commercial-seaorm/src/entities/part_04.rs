@@ -10,7 +10,10 @@ pub mod contract_acceptances {
     use sea_orm::entity::prelude::*;
 
     #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
-    #[sea_orm(table_name = "contract_acceptances", schema_name = "fiducia_commercial")]
+    #[sea_orm(
+        table_name = "contract_acceptances",
+        schema_name = "fiducia_commercial"
+    )]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub tenant_id: String,
@@ -41,7 +44,10 @@ pub mod workflow_transition_rules {
     use sea_orm::entity::prelude::*;
 
     #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
-    #[sea_orm(table_name = "workflow_transition_rules", schema_name = "fiducia_commercial")]
+    #[sea_orm(
+        table_name = "workflow_transition_rules",
+        schema_name = "fiducia_commercial"
+    )]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub from_state: String,

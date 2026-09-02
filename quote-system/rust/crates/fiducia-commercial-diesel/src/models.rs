@@ -281,7 +281,13 @@ pub struct QuoteLineItemRow {
 
 #[derive(Clone, Debug, PartialEq, Eq, Queryable, Selectable, Identifiable)]
 #[diesel(table_name = schema::quote_contract_references)]
-#[diesel(primary_key(tenant_id, quote_id, quote_version, contract_template_id, contract_version))]
+#[diesel(primary_key(
+    tenant_id,
+    quote_id,
+    quote_version,
+    contract_template_id,
+    contract_version
+))]
 pub struct QuoteContractReferenceRow {
     pub tenant_id: String,
     pub quote_id: String,

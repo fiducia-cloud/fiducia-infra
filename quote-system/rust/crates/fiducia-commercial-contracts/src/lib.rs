@@ -20,9 +20,7 @@ pub const POSTGRES_MIGRATION_SOURCE: &str =
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        JSON_SCHEMA_SOURCE, POSTGRES_MIGRATION_SOURCE, TYPESPEC_SOURCE,
-    };
+    use super::{JSON_SCHEMA_SOURCE, POSTGRES_MIGRATION_SOURCE, TYPESPEC_SOURCE};
 
     #[test]
     fn contract_sources_are_embedded_from_the_canonical_files() {
@@ -34,11 +32,9 @@ mod tests {
         );
         assert!(TYPESPEC_SOURCE.contains("model ApplicationDocument"));
         assert!(TYPESPEC_SOURCE.contains("model QuoteDocument"));
-        assert!(POSTGRES_MIGRATION_SOURCE.contains(
-            "CREATE TABLE IF NOT EXISTS fiducia_commercial.quote_versions"
-        ));
-        assert!(POSTGRES_MIGRATION_SOURCE.contains(
-            "CREATE TABLE IF NOT EXISTS fiducia_commercial.contract_acceptances"
-        ));
+        assert!(POSTGRES_MIGRATION_SOURCE
+            .contains("CREATE TABLE IF NOT EXISTS fiducia_commercial.quote_versions"));
+        assert!(POSTGRES_MIGRATION_SOURCE
+            .contains("CREATE TABLE IF NOT EXISTS fiducia_commercial.contract_acceptances"));
     }
 }

@@ -10,7 +10,10 @@ pub mod contract_template_versions {
     use sea_orm::entity::prelude::*;
 
     #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
-    #[sea_orm(table_name = "contract_template_versions", schema_name = "fiducia_commercial")]
+    #[sea_orm(
+        table_name = "contract_template_versions",
+        schema_name = "fiducia_commercial"
+    )]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub tenant_id: String,
@@ -134,7 +137,10 @@ pub mod quote_contract_references {
     use sea_orm::entity::prelude::*;
 
     #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
-    #[sea_orm(table_name = "quote_contract_references", schema_name = "fiducia_commercial")]
+    #[sea_orm(
+        table_name = "quote_contract_references",
+        schema_name = "fiducia_commercial"
+    )]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub tenant_id: String,

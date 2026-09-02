@@ -353,4 +353,3 @@ diesel::table! {
         created_at -> Timestamptz,
     }
 }
-

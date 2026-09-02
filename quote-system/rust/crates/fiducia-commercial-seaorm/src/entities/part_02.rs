@@ -62,7 +62,10 @@ pub mod support_plan_versions {
     use sea_orm::entity::prelude::*;
 
     #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
-    #[sea_orm(table_name = "support_plan_versions", schema_name = "fiducia_commercial")]
+    #[sea_orm(
+        table_name = "support_plan_versions",
+        schema_name = "fiducia_commercial"
+    )]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub tenant_id: String,

@@ -62,7 +62,10 @@ pub mod organization_contact_roles {
     use sea_orm::entity::prelude::*;
 
     #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
-    #[sea_orm(table_name = "organization_contact_roles", schema_name = "fiducia_commercial")]
+    #[sea_orm(
+        table_name = "organization_contact_roles",
+        schema_name = "fiducia_commercial"
+    )]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub tenant_id: String,
@@ -87,7 +90,10 @@ pub mod pre_interest_registrations {
     use sea_orm::entity::prelude::*;
 
     #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
-    #[sea_orm(table_name = "pre_interest_registrations", schema_name = "fiducia_commercial")]
+    #[sea_orm(
+        table_name = "pre_interest_registrations",
+        schema_name = "fiducia_commercial"
+    )]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub tenant_id: String,
@@ -142,7 +148,10 @@ pub mod application_versions {
     use sea_orm::entity::prelude::*;
 
     #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
-    #[sea_orm(table_name = "application_versions", schema_name = "fiducia_commercial")]
+    #[sea_orm(
+        table_name = "application_versions",
+        schema_name = "fiducia_commercial"
+    )]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub tenant_id: String,
