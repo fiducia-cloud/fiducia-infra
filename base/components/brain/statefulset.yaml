@@ -113,7 +113,7 @@ spec:
             - name: FIDUCIA_LOG_FORMAT
               value: "json"
           # cluster id, shard count, replication factor, target nodes, and the
-          # cross-cluster brain peers all come from topology.env (see topology.toml).
+          # cross-cluster brain peers all come from topology.properties (see topology.toml).
           # RF + failure-domain spreading (by cluster) is what delivers the
           # "survive losing 1 cluster" guarantee for data shards.
           envFrom:

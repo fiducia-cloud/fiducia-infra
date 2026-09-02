@@ -1,5 +1,5 @@
 # Shared local overlay for the 3-cluster emulation. Each member overlay layers
-# its own `fiducia-cluster` ConfigMap template (topology.env, with cross-cluster
+# its own `fiducia-cluster` ConfigMap template (topology.properties, with cross-cluster
 # peers) on top of this. The default profile uses Hetzner-labelled regional
 # members; legacy multi-cloud names are opt-in only.
 #

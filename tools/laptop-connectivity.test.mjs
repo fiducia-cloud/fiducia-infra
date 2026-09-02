@@ -160,7 +160,7 @@ test("laptop connectivity component narrows Raft peers to the Tailscale namespac
 test("generated peer topology uses stable in-cluster egress Service names", () => {
   const { topology, files } = renderLaptopFleet();
   for (const cluster of topology.cluster) {
-    const env = files[`laptop/clusters/${cluster.name}/topology.env`];
+    const env = files[`laptop/clusters/${cluster.name}/topology.properties`];
     const peerLine = env.match(/^FIDUCIA_PEERS=(.*)$/m)?.[1];
     const brainLine = env.match(/^FIDUCIA_BRAIN_PEERS=(.*)$/m)?.[1];
     assert.ok(peerLine && brainLine);

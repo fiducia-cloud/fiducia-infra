@@ -1,5 +1,5 @@
 # Hetzner-only emulator overlay for the Nuremberg (NBG1) member. The peer
-# values in topology.env are templates; up.sh renders the live Kind addresses.
+# values in topology.properties are templates; up.sh renders the live Kind addresses.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: fiducia
@@ -8,6 +8,6 @@ resources:
 configMapGenerator:
   - name: fiducia-cluster
     envs:
-      - topology.env
+      - topology.properties
 generatorOptions:
   disableNameSuffixHash: true

@@ -371,7 +371,7 @@ or the app code changes** — the platform only decides where the VMs live and t
 flowchart LR
     topo["topology.toml<br/>(single source of truth)"]
     render["tools/render.mjs<br/>(validate + fan out)"]
-    gen["clusters/&lt;name&gt;/topology.env<br/>clusters/&lt;name&gt;/patches.yaml<br/>generated/edge-regions.json"]
+    gen["clusters/&lt;name&gt;/topology.properties<br/>clusters/&lt;name&gt;/patches.yaml<br/>generated/edge-regions.json"]
     kustomize["base/ + clusters/&lt;name&gt; overlay<br/>(+ base/components/brain on brain clusters)"]
     argo["ArgoCD ApplicationSet<br/>(cluster generator)"]
     clusters["hetzner · vultr · civo"]
