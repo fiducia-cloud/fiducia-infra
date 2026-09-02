@@ -1,0 +1,381 @@
+{
+  "schema": "fiducia.application.v1",
+  "document_type": "application",
+  "application_id": "app_01J7FQ2M9A4K8D3N6P0R",
+  "organization_id": "org_01J7FQ2M9A4K8D3N6P0R",
+  "version": 2,
+  "status": "application_submitted",
+  "etag": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "organization": {
+    "organization_id": "org_01J7FQ2M9A4K8D3N6P0R",
+    "legal_name": "Example Industrial Systems, Inc.",
+    "doing_business_as": "Example Systems",
+    "website": "https://example.com",
+    "verified_email_domains": [
+      "example.com"
+    ],
+    "jurisdiction": "US",
+    "entity_type": "corporation",
+    "registration_number": "EXAMPLE-NOT-A-REAL-REGISTRATION",
+    "tax_identifier": "EXAMPLE-NOT-A-REAL-TAX-ID",
+    "headquarters": {
+      "line1": "100 Example Plaza",
+      "city": "New York",
+      "region": "NY",
+      "postal_code": "10001",
+      "country": "US"
+    },
+    "operating_countries": [
+      "US",
+      "CA",
+      "GB",
+      "DE"
+    ],
+    "industries": [
+      "industrial technology",
+      "business software"
+    ],
+    "employee_band": "201-500",
+    "annual_revenue_band": "50m-250m",
+    "subsidiaries_in_scope": [
+      "Example Systems Canada"
+    ]
+  },
+  "stakeholders": [
+    {
+      "contact_id": "ctc_01J7FQ2M9A4K8D3N6P0R",
+      "full_name": "Example Requester",
+      "title": "Director of Platform Engineering",
+      "department": "Technology",
+      "work_email": "requester@example.com",
+      "phone": "+1-555-0100",
+      "preferred_language": "en-US",
+      "time_zone": "America/New_York",
+      "preferred_channel": "secure_portal",
+      "roles": [
+        "requester",
+        "technical_owner"
+      ]
+    },
+    {
+      "contact_id": "ctc_01J7FQ2M9A4K8D3N6P1S",
+      "full_name": "Example Security Owner",
+      "title": "Chief Information Security Officer",
+      "department": "Security",
+      "work_email": "security@example.com",
+      "preferred_language": "en-US",
+      "time_zone": "America/New_York",
+      "preferred_channel": "secure_portal",
+      "roles": [
+        "security_owner",
+        "executive_sponsor"
+      ]
+    },
+    {
+      "contact_id": "ctc_01J7FQ2M9A4K8D3N6P2T",
+      "full_name": "Example Legal Owner",
+      "title": "Associate General Counsel",
+      "department": "Legal",
+      "work_email": "legal@example.com",
+      "preferred_language": "en-US",
+      "time_zone": "America/New_York",
+      "preferred_channel": "email",
+      "roles": [
+        "legal_owner",
+        "signer"
+      ]
+    }
+  ],
+  "need": {
+    "problem_statement": "Coordinate distributed jobs and state transitions without duplicate execution during regional or provider failure.",
+    "desired_outcomes": [
+      "bounded failover",
+      "auditable ownership changes",
+      "lower operational toil"
+    ],
+    "use_cases": [
+      "distributed lease management",
+      "scheduled task coordination",
+      "cross-cloud failover",
+      "dead-letter recovery"
+    ],
+    "current_systems": [
+      "PostgreSQL",
+      "Kubernetes",
+      "managed queues"
+    ],
+    "current_vendors": [
+      "Example Cloud Provider"
+    ],
+    "business_impact": "Duplicate execution causes avoidable manual reconciliation, delayed customer workflows, and potential financial adjustments.",
+    "urgency": "six-months",
+    "target_launch_date": "2027-03-01",
+    "decision_deadline": "2026-12-15",
+    "procurement_stage": "vendor-selection",
+    "success_metrics": [
+      "no duplicate committed jobs in failover tests",
+      "recovery point objective under five minutes",
+      "complete transition audit trail",
+      "99.95 percent contractual availability"
+    ]
+  },
+  "usage_forecast": {
+    "environments": [
+      "development",
+      "test",
+      "staging",
+      "production",
+      "disaster_recovery"
+    ],
+    "tenants": 25,
+    "monthly_active_users": 750,
+    "peak_concurrency": 5000,
+    "requests_per_month": 250000000,
+    "storage_gib": 2048,
+    "egress_gib": 1200,
+    "events_per_second_peak": 15000,
+    "data_growth_percent_monthly": 8,
+    "regions": [
+      "North America East",
+      "North America West",
+      "Europe West"
+    ],
+    "seasonality_notes": "Quarter-end processing may triple peak event rates for several hours."
+  },
+  "technical": {
+    "deployment_models": [
+      "saas",
+      "customer-cloud",
+      "hybrid"
+    ],
+    "clouds": [
+      "AWS",
+      "Google Cloud",
+      "Azure"
+    ],
+    "kubernetes_distributions": [
+      "EKS",
+      "GKE",
+      "AKS"
+    ],
+    "databases": [
+      "PostgreSQL 16",
+      "CockroachDB"
+    ],
+    "message_buses": [
+      "NATS JetStream",
+      "Kafka"
+    ],
+    "identity": {
+      "sso_required": true,
+      "scim_required": true,
+      "mfa_required": true,
+      "providers": [
+        "Microsoft Entra ID",
+        "Okta"
+      ],
+      "protocols": [
+        "oidc",
+        "saml",
+        "scim",
+        "webauthn"
+      ]
+    },
+    "network_connectivity": [
+      "public-internet",
+      "ip-allowlist",
+      "private-link",
+      "peering"
+    ],
+    "integrations": [
+      "ServiceNow",
+      "PagerDuty",
+      "Datadog",
+      "customer data warehouse"
+    ],
+    "client_platforms": [
+      "web",
+      "cli",
+      "server-to-server"
+    ],
+    "api_styles": [
+      "rest",
+      "grpc",
+      "webhook"
+    ],
+    "observability": {
+      "logs": true,
+      "metrics": true,
+      "traces": true,
+      "audit_events": true,
+      "otel_required": true,
+      "destinations": [
+        "Datadog",
+        "customer object archive"
+      ]
+    },
+    "custom_requirements": "All production changes require change records, immutable audit evidence, and a tested rollback path."
+  },
+  "data_security": {
+    "classifications": [
+      "internal",
+      "confidential",
+      "restricted"
+    ],
+    "regulated_data": [
+      "pii",
+      "financial"
+    ],
+    "residency_countries": [
+      "US",
+      "CA",
+      "DE"
+    ],
+    "encryption": {
+      "at_rest": true,
+      "in_transit": true,
+      "customer_managed_keys": true,
+      "hsm_required": true,
+      "key_rotation_days": 90
+    },
+    "retention": {
+      "default_days": 2555,
+      "deletion_sla_days": 30,
+      "legal_hold_required": true,
+      "backup_retention_days": 90
+    },
+    "compliance_frameworks": [
+      "SOC 2 Type II",
+      "ISO 27001",
+      "GDPR",
+      "CCPA"
+    ],
+    "security_assessments": [
+      "questionnaire",
+      "soc2",
+      "penetration-test",
+      "architecture-review"
+    ],
+    "incident_notification_hours": 24,
+    "vulnerability_remediation": {
+      "critical_days": 7,
+      "high_days": 30,
+      "medium_days": 90
+    }
+  },
+  "migration": {
+    "migration_required": true,
+    "source_systems": [
+      "existing scheduler database",
+      "legacy lease service"
+    ],
+    "data_volume_gib": 350,
+    "cutover_strategy": "parallel-run",
+    "downtime_budget_minutes": 15,
+    "rollback_required": true,
+    "validation_plan": "Run both systems for thirty days, compare immutable execution ledgers, then shift writes by tenant cohort with an automated rollback trigger.",
+    "professional_services_requested": true
+  },
+  "commercial": {
+    "budget_band": "250k-1m",
+    "currency": "USD",
+    "term_months": 24,
+    "billing_frequency": "annual",
+    "payment_terms_days": 30,
+    "purchase_order_required": true,
+    "invoice_portal": "https://procurement.example.com",
+    "tax_exempt": false,
+    "minimum_commitment_acceptable": true,
+    "pilot_requested": true,
+    "pilot_duration_days": 60,
+    "procurement_stage": "vendor-selection"
+  },
+  "support": {
+    "tier": "enterprise",
+    "coverage": "24x7",
+    "coverage_time_zones": [
+      "America/New_York",
+      "Europe/London"
+    ],
+    "channels": [
+      "portal",
+      "email",
+      "phone",
+      "incident-bridge"
+    ],
+    "named_tam": true,
+    "onboarding_hours": 80,
+    "training_hours": 24,
+    "severity_targets": [
+      {
+        "severity": "P1",
+        "initial_response_minutes": 15,
+        "update_interval_minutes": 30,
+        "mitigation_target_minutes": 60,
+        "restoration_target_minutes": 240
+      },
+      {
+        "severity": "P2",
+        "initial_response_minutes": 30,
+        "update_interval_minutes": 60,
+        "mitigation_target_minutes": 240,
+        "restoration_target_minutes": 480
+      },
+      {
+        "severity": "P3",
+        "initial_response_minutes": 240,
+        "update_interval_minutes": 480,
+        "mitigation_target_minutes": 1440,
+        "restoration_target_minutes": 4320
+      },
+      {
+        "severity": "P4",
+        "initial_response_minutes": 480,
+        "update_interval_minutes": 1440,
+        "mitigation_target_minutes": 4320,
+        "restoration_target_minutes": 10080
+      }
+    ],
+    "rto_minutes": 60,
+    "rpo_minutes": 5,
+    "maintenance_window_preferences": [
+      "Saturday 02:00-06:00 America/New_York"
+    ],
+    "service_credit_expected": true
+  },
+  "legal": {
+    "msa_required": true,
+    "dpa_required": true,
+    "baa_required": false,
+    "security_addendum_required": true,
+    "subprocessor_review_required": true,
+    "accessibility_standard": "WCAG 2.2 AA",
+    "governing_law_preferences": [
+      "New York, United States"
+    ],
+    "liability_cap_preference": "Twelve months of fees, with customary higher caps for confidentiality and data protection.",
+    "indemnity_requirements": "Mutual intellectual-property indemnity with defined defense control and cooperation duties.",
+    "insurance_requirements": "Technology errors and omissions and cyber liability evidence before production launch.",
+    "export_control_requirements": "No controlled technical data in the initial scope.",
+    "signature_method": "electronic"
+  },
+  "attachments": [
+    {
+      "attachment_id": "att_01J7FQ2M9A4K8D3N6P0R",
+      "purpose": "architecture",
+      "filename": "example-reference-architecture.pdf",
+      "media_type": "application/pdf",
+      "size_bytes": 245760,
+      "content_sha256": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "malware_scan_status": "clean",
+      "created_at": "2026-09-01T20:10:00Z"
+    }
+  ],
+  "attestations": {
+    "authorized_to_submit": true,
+    "information_accurate": true,
+    "privacy_policy_version": "2026-09-01"
+  },
+  "updated_at": "2026-09-01T20:20:00Z",
+  "submitted_at": "2026-09-01T20:20:00Z"
+}
