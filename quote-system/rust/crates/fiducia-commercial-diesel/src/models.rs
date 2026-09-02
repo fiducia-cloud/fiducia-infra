@@ -286,7 +286,7 @@ pub struct QuoteLineItemRow {
     quote_id,
     quote_version,
     contract_template_id,
-    contract_version
+    contract_version,
 ))]
 pub struct QuoteContractReferenceRow {
     pub tenant_id: String,
