@@ -1,0 +1,181 @@
+{
+  "schema": "fiducia.pre-interest.v1",
+  "document_type": "pre_interest",
+  "submission_id": "sub_01J7FQ2M9A4K8D3N6P0R",
+  "idempotency_key": "example-pre-interest-0001",
+  "contact": {
+    "contact_id": "ctc_01J7FQ2M9A4K8D3N6P0R",
+    "full_name": "Example Requester",
+    "title": "Director of Platform Engineering",
+    "department": "Technology",
+    "work_email": "requester@example.com",
+    "phone": "+1-555-0100",
+    "preferred_language": "en-US",
+    "time_zone": "America/New_York",
+    "preferred_channel": "secure_portal",
+    "roles": [
+      "requester",
+      "technical_owner"
+    ]
+  },
+  "organization": {
+    "organization_id": "org_01J7FQ2M9A4K8D3N6P0R",
+    "legal_name": "Example Industrial Systems, Inc.",
+    "doing_business_as": "Example Systems",
+    "website": "https://example.com",
+    "verified_email_domains": [
+      "example.com"
+    ],
+    "jurisdiction": "US",
+    "entity_type": "corporation",
+    "registration_number": "EXAMPLE-NOT-A-REAL-REGISTRATION",
+    "tax_identifier": "EXAMPLE-NOT-A-REAL-TAX-ID",
+    "headquarters": {
+      "line1": "100 Example Plaza",
+      "city": "New York",
+      "region": "NY",
+      "postal_code": "10001",
+      "country": "US"
+    },
+    "operating_countries": [
+      "US",
+      "CA"
+    ],
+    "industries": [
+      "industrial technology",
+      "business software"
+    ],
+    "employee_band": "201-500",
+    "annual_revenue_band": "50m-250m",
+    "subsidiaries_in_scope": [
+      "Example Systems Canada"
+    ]
+  },
+  "need": {
+    "problem_statement": "Coordinate distributed jobs and state transitions without duplicate execution during regional or provider failure.",
+    "desired_outcomes": [
+      "bounded failover",
+      "auditable ownership changes",
+      "lower operational toil"
+    ],
+    "use_cases": [
+      "distributed lease management",
+      "scheduled task coordination",
+      "cross-cloud failover"
+    ],
+    "current_systems": [
+      "PostgreSQL",
+      "Kubernetes",
+      "managed queues"
+    ],
+    "current_vendors": [
+      "Example Cloud Provider"
+    ],
+    "business_impact": "Duplicate execution causes avoidable manual reconciliation and delayed customer workflows.",
+    "urgency": "six-months",
+    "target_launch_date": "2027-03-01",
+    "decision_deadline": "2026-12-15",
+    "procurement_stage": "requirements",
+    "success_metrics": [
+      "no duplicate committed jobs in failover tests",
+      "recovery point objective under five minutes",
+      "complete transition audit trail"
+    ]
+  },
+  "usage_forecast": {
+    "environments": [
+      "development",
+      "staging",
+      "production",
+      "disaster_recovery"
+    ],
+    "tenants": 25,
+    "monthly_active_users": 750,
+    "peak_concurrency": 5000,
+    "requests_per_month": 250000000,
+    "storage_gib": 2048,
+    "egress_gib": 1200,
+    "events_per_second_peak": 15000,
+    "data_growth_percent_monthly": 8,
+    "regions": [
+      "North America East",
+      "North America West",
+      "Europe West"
+    ],
+    "seasonality_notes": "Quarter-end processing may triple peak event rates for several hours."
+  },
+  "commercial": {
+    "budget_band": "250k-1m",
+    "currency": "USD",
+    "term_months": 24,
+    "billing_frequency": "annual",
+    "payment_terms_days": 30,
+    "purchase_order_required": true,
+    "tax_exempt": false,
+    "minimum_commitment_acceptable": true,
+    "pilot_requested": true,
+    "pilot_duration_days": 60,
+    "procurement_stage": "requirements"
+  },
+  "support": {
+    "tier": "enterprise",
+    "coverage": "24x7",
+    "coverage_time_zones": [
+      "America/New_York",
+      "Europe/London"
+    ],
+    "channels": [
+      "portal",
+      "email",
+      "phone",
+      "incident-bridge"
+    ],
+    "named_tam": true,
+    "onboarding_hours": 80,
+    "training_hours": 24,
+    "severity_targets": [
+      {
+        "severity": "P1",
+        "initial_response_minutes": 15,
+        "update_interval_minutes": 30,
+        "mitigation_target_minutes": 60,
+        "restoration_target_minutes": 240
+      },
+      {
+        "severity": "P2",
+        "initial_response_minutes": 30,
+        "update_interval_minutes": 60,
+        "mitigation_target_minutes": 240,
+        "restoration_target_minutes": 480
+      },
+      {
+        "severity": "P3",
+        "initial_response_minutes": 240,
+        "update_interval_minutes": 480,
+        "mitigation_target_minutes": 1440,
+        "restoration_target_minutes": 4320
+      },
+      {
+        "severity": "P4",
+        "initial_response_minutes": 480,
+        "update_interval_minutes": 1440,
+        "mitigation_target_minutes": 4320,
+        "restoration_target_minutes": 10080
+      }
+    ],
+    "rto_minutes": 60,
+    "rpo_minutes": 5,
+    "maintenance_window_preferences": [
+      "Saturday 02:00-06:00 America/New_York"
+    ],
+    "service_credit_expected": true
+  },
+  "referral_source": "example architecture workshop",
+  "consent": {
+    "privacy_policy_version": "2026-09-01",
+    "terms_version": "2026-09-01",
+    "contact_consent": true,
+    "marketing_consent": false,
+    "submitted_at": "2026-09-01T20:00:00Z"
+  }
+}
