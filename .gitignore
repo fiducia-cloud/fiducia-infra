@@ -49,6 +49,10 @@ crash.log
 # Scratch / git worktrees (tmp/worktrees/*)
 tmp/
 
+# Generated Python bytecode is never source or review evidence.
+__pycache__/
+*.py[cod]
+
 # --- hardened baseline (auto) ---
 Thumbs.db
 *.swp
