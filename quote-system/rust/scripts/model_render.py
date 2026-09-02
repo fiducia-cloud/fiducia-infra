@@ -38,7 +38,7 @@ def render_seaorm_part(tables: list[dict[str, Any]]) -> str:
             f'    #[sea_orm(table_name = "{table["table"]}", '
             'schema_name = "fiducia_commercial")]'
         )
-        if len(sea_orm_attribute) <= 80:
+        if len(sea_orm_attribute) <= 100:
             output.append(f"{sea_orm_attribute}\n")
         else:
             output.extend(
@@ -141,7 +141,7 @@ def render_diesel_models(tables: list[dict[str, Any]]) -> str:
             f"#[diesel(table_name = schema::{table['table']})]\n"
         )
         primary_key_attribute = f"#[diesel(primary_key({primary_key}))]"
-        if len(primary_key_attribute) <= 80:
+        if len(primary_key_attribute) <= 100:
             output.append(f"{primary_key_attribute}\n")
         else:
             output.append("#[diesel(primary_key(\n")
