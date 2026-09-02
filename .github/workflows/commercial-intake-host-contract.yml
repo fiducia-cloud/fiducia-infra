@@ -1,0 +1,84 @@
+name: commercial-intake-host-contract
+
+on:
+  pull_request:
+    paths:
+      - commercial-intake/**
+      - .github/workflows/commercial-intake-host-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - commercial-intake/**
+      - .github/workflows/commercial-intake-host-contract.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22.22.1"
+      - name: Validate exact host and activation contract
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const path = 'commercial-intake/host-contract.json';
+          const contract = JSON.parse(fs.readFileSync(path, 'utf8'));
+          const expected = new Map([
+            ['auth.fiducia.cloud', 'shared-auth'],
+            ['org.fiducia.cloud', 'organization-console'],
+            ['user.fiducia.cloud', 'customer-application'],
+            ['api.fiducia.cloud', 'public-write-api'],
+            ['admin.fiducia.cloud', 'admin-console'],
+            ['api-admin.fiducia.cloud', 'admin-write-api'],
+            ['app.fiducia.cloud', 'compatibility-redirect'],
+          ]);
+          if (contract.domain !== 'fiducia.cloud') throw new Error('unexpected domain');
+          if (contract.activation?.enabled !== false) throw new Error('activation must remain false');
+          if (!Array.isArray(contract.hosts) || contract.hosts.length !== expected.size) {
+            throw new Error('host count mismatch');
+          }
+          for (const host of contract.hosts) {
+            if (expected.get(host.hostname) !== host.surface) {
+              throw new Error(`unexpected host mapping: ${host.hostname}`);
+            }
+            if (host.proxy_enabled !== false) {
+              throw new Error(`proxy must remain disabled: ${host.hostname}`);
+            }
+          }
+          const byName = Object.fromEntries(contract.hosts.map((host) => [host.hostname, host]));
+          for (const route of ['/quote', '/pre-interest', '/apply', '/support', '/contract']) {
+            if (!byName['user.fiducia.cloud'].routes.includes(route)) throw new Error(`missing ${route}`);
+          }
+          for (const route of ['/v1/service-tiers', '/v1/quotes', '/v1/pre-interest-registrations', '/v1/enterprise-applications']) {
+            if (!byName['api.fiducia.cloud'].routes.includes(route)) throw new Error(`missing ${route}`);
+          }
+          const redirect = byName['app.fiducia.cloud'].redirect;
+          if (redirect?.status !== 308 || redirect?.target_origin !== 'https://user.fiducia.cloud') {
+            throw new Error('unsafe compatibility redirect');
+          }
+          if (!Array.isArray(contract.gates) || contract.gates.length < 8) throw new Error('insufficient activation gates');
+          if (!Array.isArray(contract.forbidden_actions) || contract.forbidden_actions.length < 4) {
+            throw new Error('insufficient forbidden actions');
+          }
+          NODE
+      - name: Reject credentials and live provider mutation
+        run: |
+          if git grep -nE '(ghp_|lin_api_|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|postgres(ql)?://[^[:space:]]+@|cloudflare_api_token[[:space:]]*=.+)' -- commercial-intake; then
+            echo '::error::credential-like material found'
+            exit 1
+          fi
+          if git grep -nE '(terraform|tofu)[[:space:]]+apply|wrangler[[:space:]]+deploy|gcloud[[:space:]]+run[[:space:]]+deploy' -- commercial-intake; then
+            echo '::error::live mutation command found in declaration scope'
+            exit 1
+          fi
+      - name: Validate changed text
+        run: git diff --check
