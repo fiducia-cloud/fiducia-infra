@@ -1,0 +1,39 @@
+# syntax=docker/dockerfile:1.7
+
+FROM public.ecr.aws/amazonlinux/amazonlinux:2023 AS builder
+ARG RUST_TOOLCHAIN=stable
+ARG LAMBDA_BIN
+WORKDIR /workspace
+
+RUN dnf install -y \
+      binutils \
+      ca-certificates \
+      curl \
+      findutils \
+      gcc \
+      gcc-c++ \
+      gzip \
+      openssl-devel \
+      pkgconf-pkg-config \
+      tar \
+    && dnf clean all \
+    && rm -rf /var/cache/dnf
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --profile minimal --default-toolchain "$RUST_TOOLCHAIN"
+
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+COPY . .
+
+RUN test -n "$LAMBDA_BIN" \
+    && cargo build --release --locked --bin "$LAMBDA_BIN" \
+    && strip "target/release/$LAMBDA_BIN" \
+    && install -Dm0755 "target/release/$LAMBDA_BIN" /out/bootstrap
+
+FROM public.ecr.aws/lambda/provided:al2023 AS runtime
+COPY --from=builder /out/bootstrap ${LAMBDA_RUNTIME_DIR}/bootstrap
+
+# The selected Rust binary must implement the Lambda Runtime API, normally via
+# the lambda_runtime crate. Build one image architecture at a time for Lambda.
+CMD ["bootstrap"]
