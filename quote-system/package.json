@@ -2,13 +2,17 @@
   "name": "@fiducia-cloud/commercial-intake-contract",
   "version": "0.0.0-private",
   "private": true,
-  "description": "Locked TypeSpec compiler boundary for the Fiducia commercial intake contract.",
+  "description": "Locked dual-authority TypeSpec and JSON Schema boundary for the Fiducia commercial intake contract.",
   "type": "module",
   "engines": {
     "node": "22.x"
   },
   "scripts": {
-    "typespec:compile": "tsp compile contracts/main.tsp --config tspconfig.yaml --warn-as-error"
+    "typespec:compile": "tsp compile contracts/main.tsp --config tspconfig.yaml --warn-as-error",
+    "contracts:test": "node --test tools/generate-contract-interfaces.test.mjs",
+    "contracts:generate": "npm run typespec:compile && node tools/generate-contract-interfaces.mjs",
+    "contracts:lint": "npm run typespec:compile && node tools/generate-contract-interfaces.mjs --check",
+    "contracts:check": "npm run contracts:test && npm run contracts:lint"
   },
   "devDependencies": {
     "@typespec/compiler": "1.15.0",

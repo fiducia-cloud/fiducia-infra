@@ -1,9 +1,11 @@
-name: Fiducia quote TypeSpec
+name: Fiducia quote TypeSpec and interface generation
 
 on:
   pull_request:
     paths:
       - 'quote-system/contracts/**'
+      - 'quote-system/tools/**'
+      - 'quote-system/generated/README.md'
       - 'quote-system/package.json'
       - 'quote-system/package-lock.json'
       - 'quote-system/tspconfig.yaml'
@@ -13,6 +15,8 @@ on:
       - main
     paths:
       - 'quote-system/contracts/**'
+      - 'quote-system/tools/**'
+      - 'quote-system/generated/README.md'
       - 'quote-system/package.json'
       - 'quote-system/package-lock.json'
       - 'quote-system/tspconfig.yaml'
@@ -27,7 +31,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  compile:
+  compile-lint-generate:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -68,18 +72,75 @@ jobs:
           set -euo pipefail
           npm ci --ignore-scripts --no-audit --no-fund
 
-      - name: Compile and inspect generated OpenAPI
+      - name: Run generator unit and negative-policy tests
+        working-directory: quote-system
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run contracts:test
+
+      - name: Compile TypeSpec with warnings denied
         working-directory: quote-system
         shell: bash
         run: |
           set -euo pipefail
           output_dir="${RUNNER_TEMP}/fiducia-typespec"
-          ./node_modules/.bin/tsp compile \
-            contracts/main.tsp \
-            --config tspconfig.yaml \
-            --output-dir "${output_dir}" \
-            --warn-as-error
-          output="${output_dir}/openapi3/fiducia-commercial-intake.openapi.yaml"
+          npm run typespec:compile -- --output-dir "${output_dir}"
+          output="${output_dir}/openapi3/fiducia-commercial-intake.openapi.json"
           test -s "${output}"
-          grep -q '/v1/pre-interest' "${output}"
-          grep -q '/v1/admin/quotes' "${output}"
+          python3 -m json.tool "${output}" >/dev/null
+          grep -q '"/v1/pre-interest"' "${output}"
+          grep -q '"/v1/admin/quotes"' "${output}"
+
+      - name: Lint both authorities and generate deterministic interfaces
+        working-directory: quote-system
+        shell: bash
+        run: |
+          set -euo pipefail
+          openapi="${RUNNER_TEMP}/fiducia-typespec/openapi3/fiducia-commercial-intake.openapi.json"
+          first="${RUNNER_TEMP}/fiducia-generated-first"
+          second="${RUNNER_TEMP}/fiducia-generated-second"
+
+          node tools/generate-contract-interfaces.mjs \
+            --schema contracts/commercial-intake.schema.json \
+            --openapi "${openapi}" \
+            --output-dir "${first}"
+          node tools/generate-contract-interfaces.mjs \
+            --schema contracts/commercial-intake.schema.json \
+            --openapi "${openapi}" \
+            --output-dir "${second}"
+          node tools/generate-contract-interfaces.mjs \
+            --schema contracts/commercial-intake.schema.json \
+            --openapi "${openapi}" \
+            --output-dir "${RUNNER_TEMP}/unused-check-output" \
+            --check
+
+          diff --recursive --unified "${first}" "${second}"
+          test -s "${first}/payload-types.ts"
+          test -s "${first}/api-operations.ts"
+          test -s "${first}/contract-manifest.json"
+          grep -q 'export interface PreInterest' "${first}/payload-types.ts"
+          grep -q 'export interface Quote' "${first}/payload-types.ts"
+          grep -q '/v1/pre-interest' "${first}/api-operations.ts"
+          grep -q '/v1/admin/quotes' "${first}/api-operations.ts"
+
+          GENERATED_DIR="${first}" python3 <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import stat
+
+          generated = Path(os.environ['GENERATED_DIR'])
+          manifest = json.loads((generated / 'contract-manifest.json').read_text(encoding='utf-8'))
+          if manifest.get('format') != 'fiducia.contract-generation-manifest.v1':
+              raise SystemExit('unexpected generation manifest format')
+          operations = manifest['openapi']['operations']
+          if not any(item['audience'] == 'public' for item in operations):
+              raise SystemExit('generated operation manifest lacks public operations')
+          if not any(item['audience'] == 'admin' for item in operations):
+              raise SystemExit('generated operation manifest lacks admin operations')
+          for name in ('payload-types.ts', 'api-operations.ts', 'contract-manifest.json'):
+              mode = stat.S_IMODE((generated / name).stat().st_mode)
+              if mode != 0o444:
+                  raise SystemExit(f'{name} mode is {oct(mode)}, expected 0o444')
+          PY
