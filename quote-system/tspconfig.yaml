@@ -4,4 +4,5 @@ emit:
 options:
   "@typespec/openapi3":
     emitter-output-dir: "{output-dir}/openapi3"
-    output-file: "fiducia-commercial-intake.openapi.yaml"
+    file-type: "json"
+    output-file: "fiducia-commercial-intake.openapi.json"
