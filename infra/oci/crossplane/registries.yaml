@@ -1,0 +1,79 @@
+# Requires configured Upbound ProviderConfig objects named:
+# aws-default, gcp-default, and azure-default.
+apiVersion: v1
+kind: List
+items:
+  - apiVersion: ecr.aws.upbound.io/v1beta1
+    kind: Repository
+    metadata:
+      name: fiducia
+      annotations:
+        crossplane.io/external-name: fiducia
+    spec:
+      deletionPolicy: Orphan
+      forProvider:
+        region: us-east-1
+        imageTagMutability: IMMUTABLE
+        encryptionConfiguration:
+          - encryptionType: AES256
+        imageScanningConfiguration:
+          - scanOnPush: true
+        tags:
+          ManagedBy: crossplane
+          Purpose: oci-images
+      providerConfigRef:
+        name: aws-default
+
+  - apiVersion: artifactregistry.gcp.upbound.io/v1beta1
+    kind: Repository
+    metadata:
+      name: fiducia
+    spec:
+      deletionPolicy: Orphan
+      forProvider:
+        location: us-central1
+        repositoryId: fiducia
+        description: OCI images for fiducia
+        format: DOCKER
+        dockerConfig:
+          - immutableTags: true
+        labels:
+          managed-by: crossplane
+          purpose: oci-images
+      providerConfigRef:
+        name: gcp-default
+
+  - apiVersion: azure.upbound.io/v1beta1
+    kind: ResourceGroup
+    metadata:
+      name: fiducia-oci
+    spec:
+      deletionPolicy: Orphan
+      forProvider:
+        location: East US
+        tags:
+          ManagedBy: crossplane
+          Purpose: oci-images
+      providerConfigRef:
+        name: azure-default
+
+  - apiVersion: containerregistry.azure.upbound.io/v1beta1
+    kind: Registry
+    metadata:
+      name: fiduciaoci
+      annotations:
+        crossplane.io/external-name: fiduciaoci
+    spec:
+      deletionPolicy: Orphan
+      forProvider:
+        location: East US
+        resourceGroupNameRef:
+          name: fiducia-oci
+        sku: Basic
+        adminEnabled: false
+        publicNetworkAccessEnabled: true
+        tags:
+          ManagedBy: crossplane
+          Purpose: oci-images
+      providerConfigRef:
+        name: azure-default
