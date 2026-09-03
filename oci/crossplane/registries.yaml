@@ -1,0 +1,185 @@
+# Crossplane v1-compatible APIs remain supported by Crossplane v2. Install and
+# pin the provider packages and function in the platform repository before
+# applying this contract. Provider credentials stay in platform-owned
+# ProviderConfigs; this file contains no Secret objects or credential values.
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xmulticloudociregistries.platform.oresoftware.dev
+spec:
+  group: platform.oresoftware.dev
+  names:
+    kind: XMultiCloudOCIRegistry
+    plural: xmulticloudociregistries
+  claimNames:
+    kind: MultiCloudOCIRegistry
+    plural: multicloudociregistries
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required:
+                - registryName
+                - aws
+                - gcp
+                - azure
+              properties:
+                registryName:
+                  type: string
+                  minLength: 3
+                  maxLength: 63
+                  pattern: '^[a-z0-9][a-z0-9-]*[a-z0-9]$'
+                aws:
+                  type: object
+                  required: [region, providerConfigName]
+                  properties:
+                    region:
+                      type: string
+                      minLength: 1
+                    providerConfigName:
+                      type: string
+                      minLength: 1
+                gcp:
+                  type: object
+                  required: [project, location, providerConfigName]
+                  properties:
+                    project:
+                      type: string
+                      minLength: 1
+                    location:
+                      type: string
+                      minLength: 1
+                    providerConfigName:
+                      type: string
+                      minLength: 1
+                azure:
+                  type: object
+                  required: [name, resourceGroupName, location, providerConfigName]
+                  properties:
+                    name:
+                      type: string
+                      pattern: '^[A-Za-z0-9]{5,50}$'
+                    resourceGroupName:
+                      type: string
+                      minLength: 1
+                    location:
+                      type: string
+                      minLength: 1
+                    providerConfigName:
+                      type: string
+                      minLength: 1
+---
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: multicloud-oci-registry.platform.oresoftware.dev
+spec:
+  compositeTypeRef:
+    apiVersion: platform.oresoftware.dev/v1alpha1
+    kind: XMultiCloudOCIRegistry
+  mode: Pipeline
+  pipeline:
+    - step: create-cloud-registries
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+          - name: aws-ecr
+            base:
+              apiVersion: ecr.aws.upbound.io/v1beta1
+              kind: Repository
+              metadata:
+                annotations:
+                  crossplane.io/external-name: pending
+              spec:
+                deletionPolicy: Orphan
+                forProvider:
+                  region: pending
+                  imageTagMutability: IMMUTABLE
+                  forceDelete: false
+                  encryptionConfiguration:
+                    - encryptionType: AES256
+                  imageScanningConfiguration:
+                    - scanOnPush: true
+                providerConfigRef:
+                  name: pending
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.registryName
+                toFieldPath: metadata.annotations[crossplane.io/external-name]
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.aws.region
+                toFieldPath: spec.forProvider.region
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.aws.providerConfigName
+                toFieldPath: spec.providerConfigRef.name
+          - name: gcp-artifact-registry
+            base:
+              apiVersion: artifact.gcp.upbound.io/v1beta1
+              kind: RegistryRepository
+              metadata:
+                annotations:
+                  crossplane.io/external-name: pending
+              spec:
+                deletionPolicy: Orphan
+                forProvider:
+                  project: pending
+                  location: pending
+                  format: DOCKER
+                  description: OCI images managed by the repository infrastructure contract
+                  dockerConfig:
+                    - immutableTags: true
+                providerConfigRef:
+                  name: pending
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.registryName
+                toFieldPath: metadata.annotations[crossplane.io/external-name]
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.gcp.project
+                toFieldPath: spec.forProvider.project
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.gcp.location
+                toFieldPath: spec.forProvider.location
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.gcp.providerConfigName
+                toFieldPath: spec.providerConfigRef.name
+          - name: azure-acr
+            base:
+              apiVersion: containerregistry.azure.upbound.io/v1beta1
+              kind: Registry
+              metadata:
+                annotations:
+                  crossplane.io/external-name: pending
+              spec:
+                deletionPolicy: Orphan
+                forProvider:
+                  resourceGroupName: pending
+                  location: pending
+                  sku: Basic
+                  adminEnabled: false
+                  anonymousPullEnabled: false
+                providerConfigRef:
+                  name: pending
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.azure.name
+                toFieldPath: metadata.annotations[crossplane.io/external-name]
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.azure.resourceGroupName
+                toFieldPath: spec.forProvider.resourceGroupName
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.azure.location
+                toFieldPath: spec.forProvider.location
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.azure.providerConfigName
+                toFieldPath: spec.providerConfigRef.name
