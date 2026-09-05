@@ -297,7 +297,9 @@ export function makeIdempotencyKey({ organization, program, cycle, quota_categor
   for (const [name, value] of Object.entries({ organization, program, cycle, quota_category })) {
     validateTrimmed(value, `idempotency.${name}`, 160);
   }
-  return [organization, program, cycle, quota_category].map(slug).join('::');
+  const key = [organization, program, cycle, quota_category].map(slug).join('::');
+  assert(isCanonicalIdempotencyKey(key), 'idempotency: non-empty canonical identity and supported quota category required');
+  return key;
 }
 
 function evidenceTypes(application) {
@@ -565,19 +567,63 @@ export function classifyInboundForAutomation(message, policy) {
   return { action: 'draft_only', reason: 'allowlisted_human_thread' };
 }
 
+const SEND_CONTEXT_FIELDS = new Set([
+  'automated',
+  'sender',
+  'human_approved',
+  'authenticated_company_sender',
+  'official_intake_verified',
+  'legal_facts_verified',
+  'idempotency_key',
+]);
+
+function isCanonicalIdempotencyKey(value) {
+  if (typeof value !== 'string' || value.length > 646) return false;
+  const parts = value.split('::');
+  return parts.length === 4
+    && parts.every((part) => part.length <= 160 && part.trim() === part && ID_PATTERN.test(part))
+    && QUOTA_CATEGORIES.has(parts[3]);
+}
+
+function isPlainSendContext(context) {
+  if (!context || typeof context !== 'object' || Array.isArray(context)) return false;
+  const prototype = Object.getPrototypeOf(context);
+  if (prototype !== Object.prototype && prototype !== null) return false;
+  const descriptors = Object.getOwnPropertyDescriptors(context);
+  // No inherited, accessor, symbol, or unknown controls. In particular, do not
+  // execute a getter while interpreting what is meant to be plain JSON data.
+  return Reflect.ownKeys(descriptors).every((key) => typeof key === 'string'
+    && SEND_CONTEXT_FIELDS.has(key)
+    && Object.hasOwn(descriptors[key], 'value')
+    && descriptors[key].enumerable);
+}
+
 export function authorizeApplicationSend(context, policy, ledger) {
   validateMailPolicy(policy);
   validateApplicationLedger(ledger);
+  if (!isPlainSendContext(context)) {
+    return { authorized: false, reasons: ['invalid_send_context'] };
+  }
+  const own = (key) => Object.hasOwn(context, key) ? context[key] : undefined;
   const reasons = [];
-  if (context.automated) reasons.push('automated_send_forbidden');
-  if (context.sender !== policy.company_sender) reasons.push('wrong_sender');
-  if (!context.human_approved) reasons.push('human_approval_required');
-  if (!context.authenticated_company_sender) reasons.push('company_sender_authentication_required');
-  if (!context.official_intake_verified) reasons.push('official_intake_verification_required');
-  if (!context.legal_facts_verified) reasons.push('fact_verification_required');
-  if (ledger.applications.some((entry) => entry.idempotency_key === context.idempotency_key)) {
+  // Only explicit booleans are evidence assertions; strings such as "false",
+  // truthy objects, and missing automation controls must never grant authority.
+  if (own('automated') !== false) reasons.push('automated_send_forbidden');
+  if (own('sender') !== policy.company_sender) reasons.push('wrong_sender');
+  if (own('human_approved') !== true) reasons.push('human_approval_required');
+  if (own('authenticated_company_sender') !== true) reasons.push('company_sender_authentication_required');
+  if (own('official_intake_verified') !== true) reasons.push('official_intake_verification_required');
+  if (own('legal_facts_verified') !== true) reasons.push('fact_verification_required');
+  const identity = own('idempotency_key');
+  if (!isCanonicalIdempotencyKey(identity)) reasons.push('invalid_application_identity');
+  if (ledger.migration.status !== 'complete' || ledger.migration.counting_enabled !== true) {
+    reasons.push('application_history_reconciliation_required');
+  }
+  if (ledger.applications.some((entry) => entry.idempotency_key === identity)) {
     reasons.push('duplicate_application_identity');
   }
+  // This pure preflight is not an executor, a reservation, or proof of approval.
+  // The private exact-revision approval/claim/receipt contract is still required.
   return { authorized: reasons.length === 0, reasons };
 }
 
