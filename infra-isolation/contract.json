@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "githubOrg": "fiducia-cloud",
+  "expectedState": "paused",
+  "mapping": {
+    "neonOrg": "org-bold-voice-46969408",
+    "supabaseOrg": "mkwkyvjiprtmdepshkys",
+    "cloudflareDomain": "fiducia.cloud",
+    "slackChannel": "C0BLT1GCV32",
+    "gcpProject": "fiducia-cloud",
+    "linearProject": "0ba3855f-0932-4c47-9975-d2f17a2d8d1d"
+  },
+  "areas": [
+    {
+      "role": "canonical",
+      "vpcId": null,
+      "region": null,
+      "sourceSecurityGroup": null,
+      "workloadIdentity": null,
+      "credentialRef": null
+    },
+    {
+      "role": "auth",
+      "vpcId": null,
+      "region": null,
+      "sourceSecurityGroup": null,
+      "workloadIdentity": null,
+      "credentialRef": null
+    },
+    {
+      "role": "admin",
+      "vpcId": null,
+      "region": null,
+      "sourceSecurityGroup": null,
+      "workloadIdentity": null,
+      "credentialRef": null
+    }
+  ],
+  "projects": [
+    {
+      "provider": "neon",
+      "role": "canonical",
+      "projectId": "blue-wildflower-59445089",
+      "region": "us-east-1",
+      "endpointIds": null
+    },
+    {
+      "provider": "neon",
+      "role": "auth",
+      "projectId": "polished-mode-74619873",
+      "region": "us-east-1",
+      "endpointIds": null
+    },
+    {
+      "provider": "neon",
+      "role": "admin",
+      "projectId": "fragrant-shadow-69237812",
+      "region": "us-east-1",
+      "endpointIds": null
+    },
+    {
+      "provider": "supabase",
+      "role": "canonical",
+      "projectId": "bbrekwystevrokexluef",
+      "region": "us-east-2",
+      "endpointIds": null
+    },
+    {
+      "provider": "supabase",
+      "role": "auth",
+      "projectId": "oyqymcftwgahuqpzglfe",
+      "region": "us-east-2",
+      "endpointIds": null
+    },
+    {
+      "provider": "supabase",
+      "role": "admin",
+      "projectId": null,
+      "region": null,
+      "endpointIds": null
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "githubOrg", "expectedState", "mapping", "areas", "projects"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "githubOrg": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*$" },
+    "expectedState": { "enum": ["paused", "active"] },
+    "mapping": {
+      "type": "object", "additionalProperties": false,
+      "required": ["neonOrg", "supabaseOrg", "cloudflareDomain", "slackChannel", "gcpProject", "linearProject"],
+      "properties": {
+        "neonOrg": { "$ref": "#/definitions/nullableId" },
+        "supabaseOrg": { "$ref": "#/definitions/nullableId" },
+        "cloudflareDomain": { "$ref": "#/definitions/nullableId" },
+        "slackChannel": { "$ref": "#/definitions/nullableId" },
+        "gcpProject": { "$ref": "#/definitions/nullableId" },
+        "linearProject": { "$ref": "#/definitions/nullableId" }
+      }
+    },
+    "areas": {
+      "type": "array", "minItems": 3, "maxItems": 3,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["role", "vpcId", "region", "sourceSecurityGroup", "workloadIdentity", "credentialRef"],
+        "properties": {
+          "role": { "$ref": "#/definitions/role" },
+          "vpcId": { "$ref": "#/definitions/nullableId" },
+          "region": { "$ref": "#/definitions/nullableId" },
+          "sourceSecurityGroup": { "$ref": "#/definitions/nullableId" },
+          "workloadIdentity": { "$ref": "#/definitions/nullableId" },
+          "credentialRef": { "$ref": "#/definitions/nullableId" }
+        }
+      }
+    },
+    "projects": {
+      "type": "array", "minItems": 6, "maxItems": 6,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["provider", "role", "projectId", "region", "endpointIds"],
+        "properties": {
+          "provider": { "enum": ["neon", "supabase"] },
+          "role": { "$ref": "#/definitions/role" },
+          "projectId": { "$ref": "#/definitions/nullableId" },
+          "region": { "$ref": "#/definitions/nullableId" },
+          "endpointIds": { "type": ["array", "null"], "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 200 } }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "role": { "enum": ["canonical", "auth", "admin"] },
+    "nullableId": { "type": ["string", "null"], "minLength": 1, "maxLength": 200, "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/@-]*$" }
+  }
+}

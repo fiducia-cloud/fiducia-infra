@@ -1,0 +1,31 @@
+name: Infra isolation contracts
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-contracts:
+    name: Offline infra contracts (not live acceptance)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: infra-isolation
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: infra-isolation/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - name: Report the scope of this check
+        run: |
+          echo 'Offline contract and adversarial regression tests passed. This does not establish deployed network isolation.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Live acceptance requires fresh provider/AWS evidence and a complete authorized 30-cell network matrix.' >> "$GITHUB_STEP_SUMMARY"

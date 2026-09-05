@@ -455,3 +455,12 @@ Accepted / known risks (reported, deliberately **not** auto-changed):
 ## Related
 
 - [`fiducia-node.rs`](https://github.com/fiducia-cloud/fiducia-node.rs) · [`fiducia-brain.rs`](https://github.com/fiducia-cloud/fiducia-brain.rs) · [`fiducia-load-balance.rs`](https://github.com/fiducia-cloud/fiducia-load-balance.rs) · [`fiducia-routing.rs`](https://github.com/fiducia-cloud/fiducia-routing.rs) · [`fiducia-node-sidecar.rs`](https://github.com/fiducia-cloud/fiducia-node-sidecar.rs) · [`fiducia-edge`](https://github.com/fiducia-cloud/fiducia-edge)
+
+
+## Database isolation tests
+
+Run `npm ci --ignore-scripts && npm test` in [`infra-isolation/`](infra-isolation/README.md)
+for the canonical/auth/admin infrastructure contract and adversarial tests.
+The dedicated GitHub Actions check is offline; live isolation acceptance requires
+fresh provider/AWS evidence and explicitly authorized read-only probes. Missing
+projects, private endpoints, or evidence remain blocked rather than passing.
