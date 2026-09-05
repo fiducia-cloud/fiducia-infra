@@ -52,7 +52,7 @@ test("laptop topology rejects correlated site declarations and overlapping CIDRs
 test("rendered laptop membership excludes self and retains 2-of-3 quorum settings", () => {
   const { topology, files } = renderLaptopFleet();
   for (const cluster of topology.cluster) {
-    const env = files[`laptop/clusters/${cluster.name}/topology.env`];
+    const env = files[`laptop/clusters/${cluster.name}/topology.properties`];
     const values = parseEnv(env);
     const peers = topology.cluster.filter((candidate) => candidate.name !== cluster.name);
 

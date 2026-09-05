@@ -1,0 +1,103 @@
+name: Fiducia quote system contract
+
+on:
+  pull_request:
+    paths:
+      - 'quote-system/**'
+      - '.github/workflows/quote-system-contract.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'quote-system/**'
+      - '.github/workflows/quote-system-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fiducia-quote-contract-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compile dependency-free contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile quote-system/tests/test_contracts.py
+
+      - name: Validate schemas, examples, routes, lifecycle, pricing, and security invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v quote-system/tests/test_contracts.py
+
+      - name: Verify every JSON artifact is canonical parseable UTF-8
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' path; do
+            python3 -m json.tool "${path}" >/dev/null
+          done < <(find quote-system -type f -name '*.json' -print0 | sort -z)
+
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: fiducia_contract
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: contract-test-only
+        options: >-
+          --health-cmd "pg_isready -U postgres -d fiducia_contract"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 30
+    steps:
+      - name: Check out exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Apply commercial-intake migration in an isolated database
+        shell: bash
+        env:
+          POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          test -n "${POSTGRES_CONTAINER_ID}"
+          docker exec -i "${POSTGRES_CONTAINER_ID}" \
+            psql --set=ON_ERROR_STOP=1 --username=postgres --dbname=fiducia_contract \
+            < quote-system/db/0001_commercial_intake.sql
+
+      - name: Exercise RLS, immutable versions, transitions, and idempotency
+        shell: bash
+        env:
+          POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          docker exec -i "${POSTGRES_CONTAINER_ID}" \
+            psql --set=ON_ERROR_STOP=1 --username=postgres --dbname=fiducia_contract \
+            < quote-system/tests/test_postgres_contract.sql
+
+      - name: Reapply the migration to verify guarded DDL remains repeatable
+        shell: bash
+        env:
+          POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          docker exec -i "${POSTGRES_CONTAINER_ID}" \
+            psql --set=ON_ERROR_STOP=1 --username=postgres --dbname=fiducia_contract \
+            < quote-system/db/0001_commercial_intake.sql

@@ -47,7 +47,7 @@ for c in "${CLUSTERS[@]}"; do
   ok "$c control-plane @ $ip"
 done
 # Render the dynamic peer values into Kustomize's stdout instead of rewriting
-# checked-in topology.env templates. A test run therefore cannot dirty or leave
+# checked-in topology.properties templates. A test run therefore cannot dirty or leave
 # host-specific container addresses in the repository.
 render_overlay() {
   local c="$1" o ip self_ip self_addr np bp

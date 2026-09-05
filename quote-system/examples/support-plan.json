@@ -1,0 +1,56 @@
+{
+  "schema": "fiducia.support-plan.v1",
+  "document_type": "support_plan",
+  "support_plan_id": "sup_01J7FQ2M9A4K8D3N6P0R",
+  "version": 1,
+  "status": "approved",
+  "name": "Example Enterprise Support",
+  "tier": "enterprise",
+  "coverage": "24x7",
+  "coverage_time_zones": [
+    "America/New_York",
+    "Europe/London"
+  ],
+  "channels": [
+    "portal",
+    "email",
+    "phone",
+    "incident-bridge"
+  ],
+  "severity_targets": [
+    {
+      "severity": "P1",
+      "initial_response_minutes": 15,
+      "update_interval_minutes": 30,
+      "mitigation_target_minutes": 60,
+      "restoration_target_minutes": 240
+    },
+    {
+      "severity": "P2",
+      "initial_response_minutes": 30,
+      "update_interval_minutes": 60,
+      "mitigation_target_minutes": 240,
+      "restoration_target_minutes": 480
+    },
+    {
+      "severity": "P3",
+      "initial_response_minutes": 240,
+      "update_interval_minutes": 480,
+      "mitigation_target_minutes": 1440,
+      "restoration_target_minutes": 4320
+    },
+    {
+      "severity": "P4",
+      "initial_response_minutes": 480,
+      "update_interval_minutes": 1440,
+      "mitigation_target_minutes": 4320,
+      "restoration_target_minutes": 10080
+    }
+  ],
+  "onboarding": {
+    "included_hours": 80,
+    "training_hours": 24,
+    "named_tam": true
+  },
+  "content_sha256": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+}

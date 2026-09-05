@@ -1,0 +1,62 @@
+name: OCI toolkit contract
+
+on:
+  pull_request:
+    paths:
+      - "docker/*.Dockerfile"
+      - "docs/OCI_IMAGES.md"
+      - "infra/oci/**"
+      - "scripts/publish-multi-registry-oci.sh"
+      - ".github/workflows/oci-toolkit.yml"
+  push:
+    branches: [main]
+    paths:
+      - "docker/*.Dockerfile"
+      - "docs/OCI_IMAGES.md"
+      - "infra/oci/**"
+      - "scripts/publish-multi-registry-oci.sh"
+      - ".github/workflows/oci-toolkit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: 1.9.8
+      - name: Verify the immutable publisher
+        run: |
+          bash -n scripts/publish-multi-registry-oci.sh
+          OCI_TOOLKIT_VERIFY_ONLY=true bash scripts/publish-multi-registry-oci.sh
+      - name: Validate the sole Terraform registry adapter
+        run: |
+          test ! -e infra/oci/registries.tf
+          test ! -e infra/oci/crossplane-workspace.yaml
+          terraform -chdir=infra/oci/terraform fmt -diff -check
+          terraform -chdir=infra/oci/terraform init -backend=false -input=false
+          terraform -chdir=infra/oci/terraform validate
+      - name: Parse provider-native Crossplane resources
+        run: |
+          ruby -e 'require "yaml"; doc = YAML.safe_load(File.read("infra/oci/crossplane/registries.yaml"), aliases: false); abort "expected a Kubernetes List" unless doc["kind"] == "List"; abort "expected four managed resources" unless doc.fetch("items").length == 4; abort "destructive deletion policy" unless doc.fetch("items").all? { |item| item.dig("spec", "deletionPolicy") == "Orphan" }'
+      - name: Check native image and consensus boundaries
+        run: |
+          test ! -e infra/oci/Dockerfile.rust-lambda
+          test ! -e scripts/publish-oci.sh
+          grep -F "FROM --platform=\$TARGETPLATFORM" docker/service-rust.Dockerfile
+          grep -F "FROM --platform=\$TARGETPLATFORM" docker/lambda-rust.Dockerfile
+          grep -F "FROM --platform=\$TARGETPLATFORM" docker/lambda-node.Dockerfile
+          grep -F 'public.ecr.aws/lambda/provided:al2023' docker/lambda-rust.Dockerfile
+          grep -F 'public.ecr.aws/lambda/nodejs:22' docker/lambda-node.Dockerfile
+          grep -F 'USER 10001:10001' docker/service-rust.Dockerfile
+          ! grep -RInE '^(<<<<<<< .+|=======$|>>>>>>> .+)$' \
+            --exclude-dir=.git --exclude-dir=.terraform .

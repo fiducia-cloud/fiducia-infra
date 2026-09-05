@@ -1,0 +1,94 @@
+name: Fiducia commercial Rust model projections
+
+on:
+  pull_request:
+    paths:
+      - 'quote-system/db/0001_commercial_intake.sql'
+      - 'quote-system/contracts/main.tsp'
+      - 'quote-system/contracts/commercial-intake.schema.json'
+      - 'quote-system/rust/**'
+      - '.github/workflows/quote-system-rust-models.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'quote-system/db/0001_commercial_intake.sql'
+      - 'quote-system/contracts/main.tsp'
+      - 'quote-system/contracts/commercial-intake.schema.json'
+      - 'quote-system/rust/**'
+      - '.github/workflows/quote-system-rust-models.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fiducia-commercial-rust-models-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  projection:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify SQL, TypeSpec, JSON Schema, SeaORM, and Diesel parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile quote-system/rust/scripts/model_codegen.py
+          python3 quote-system/rust/scripts/model_codegen.py --check
+          python3 -m json.tool quote-system/rust/generated/model-manifest.json >/dev/null
+
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Select repository Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --component rustfmt,clippy
+          rustup default 1.88.0
+
+      - name: Check formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path quote-system/rust/Cargo.toml --all -- --check
+
+      - name: Compile every feature boundary and target
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check \
+            --manifest-path quote-system/rust/Cargo.toml \
+            --all-targets \
+            --all-features
+
+      - name: Run Rust tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test \
+            --manifest-path quote-system/rust/Cargo.toml \
+            --all-features
+
+      - name: Reject Rust warnings
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo clippy \
+            --manifest-path quote-system/rust/Cargo.toml \
+            --all-targets \
+            --all-features \
+            -- -D warnings

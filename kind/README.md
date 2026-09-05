@@ -65,4 +65,4 @@ kubectl uncordon <node-for-zone-vultr>            # heal
   reproduced here; zone spread is enforced by the node labels + `topologySpread`,
   which is what the chaos test relies on.
 - Single-cluster Raft group via an explicit in-cluster peer list — see
-  [`overlay/topology.env`](overlay/topology.env).
+  [`overlay/topology.properties`](overlay/topology.properties).

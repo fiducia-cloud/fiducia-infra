@@ -5,7 +5,7 @@ resources:
   - ../../common
 configMapGenerator:
   - name: fiducia-cluster
-    envs: [topology.env]
+    envs: [topology.properties]
 generatorOptions:
   disableNameSuffixHash: true
 patches:

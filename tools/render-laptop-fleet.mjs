@@ -198,7 +198,7 @@ export function renderLaptopFleet() {
   });
 
   for (const cluster of topology.cluster) {
-    const envPath = `laptop/clusters/${cluster.name}/topology.env`;
+    const envPath = `laptop/clusters/${cluster.name}/topology.properties`;
     const peers = topology.cluster.filter((candidate) => candidate.name !== cluster.name);
     const nodePeers = peers
       .map((peer) => `${peerServiceName("node", peer.name)}.fiducia.svc.cluster.local:9090`)

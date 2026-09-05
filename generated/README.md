@@ -18,12 +18,15 @@ Typical producers:
 
 Checked-in artifacts produced by `tools/render.mjs` from `topology.toml`.
 Regenerate with `node tools/render.mjs`; CI's `--check` fails on drift.
+Per-cluster generated inputs (`topology.properties` (formerly `topology.env`),
+`patches.yaml`) live next to each overlay under `clusters/<name>/`, not here.
+Regenerate with `node tools/render.mjs` and let CI `--check` catch drift.
 
 - `edge-regions.json` — the `FIDUCIA_REGIONS` list (each cluster's public LB
   endpoint) consumed by the Cloudflare edge (`fiducia-edge`).
 
-(Per-cluster generated inputs — `topology.env`, `patches.yaml` — live next to each
-overlay under `clusters/<name>/`, not here.)
+(The committed per-cluster input is `topology.properties` (formerly
+`topology.env`), alongside `patches.yaml` under each `clusters/<name>/` overlay.)
 
 ## Why the files are read-only on disk
 

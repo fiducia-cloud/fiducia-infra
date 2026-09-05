@@ -4,7 +4,7 @@
 #   ./down.sh   # delete all three kind clusters
 #
 # `up.sh` renders live Kind peer addresses into the Kubernetes apply stream; it
-# never modifies the checked-in topology.env templates. Tearing down an emulator
+# never modifies the checked-in topology.properties templates. Tearing down an emulator
 # therefore leaves the source tree unchanged.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"

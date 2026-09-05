@@ -3,7 +3,7 @@
 The scripts that turn the declarative `topology.toml` into deployable inputs and stand
 up / mesh the clusters.
 
-- `render.mjs` — fans `topology.toml` out into each cluster's `topology.env` + `patches.yaml`
+- `render.mjs` — fans `topology.toml` out into each cluster's `topology.properties` + `patches.yaml`
   and `generated/edge-regions.json`; `--check` fails CI on staleness.
 - `render.test.mjs` — renderer self-tests (no writes, no network).
 - `render-vcluster-hetzner-e2e.mjs` — validates the exactly-three-member logical

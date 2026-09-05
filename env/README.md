@@ -1,139 +1,112 @@
-# Environment files
+# Encrypted runtime configuration
 
-Secrets for this repo are **committed, encrypted**, with [sops] + [age].
+Fiducia follows one repository convention for deploy-specific secrets:
 
+```text
+env/enc/dev.env.enc    # SOPS + age ciphertext; may be committed
+env/enc/prod.env.enc   # SOPS + age ciphertext; may be committed
+env/dec/dev.env        # ignored local plaintext, mode 0600
+env/dec/prod.env       # ignored local plaintext, mode 0600
+.env -> env/dec/<dev|prod>.env
 ```
-env/enc/<name>.env.enc   ciphertext — committed. This is the source of truth.
-env/dec/<name>.env       plaintext  — gitignored, mode 0600, disposable.
-```
 
-`env/dec` is a build artifact. Delete it whenever you like and regenerate with
-`just env-decrypt`; nothing there is authoritative.
+There are exactly two tracked secret stores: `dev` and `prod`. Do not add
+`local`, `staging`, `production`, per-person, or per-provider ciphertext files.
+A deployment may bind different values through its platform secret manager, but
+those values must implement the same documented variable-name contract.
 
-## First run on a new machine
+`env/dec/` is a disposable runtime boundary. It is never represented by a
+tracked placeholder and must be created only through `ores-sops ensure-dec`.
+The helper rejects symlink/non-directory redirection and applies mode `0700`.
+
+## Commands
+
+Enter the pinned Nix shell first:
 
 ```sh
-just env-keygen     # creates your age key (never overwrites an existing one)
-just env-whoami     # prints your public recipient — send it to a maintainer
+nix develop
 ```
 
-A maintainer adds your recipient to `.sops.yaml`, runs `just env-rekey`, and
-commits. Until then you cannot decrypt anything. After that:
+Then use the canonical helper:
 
 ```sh
-just env-decrypt    # env/enc/*.env.enc -> env/dec/*.env
-just env-check      # confirms nothing plaintext is tracked and all files decrypt
+ores-sops verify        # keyless policy audit; safe for pull-request CI
+ores-sops edit dev      # edit ciphertext through SOPS
+ores-sops edit prod
+ores-sops use dev       # decrypt atomically and activate the managed .env link
+ores-sops use prod
+ores-sops diff dev      # changed variable names only; never values
+ores-sops status
+ores-sops lock          # remove managed plaintext and the managed .env link
 ```
 
-## Day to day
+`just env-verify` is the repository alias for the keyless audit. Pull-request CI
+has no age identity and must not decrypt a secret. Trusted release/runtime jobs
+may separately prove decryptability through protected workload identity.
 
-| Command | What it does |
-|---|---|
-| `just env-list` | environments and the variable *names* in each (never values) |
-| `just env-decrypt [name…]` | ciphertext → `env/dec/*.env`, mode 0600 |
-| `just env-edit <name>` | open the decrypted file in `$EDITOR`; plaintext never hits disk |
-| `just env-encrypt [name…]` | fold `env/dec/*.env` edits back into the ciphertext |
-| `just env-status` | which variables differ between your `env/dec` and the ciphertext |
-| `just env-run <name> <cmd…>` | run `cmd` with those variables exported, no plaintext on disk |
-| `just env-new <name>` | start a new environment |
-| `just env-rekey` | re-sync recipients after editing `.sops.yaml` |
-| `just env-check` | fail-closed audit — safe to run in CI |
-| `just env-clean` | wipe `env/dec` |
+## Configuration ownership
 
-Prefer `just env-edit` over decrypt-edit-encrypt. Both work, but `env-edit`
-re-encrypts only the values you actually changed, so the diff names them:
+The application contract owns variable **names**, types, required/optional
+status, defaults, and precedence. The deployment owns values. Parse runtime
+configuration once at process startup into an immutable typed value; reject
+unknown flags and malformed or missing required values before serving traffic.
+Do not call `std::env::var`, `process.env`, or equivalent throughout business
+logic, and do not hide deploy-specific values in source-code constants.
 
-```
--DATABASE_URL=ENC[AES256_GCM,data:OG3trz…]
-+DATABASE_URL=ENC[AES256_GCM,data:9fKq2a…]
-```
+Not every runtime setting is secret. Safe public settings may be supplied by
+flags, ConfigMaps, or deployment manifests. Credentials, signing/encryption
+material, database URLs containing credentials, private provider tokens, and
+other secret-bearing values belong in the encrypted store or the platform
+secret manager. Never encrypt a magic default merely to avoid documenting it.
 
-`just env-encrypt` uses the same mechanism, so it is equally clean. A bare
-`sops encrypt` is not — it gives every line a fresh IV and rewrites the whole
-file, which makes review useless and guarantees merge conflicts. Don't call
-sops directly; use the recipes.
+## Secret-safe build and runtime rules
 
-## Running things
+- Never decrypt during `docker build`; image layers and build metadata persist.
+- Inject secrets at container/process start, not as build arguments.
+- Never print values in CI, logs, shell tracing, Linear, GitHub descriptions, or
+  evidence artifacts. Variable names and redacted presence/shape checks are the
+  maximum permitted diagnostic surface.
+- Keep the application as PID 1 so SIGTERM reaches it directly and graceful
+  shutdown can drain work.
+- Reject malformed dotenv, duplicate names, unsafe filesystem shapes, and
+  unexpected files below `env/enc/`.
+- Give humans and workloads separate identities; keep dev and prod recipient
+  sets distinct before production reliance; maintain an independently
+  controlled recovery path.
+- Removing a recipient prevents future access only after `sops updatekeys` and
+  application credentials/data keys are rotated by their owners.
 
-`.envrc` auto-loads **`env/dec/local.env` only** — non-production values for
-your own machine. Staging and production are deliberately opt-in per command:
+SOPS dotenv values are single-line. Store multiline material using escaped
+newlines, for example a value assembled from a public header label and `\n`
+escapes; do not place a complete private-key signature in documentation or test
+source. Tests that need one must construct the signature at runtime so repository
+secret scanners remain fail-closed.
 
-```sh
-just env-run prod cargo run --release
-just env-run staging ./scripts/migrate.sh
-```
+## Source-control policy
 
-`env-run` streams the values straight into the child process. Nothing is
-written to disk, so an interrupted run can't leave `env/dec/prod.env` behind.
+The repository enforces all of the following:
 
-## What is and isn't hidden
-
-Variable **names are plaintext** in `env/enc/*.env.enc`; only values are
-encrypted. That is the point — it makes diffs reviewable and lets `env-list`
-work without a key. Never encode a secret in a variable *name*. Comments are
-encrypted, so anything explanatory belongs in this file instead.
-
-Two format limits, inherited from sops' dotenv parser:
-
-- **No multi-line values.** A PEM must be a single line with `\n` escapes:
-  `JWT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIE…\n-----END PRIVATE KEY-----\n"`
-- **Blank lines are dropped** on round-trip. Cosmetic only.
-
-## Containers
-
-Decryption happens at `docker run`, **never** at `docker build`. A secret
-decrypted during a build is written into an image layer and stays there — a
-later `RUN rm` does not remove it, and `--build-arg` is worse still because it
-lands in `docker history`.
-
-```sh
-just env-docker-run local ghcr.io/fiducia-cloud/fiducia-auth:dev
-just env-k8s-secret prod | kubectl apply -f -
+```gitignore
+*.env
+*/*.env
+*/**/*.env
+.env.*
+*.env.*
+!.env.example
+/env/dec/
+/env/enc/*
+!/env/enc/dev.env.enc
+!/env/enc/prod.env.enc
 ```
 
-Nothing is baked into the image: no sops binary, no ciphertext, no entrypoint
-script. That is forced, not chosen. `sops exec-env` shells out to `/bin/sh` in
-**both** modes — `--same-process` included, verified against a valid
-single-word binary path — and most fiducia services run on
-`gcr.io/distroless/cc-debian12`, which deliberately has no shell. So the
-sonus-auris/ores-sops in-container entrypoint cannot run here at all.
+`.sops.yaml` has separate exact creation rules for the two approved ciphertext
+paths. `.gitattributes` normalizes ciphertext to LF so reviews and SOPS MACs are
+portable across platforms.
 
-Decrypting host-side and injecting with `--env-file` also leaves the
-application as **PID 1**, so `docker stop` delivers SIGTERM straight to it and
-it can drain. Wrapping the app in sops or a shell would make it a child and
-swallow the signal.
+## Incident handling
 
-The trade-off, stated plainly: `--env-file` values are visible in
-`docker inspect`. The in-image alternative exposes `SOPS_AGE_KEY` there
-instead — a key that decrypts *every* environment — so this is the smaller
-leak, not a free win. For real deployments use `env-k8s-secret` and let the
-platform hold the secret.
-
-### Multi-line values do not fit in --env-file
-
-`docker --env-file` is one line per variable with no escape processing, so a
-value containing a newline cannot be represented: docker keeps the first line
-and silently drops the rest. `just env-docker-run` refuses rather than starting
-a container with a half-truncated key. A PEM therefore goes through
-`just env-run`, `just env-k8s-secret` (base64, no such limit), or gets stored
-single-line.
-
-All three paths share one parser (`.just/dotenv.py`) so the same encrypted file
-yields byte-identical values everywhere. Without it each loader applies its own
-quoting rules and `"-----BEGIN…\n…"` reaches the app with the quotes still
-attached.
-
-## Rules
-
-- Never commit anything from `env/dec/`. `.gitignore` and `just env-check`
-  both block it; don't defeat them with `git add -f`.
-- Never commit a private age key. They belong only in
-  `~/Library/Application Support/sops/age/keys.txt` (macOS) or
-  `~/.config/sops/age/keys.txt` (Linux), mode 0600.
-- Removing a recipient does not un-leak anything. Rotate the credentials too.
-- Files ending in `.env` are gitignored repo-wide. If a repo has a legitimate
-  non-secret `*.env` (for example generated cluster topology), allow it with an
-  explicit `!` rule in `.gitignore` — deny by default, permit narrowly.
-
-[sops]: https://github.com/getsops/sops
-[age]: https://github.com/FiloSottile/age
+A credential or private identity that appears in source, logs, an issue, a pull
+request, chat, or an artifact is exposed. Remove it from active code and evidence,
+record only the affected provider/path/name, and assign rotation to the credential
+owner. Do not copy the value into another system and do not revoke or rotate a
+shared credential without the owner's explicit authorization.

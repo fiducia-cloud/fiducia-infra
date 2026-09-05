@@ -1,24 +1,26 @@
 # fiducia-infra — task runner. Run `just` to see everything.
 #
-# Environment secrets live in env/enc/*.env.enc, encrypted with sops + age and
-# committed to this repo. See env/README.md for the workflow.
+# Environment secrets live in env/enc/{dev,prod}.env.enc, encrypted with sops +
+# age and committed to this repo. See env/README.md for the workflow.
 
-# Exported assignments are always evaluated by Just, even if lazy evaluation is
-# enabled later. Empty ignored directories do not survive Git, so prepare the
-# owner-only plaintext boundary before parsing or running any recipe.
-export FIDUCIA_ENV_DEC := ```
-  set -eu
-  root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-  command -v ores-sops >/dev/null 2>&1 || { echo "ores-sops is required to create env/dec" >&2; exit 1; }
-  ores-sops ensure-dec >/dev/null
-  printf '%s' "$root/env/dec"
-```
+# Path metadata is safe to export at parse time. Never execute secret tooling in
+# a Just variable assignment: Just evaluates exported assignments while loading
+# every recipe, which made unrelated/keyless commands fail before they started.
+export FIDUCIA_ENV_DEC := justfile_directory() / "env" / "dec"
 
 import '.just/env.just'
 
 # Show available recipes.
 default:
     @just --list
+
+# Canonical keyless policy audit. It validates paths, ignore rules, exact SOPS
+# creation rules, ciphertext shape, file modes, and private-key markers without
+# decrypting a value. CI installs a commit-pinned ores-sops helper before this
+# runs; no age identity is present on pull-request runners.
+[group('env')]
+env-verify:
+    @ores-sops verify
 
 # ─── cloudflare tunnels (localhost testing) ─────────────────────────────────
 #

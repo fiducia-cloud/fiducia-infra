@@ -10,7 +10,7 @@
 #                                            exercise trusted-edge → LB → leader)
 #
 # up.sh discovers each cluster's control-plane container IP on the `kind` network
-# and writes the peer NodePort addresses into the other clusters' topology.env.
+# and writes the peer NodePort addresses into the other clusters' topology.properties.
 apiVersion: v1
 kind: Service
 metadata:

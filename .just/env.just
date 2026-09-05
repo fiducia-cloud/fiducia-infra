@@ -228,7 +228,7 @@ env-check: _env-dec
 
     echo "tracked files:"
     # Dotenv-shaped secrets: `.env`, `.env.<anything>`, and anything under
-    # env/dec/. A file like clusters/x/topology.env is non-secret generated
+    # env/dec/. A file like clusters/x/topology.properties is non-secret generated
     # config, not a dotenv secret — it is allowed via a `!` rule in .gitignore
     # and is covered by the force-add check below instead.
     bad=$(git ls-files -z 2>/dev/null | tr '\0' '\n' \
@@ -241,7 +241,7 @@ env-check: _env-dec
     # rules — the signature of a leaked secret. Scoped to secret-shaped paths on
     # purpose: repos legitimately track a Cargo.lock or an asset that some other
     # rule ignores, and failing on those would just train people to ignore this
-    # check. Negated paths (topology.env) aren't ignored, so they never appear.
+    # check. Negated paths (topology.properties) aren't ignored, so they never appear.
     # --no-index is required: without it check-ignore skips tracked files,
     # which are precisely the ones we are looking for here.
     forced=$(git ls-files -z 2>/dev/null | tr '\0' '\n' \

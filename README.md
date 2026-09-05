@@ -87,7 +87,7 @@ Generated, checked-in outputs (do not hand-edit):
 
 | File | Feeds |
 |------|-------|
-| `clusters/<name>/topology.env` | the `fiducia-cluster` ConfigMap → `FIDUCIA_CLUSTER`, `FIDUCIA_PEERS`, `FIDUCIA_BRAIN_PEERS`, shard count, RF, target nodes |
+| `clusters/<name>/topology.properties` | the `fiducia-cluster` ConfigMap → `FIDUCIA_CLUSTER`, `FIDUCIA_PEERS`, `FIDUCIA_BRAIN_PEERS`, shard count, RF, target nodes |
 | `clusters/<name>/patches.yaml` | per-cluster storage class + node replicas |
 | `generated/edge-regions.json` | `FIDUCIA_REGIONS` for [`fiducia-edge`](https://github.com/fiducia-cloud/fiducia-edge) |
 
@@ -218,7 +218,7 @@ base/                      shared manifests (don't apply directly)
   brain/       StatefulSet (1 member/cluster) + headless service
   load-balance/ Deployment + LoadBalancer service
 clusters/                  per-cluster Kustomize overlays
-  hetzner/ vultr/ civo/    kustomization.yaml + GENERATED topology.env & patches.yaml
+  hetzner/ vultr/ civo/    kustomization.yaml + GENERATED topology.properties & patches.yaml
 generated/edge-regions.json  FIDUCIA_REGIONS for fiducia-edge (generated)
 argocd/                    ApplicationSet fanning out clusters/<name> -> cluster
 kind/                      LOCAL test clusters (no cloud spend)
@@ -455,3 +455,12 @@ Accepted / known risks (reported, deliberately **not** auto-changed):
 ## Related
 
 - [`fiducia-node.rs`](https://github.com/fiducia-cloud/fiducia-node.rs) · [`fiducia-brain.rs`](https://github.com/fiducia-cloud/fiducia-brain.rs) · [`fiducia-load-balance.rs`](https://github.com/fiducia-cloud/fiducia-load-balance.rs) · [`fiducia-routing.rs`](https://github.com/fiducia-cloud/fiducia-routing.rs) · [`fiducia-node-sidecar.rs`](https://github.com/fiducia-cloud/fiducia-node-sidecar.rs) · [`fiducia-edge`](https://github.com/fiducia-cloud/fiducia-edge)
+
+
+## Database isolation tests
+
+Run `npm ci --ignore-scripts && npm test` in [`infra-isolation/`](infra-isolation/README.md)
+for the canonical/auth/admin infrastructure contract and adversarial tests.
+The dedicated GitHub Actions check is offline; live isolation acceptance requires
+fresh provider/AWS evidence and explicitly authorized read-only probes. Missing
+projects, private endpoints, or evidence remain blocked rather than passing.

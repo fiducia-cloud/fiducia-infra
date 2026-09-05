@@ -64,12 +64,12 @@ multicluster networking — Tier 3).
   [up.sh](up.sh) discovers each cluster's control-plane container IP on the `kind`
   network and renders `<ip>:30090` / `<ip>:30095` into the other clusters'
   ConfigMaps without changing the tracked
-  [`topology.env`](hetzner-fsn1/topology.env) templates. Pods reach those IPs
+  [`topology.properties`](hetzner-fsn1/topology.properties) templates. Pods reach those IPs
   across the shared Docker bridge (Kind masquerades pod egress out the node).
 - **Same manifests as prod.** The overlays reuse [`../../base`](../../base) — the
   real `fiducia-node` + `fiducia-brain` StatefulSets — trimmed to the Raft slice
   (LB + otel-agent are `$patch:delete`-d; see [common/kustomization.yaml](common/kustomization.yaml)).
-- **Prod Raft timing.** [`topology.env`](hetzner-fsn1/topology.env) carries the
+- **Prod Raft timing.** [`topology.properties`](hetzner-fsn1/topology.properties) carries the
   `FIDUCIA_RAFT_*` timing (heartbeat 100 ms, election 600 ms) from
   [`../../topology.toml`](../../topology.toml) — the point is to validate *those*
   values under emulated WAN.
