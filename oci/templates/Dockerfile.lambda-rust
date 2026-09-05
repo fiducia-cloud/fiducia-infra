@@ -1,0 +1,23 @@
+# syntax=docker/dockerfile:1.7
+# Build exactly one Lambda architecture per invocation:
+#   PLATFORMS=linux/amd64 DEPLOY_TARGET=lambda ...
+#   PLATFORMS=linux/arm64 DEPLOY_TARGET=lambda ...
+# The selected binary must implement the AWS Lambda Runtime API, for example by
+# using the Rust `lambda_runtime` crate. It is installed as `bootstrap` in the
+# AWS provided.al2023 runtime image.
+
+ARG RUST_VERSION=1.95
+FROM --platform=$TARGETPLATFORM rust:${RUST_VERSION}-bookworm AS build
+ARG BINARY=bootstrap
+WORKDIR /workspace
+COPY . .
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/workspace/target \
+    cargo build --release --locked --bin "${BINARY}" && \
+    install -D -m 0755 "target/release/${BINARY}" /out/bootstrap
+
+FROM --platform=$TARGETPLATFORM public.ecr.aws/lambda/provided:al2023
+COPY --from=build --chmod=0755 /out/bootstrap /var/runtime/bootstrap
+# Preserve the AWS base image entrypoint and supply a conventional handler name.
+CMD ["handler"]
