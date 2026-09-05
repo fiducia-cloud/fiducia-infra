@@ -1,0 +1,22 @@
+{
+  "sourceRepository": "ORESoftware/k8s-cluster-e2e",
+  "sourceCommit": "2b32a59935bbb90fa37974053c0efd4a54f65cc8",
+  "sourcePullRequest": "https://github.com/ORESoftware/k8s-cluster-e2e/pull/9",
+  "files": {
+    ".github/workflows/infra-isolation.yml": "b0eb2e4b1d081b6f505bdd35c94bee0f9317de9dc56ff6b4b0ddce5a1b7cd52b",
+    "infra-isolation/.gitignore": "d6c01c6e3750e79aa08d49fbf43c2153e01a17927a610b04eb871301e1e30243",
+    "infra-isolation/README.md": "87148e42297945e146977a21da4fe5d9caa147dba4d34d7d71bdb26587b39147",
+    "infra-isolation/acceptance.mjs": "66ecbe2c3d6987d5504f5b728c583f448c8f0dd05e6e9f838c5f2a2ce96a7aed",
+    "infra-isolation/checks/fixtures.mjs": "bcf4c48b37b27e18fac52f4b8923260829ca0725374053fe4429ee4d21817e69",
+    "infra-isolation/checks/gates.spec.mjs": "08b99f9027261f775ff6d1f36c2519b79f3a9ce45192cbe3e3bc394e8010ad98",
+    "infra-isolation/checks/network.spec.mjs": "d99adb96da8948b17e28b4b3bf2f3fc5be87e7cb84656b3acd235a516ca8e677",
+    "infra-isolation/checks/policy.spec.mjs": "ccd232f8d5eedddf439ecd8658b9cece433fd309fc3e56f50afbd783ee02bb0e",
+    "infra-isolation/contract.schema.json": "a1cc5bd77fbdc033073abb0cb67b2a7ededcced55dbbeeff1611eacdfdf5e921",
+    "infra-isolation/contract.spec.mjs": "c23a90fb0c6ce98f6d921e97ab257e282dbe1ab78c3de3526fd6bd874f1ac6e0",
+    "infra-isolation/network.mjs": "c0a6a40005e2db5998d98727b6ca32547f15e64caf8fcca3af8884c420ee5684",
+    "infra-isolation/package-lock.json": "0ace6c613ce76b94fa4c0e28ef867837d4e79431ed1de265fd224e828e581b9a",
+    "infra-isolation/package.json": "16dea6b4057928d7fada60ee9f8f82b509cedf7d5700cf7acfa07cc236f8cfd4",
+    "infra-isolation/policy.mjs": "185032b3b6281bd913a584e4564aa21dc82da50fd6bdebd8e036f7b5392bab6d",
+    "infra-isolation/probe.mjs": "6d4b5c4efa79ec36f72a2260872f8b34753c513a798487dbe4a035aabd7fb717"
+  }
+}
