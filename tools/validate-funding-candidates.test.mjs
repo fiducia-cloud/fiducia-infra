@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -32,8 +33,9 @@ test('current snapshot is valid', () => {
 
 test('directory target validates every committed snapshot', () => {
   const result = validateTarget(path.join(ROOT, 'funding'));
-  assert.equal(result.files.length, 1);
-  assert.equal(result.candidates, current.candidates.length);
+  const expectedFiles = snapshotFiles(path.join(ROOT, 'funding'));
+  assert.deepEqual(result.files, expectedFiles);
+  assert.equal(result.candidates, expectedFiles.reduce((total, file) => total + JSON.parse(fs.readFileSync(file, 'utf8')).candidates.length, 0));
 });
 
 test('snapshot discovery rejects empty directories', () => {
@@ -135,4 +137,168 @@ test('requires explicit Alex approval', () => {
 
 test('requires exact public scope', () => {
   rejects((value) => { value.scope = 'Public data.'; }, /exact public non-attestation/);
+});
+
+// DEN-812: all values below are synthetic and assembled, never live secrets.
+test('decoded values are checked even when source JSON uses Unicode escapes', () => {
+  const fixtures = [
+    ['gh' + 'p_' + '1'.repeat(36), /GitHub token/],
+    ['lin' + '_api_' + '1'.repeat(30), /Linear token/],
+    ['cf' + 'at_' + '1'.repeat(30), /Cloudflare token/],
+    ['sk' + '-' + '1'.repeat(24), /OpenAI-style key/],
+    ['xox' + 'b-' + '1'.repeat(24), /Slack token/],
+    ['AK' + 'IA' + '1'.repeat(16), /AWS access key/],
+    ['-'.repeat(5) + 'BEGIN PRIVATE KEY' + '-'.repeat(5), /private key/],
+    ['person@example.com', /email address/],
+  ];
+  for (const [fixture, pattern] of fixtures) {
+    const value = clone();
+    value.candidates[0].evidence = fixture;
+    const escaped = [...fixture].map((char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`).join('');
+    const raw = JSON.stringify(value).replace(fixture, escaped);
+    assert.throws(() => validateSnapshot(JSON.parse(raw), raw), pattern);
+  }
+});
+
+test('rawText cannot substitute for or disable decoded-field checks', () => {
+  const value = clone();
+  value.candidates[0].evidence = 'gh' + 'p_' + '1'.repeat(36);
+  for (const raw of ['', '{}', currentRaw, undefined]) {
+    assert.throws(() => validateSnapshot(value, raw), /GitHub token/);
+  }
+  assert.throws(() => validateSnapshot(current, {}), /rawText must be a string/);
+});
+
+test('standalone case-insensitive mailbox headers fail without any email address', () => {
+  for (const prefix of ['Subject:', 'from:', 'To:', 'CC:', 'Bcc:', 'Message-ID:', 'Return-Path:', 'Received:']) {
+    rejects((value) => { value.candidates[0].evidence = `${prefix} restricted material`; }, /mailbox header/);
+  }
+});
+
+test('every free-text candidate field is scanned after JSON decoding', () => {
+  for (const field of ['name', 'evidence', 'next_action', 'approval_gate']) {
+    const value = clone();
+    value.candidates[0][field] = 'Alex approval: ' + 'cf' + 'at_' + '1'.repeat(30);
+    assert.throws(() => validateSnapshot(value, ''), /Cloudflare token/);
+  }
+});
+
+test('controls, bidirectional markers, zero-width text, and lone surrogates fail closed', () => {
+  for (const control of ['\t', '\b', '\x1b', '\x7f', '\u0085', '\u200b', '\u202e', '\u2028', '\u2066', '\ud800']) {
+    rejects((value) => { value.candidates[0].evidence = `before${control}after`; }, /control or multiline/);
+  }
+});
+
+test('private and reserved DNS names and all IP literal forms are rejected', () => {
+  for (const host of ['localhost.', 'service.local', 'service.internal', 'service.localhost', 'service.home.arpa', 'service.test', 'service.invalid', 'service.onion', '127.0.0.1', '2130706433', '0x7f000001', '[::1]', '[::ffff:127.0.0.1]']) {
+    rejects((value) => { value.candidates[0].official_url = `https://${host}/`; }, /public hostname|IP-literal/);
+  }
+});
+
+test('noncanonical URLs cannot hide port, authority, or parser normalization', () => {
+  for (const url of ['https:example.com', 'https://EXAMPLE.com/', 'https://example.com:443/', 'https://example.com./', 'https://example.com/a/../b', 'https://example.com\\private']) {
+    rejects((value) => { value.candidates[0].official_url = url; }, /canonical HTTPS|public hostname/);
+  }
+});
+
+test('encoded URL paths cannot conceal credentials or controls', () => {
+  const value = clone();
+  const fixture = 'gh' + 'p_' + '1'.repeat(36);
+  value.candidates[0].official_url = 'https://example.com/%2567' + fixture.slice(1);
+  assert.throws(() => validateSnapshot(value), /GitHub token/);
+  value.candidates[0].official_url = 'https://example.com/%0Aprivate';
+  assert.throws(() => validateSnapshot(value), /encoded control/);
+  value.candidates[0].official_url = 'https://example.com/%252525252567';
+  assert.throws(() => validateSnapshot(value), /excessive path encoding/);
+});
+
+test('direct and escaped-equivalent duplicate JSON keys are rejected on ingestion', () => {
+  const raws = [
+    currentRaw.replace('"schema_version": 2', '"schema_version": 1, "schema_version": 2'),
+    currentRaw.replace('"schema_version": 2', '"schema_version": 1, "\\u0073chema_version": 2'),
+    currentRaw.replace('"status": "portal_required"', '"status": "submitted", "status": "portal_required"'),
+  ];
+  for (const raw of raws) {
+    const file = path.join(temporaryDirectory(), 'candidates-2026-08-07.json');
+    fs.writeFileSync(file, raw);
+    assert.throws(() => validateTarget(file), /invalid or ambiguous JSON/);
+  }
+});
+
+test('malformed candidate-looking filenames are not silently ignored', () => {
+  const directory = temporaryDirectory();
+  fs.writeFileSync(path.join(directory, 'candidates-2026-08-07.json'), currentRaw);
+  fs.writeFileSync(path.join(directory, 'candidates-bad.json'), '{}');
+  assert.throws(() => validateTarget(directory), /filename must match/);
+});
+
+test('directory ingestion rejects symlinked snapshots', { skip: process.platform === 'win32' }, () => {
+  const directory = temporaryDirectory();
+  const source = path.join(directory, 'source.json');
+  fs.writeFileSync(source, currentRaw);
+  fs.symlinkSync(source, path.join(directory, 'candidates-2026-08-07.json'));
+  assert.throws(() => validateTarget(directory), /symlinks are forbidden/);
+});
+
+test('two snapshots are counted without a hardcoded single-file assumption', () => {
+  const directory = temporaryDirectory();
+  const next = { ...clone(), verified_on: '2026-08-08' };
+  fs.writeFileSync(path.join(directory, 'candidates-2026-08-08.json'), JSON.stringify(next));
+  fs.writeFileSync(path.join(directory, 'candidates-2026-08-07.json'), currentRaw);
+  const result = validateTarget(directory);
+  assert.deepEqual(result.files.map((file) => path.basename(file)), ['candidates-2026-08-07.json', 'candidates-2026-08-08.json']);
+  assert.equal(result.candidates, 2 * current.candidates.length);
+});
+
+test('oversized and invalid UTF-8 files fail before JSON validation', () => {
+  for (const bytes of [Buffer.alloc(1_000_001, 32), Buffer.from([0xff, 0xfe, 0xff])]) {
+    const file = path.join(temporaryDirectory(), 'candidates-2026-08-07.json');
+    fs.writeFileSync(file, bytes);
+    assert.throws(() => validateTarget(file), /byte limit|UTF-8/);
+  }
+});
+
+test('collection and identity sizes are bounded', () => {
+  rejects((value) => { value.candidates = Array(257).fill(value.candidates[0]); }, /too many candidates/);
+  rejects((value) => { value.candidates[0].categories = Array(17).fill('cloud'); }, /too many categories/);
+  rejects((value) => { value.candidates[0].id = 'a'.repeat(161); }, /exceeds 160/);
+  rejects((value) => { value.candidates[0].categories = ['a'.repeat(65)]; }, /exceeds 64/);
+});
+
+test('validation does not mutate public snapshot data', () => {
+  const value = clone();
+  const before = JSON.stringify(value);
+  const freeze = (item) => {
+    if (item && typeof item === 'object') {
+      Object.values(item).forEach(freeze);
+      Object.freeze(item);
+    }
+    return item;
+  };
+  assert.equal(validateSnapshot(freeze(value)), value);
+  assert.equal(JSON.stringify(value), before);
+});
+
+test('unknown fields and invalid states never appear in validation diagnostics', () => {
+  for (const inject of [
+    (value) => { value.candidates[0].PRIVATE_ONLY_MARKER = true; },
+    (value) => { value.candidates[0].status = 'PRIVATE_ONLY_MARKER'; },
+    (value) => { value.candidates[0].evidence_type = 'PRIVATE_ONLY_MARKER'; },
+  ]) {
+    const value = clone();
+    inject(value);
+    assert.throws(() => validateSnapshot(value), (error) => !error.message.includes('PRIVATE_ONLY_MARKER'));
+  }
+});
+
+test('CLI diagnostics do not echo sensitive JSON keys, fragments, or filenames', () => {
+  const directory = temporaryDirectory();
+  const file = path.join(directory, 'candidates-2026-08-07.json');
+  fs.writeFileSync(file, '{"PRIVATE_ONLY_MARKER":1,"PRIVATE_ONLY_MARKER":2}');
+  const result = spawnSync(process.execPath, [path.join(ROOT, 'tools/validate-funding-candidates.mjs'), file], { encoding: 'utf8' });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /candidate snapshot validation failed/);
+  assert(!result.stderr.includes('PRIVATE_ONLY_MARKER'));
+  assert(!result.stderr.includes(file));
+  assert.equal(result.stdout, '');
 });

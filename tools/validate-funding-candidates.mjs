@@ -3,7 +3,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { isIP } from 'node:net';
+import { parseJsonStrict } from './application-operations.mjs';
 import { pathToFileURL } from 'node:url';
+
+const MAX_SNAPSHOT_BYTES = 1_000_000;
+const MAX_CANDIDATES = 256;
+const UNSAFE_TEXT = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]/u;
+const PRIVATE_SUFFIXES = ['localhost', 'local', 'internal', 'intranet', 'lan', 'home', 'arpa', 'test', 'invalid', 'example', 'onion', 'alt'];
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const SNAPSHOT_FILENAME_PATTERN = /^candidates-(\d{4}-\d{2}-\d{2})\.json$/;
@@ -35,7 +42,7 @@ const FORBIDDEN = [
   ['AWS access key', /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/],
   ['private key', /-----BEGIN [A-Z ]*PRIVATE KEY-----/],
   ['credentialed URL', /https?:\/\/[^\s/@:]+:[^\s/@]+@/],
-  ['mailbox header', /^(?:From|To|Cc|Bcc|Subject|Message-ID|Return-Path|Received):/m],
+  ['mailbox header', /^(?:From|To|Cc|Bcc|Subject|Message-ID|Return-Path|Received):/im],
   ['email address', /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i],
   [
     'secret assignment',
@@ -49,7 +56,13 @@ function assert(condition, message) {
 
 function exactKeys(value, expected, where) {
   const actual = Object.keys(value).sort();
-  assert(JSON.stringify(actual) === JSON.stringify(expected), `${where}: unexpected keys; expected ${expected.join(', ')}, got ${actual.join(', ')}`);
+  assert(JSON.stringify(actual) === JSON.stringify(expected), `${where}: missing or unexpected keys`);
+}
+
+function rejectSensitiveText(value, where) {
+  for (const [name, pattern] of FORBIDDEN) {
+    assert(!pattern.test(value), `${where}: forbidden ${name} material found`);
+  }
 }
 
 function validateDate(value, where) {
@@ -62,27 +75,51 @@ function validateBoundedString(value, where, maxLength) {
   assert(typeof value === 'string', `${where}: expected string`);
   assert(value.trim() === value && value.length > 0, `${where}: expected trimmed non-empty string`);
   assert(value.length <= maxLength, `${where}: exceeds ${maxLength} characters`);
-  assert(!/[\r\n\0]/.test(value), `${where}: control or multiline content is forbidden`);
+  assert(!UNSAFE_TEXT.test(value), `${where}: control or multiline content is forbidden`);
+  // Scan actual decoded field values, never only a caller-supplied JSON string.
+  rejectSensitiveText(value, where);
 }
 
 function validateOfficialUrl(value, where) {
   validateBoundedString(value, where, 512);
-  const url = new URL(value);
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${where}: invalid public URL`);
+  }
   assert(url.protocol === 'https:', `${where}: HTTPS is required`);
   assert(url.username === '' && url.password === '', `${where}: embedded credentials are forbidden`);
   assert(url.search === '' && url.hash === '', `${where}: query strings and fragments are forbidden`);
   assert(url.port === '', `${where}: non-default ports are forbidden`);
-  assert(url.hostname.includes('.') && !url.hostname.endsWith('.local') && url.hostname !== 'localhost', `${where}: public hostname required`);
-  assert(!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(url.hostname), `${where}: IP-literal hosts are forbidden`);
+  const host = url.hostname.replace(/^\[|\]$/g, '');
+  assert(isIP(host) === 0, `${where}: IP-literal hosts are forbidden`);
+  assert(host.includes('.') && !host.endsWith('.'), `${where}: public hostname required`);
+  assert(!PRIVATE_SUFFIXES.some((suffix) => host === suffix || host.endsWith(`.${suffix}`)), `${where}: public hostname required`);
+  assert(value.startsWith('https://') && url.href === value && !value.includes('\\'), `${where}: canonical HTTPS URL required`);
+  // Percent-encoded path values must not conceal credentials or control text.
+  let decodedPath = url.pathname;
+  for (let depth = 0; depth < 4 && /%[0-9a-f]{2}/i.test(decodedPath); depth += 1) {
+    try {
+      decodedPath = decodeURIComponent(decodedPath);
+    } catch {
+      throw new Error(`${where}: invalid path encoding`);
+    }
+    assert(!UNSAFE_TEXT.test(decodedPath), `${where}: encoded control content is forbidden`);
+    rejectSensitiveText(decodedPath, where);
+  }
+  assert(!/%[0-9a-f]{2}/i.test(decodedPath), `${where}: excessive path encoding`);
 }
 
 function validateCategories(categories, where) {
   assert(Array.isArray(categories) && categories.length > 0, `${where}: expected non-empty array`);
+  assert(categories.length <= 16, `${where}: too many categories`);
   const seen = new Set();
   for (let index = 0; index < categories.length; index += 1) {
     const category = categories[index];
+    validateBoundedString(category, `${where}[${index}]`, 64);
     assert(typeof category === 'string' && CATEGORY_PATTERN.test(category), `${where}[${index}]: expected lowercase kebab-case`);
-    assert(!seen.has(category), `${where}: duplicate category ${category}`);
+    assert(!seen.has(category), `${where}: duplicate category`);
     seen.add(category);
   }
   const sorted = [...categories].sort();
@@ -94,18 +131,19 @@ function validateCandidate(candidate, index, ids, names, verifiedOn) {
   assert(candidate && typeof candidate === 'object' && !Array.isArray(candidate), `${where}: expected object`);
   exactKeys(candidate, CANDIDATE_KEYS, where);
 
+  validateBoundedString(candidate.id, `${where}.id`, 160);
   assert(typeof candidate.id === 'string' && ID_PATTERN.test(candidate.id), `${where}.id: expected lowercase kebab-case`);
-  assert(!ids.has(candidate.id), `${where}.id: duplicate id ${candidate.id}`);
+  assert(!ids.has(candidate.id), `${where}.id: duplicate id`);
   ids.add(candidate.id);
 
   validateBoundedString(candidate.name, `${where}.name`, 160);
-  assert(!names.has(candidate.name), `${where}.name: duplicate name ${candidate.name}`);
+  assert(!names.has(candidate.name), `${where}.name: duplicate name`);
   names.add(candidate.name);
 
   validateOfficialUrl(candidate.official_url, `${where}.official_url`);
   validateCategories(candidate.categories, `${where}.categories`);
-  assert(ALLOWED_STATUS.has(candidate.status), `${where}.status: unsupported discovery status ${candidate.status}`);
-  assert(ALLOWED_EVIDENCE_TYPE.has(candidate.evidence_type), `${where}.evidence_type: unsupported evidence type ${candidate.evidence_type}`);
+  assert(ALLOWED_STATUS.has(candidate.status), `${where}.status: unsupported discovery status`);
+  assert(ALLOWED_EVIDENCE_TYPE.has(candidate.evidence_type), `${where}.evidence_type: unsupported evidence type`);
   validateDate(candidate.evidence_observed_on, `${where}.evidence_observed_on`);
   assert(candidate.evidence_observed_on <= verifiedOn, `${where}.evidence_observed_on: cannot be after snapshot verified_on`);
   validateBoundedString(candidate.evidence, `${where}.evidence`, 600);
@@ -114,7 +152,7 @@ function validateCandidate(candidate, index, ids, names, verifiedOn) {
   assert(candidate.approval_gate.includes('Alex approval'), `${where}.approval_gate: must retain explicit Alex approval`);
 }
 
-export function validateSnapshot(snapshot, rawText = JSON.stringify(snapshot)) {
+export function validateSnapshot(snapshot, rawText) {
   assert(snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot), '$: expected object');
   exactKeys(snapshot, TOP_LEVEL_KEYS, '$');
   assert(snapshot.schema_version === 2, '$.schema_version: expected 2');
@@ -122,8 +160,13 @@ export function validateSnapshot(snapshot, rawText = JSON.stringify(snapshot)) {
   assert(snapshot.scope === PUBLIC_SCOPE, '$.scope: exact public non-attestation boundary required');
   assert(Array.isArray(snapshot.candidates) && snapshot.candidates.length > 0, '$.candidates: expected non-empty array');
 
-  for (const [name, pattern] of FORBIDDEN) {
-    assert(!pattern.test(rawText), `$: forbidden ${name} material found`);
+  assert(snapshot.candidates.length <= MAX_CANDIDATES, '$.candidates: too many candidates');
+  // Optional source text is supplementary. Empty or sanitized text cannot bypass
+  // the decoded-field checks below, and callers need not serialize the object.
+  if (rawText !== undefined) {
+    assert(typeof rawText === 'string', '$: rawText must be a string');
+    assert(Buffer.byteLength(rawText, 'utf8') <= MAX_SNAPSHOT_BYTES, '$: snapshot exceeds byte limit');
+    rejectSensitiveText(rawText, '$');
   }
 
   const ids = new Set();
@@ -137,31 +180,32 @@ export function validateSnapshot(snapshot, rawText = JSON.stringify(snapshot)) {
 
 function snapshotDateFromPath(file) {
   const match = path.basename(file).match(SNAPSHOT_FILENAME_PATTERN);
-  assert(match, `${file}: filename must match candidates-YYYY-MM-DD.json`);
+  assert(match, '$snapshot.path: filename must match candidates-YYYY-MM-DD.json');
   return match[1];
 }
 
 function assertRegularSnapshot(file) {
   const stat = fs.lstatSync(file);
-  assert(!stat.isSymbolicLink(), `${file}: snapshot symlinks are forbidden`);
-  assert(stat.isFile(), `${file}: expected regular snapshot file`);
+  assert(!stat.isSymbolicLink(), '$snapshot.path: snapshot symlinks are forbidden');
+  assert(stat.isFile(), '$snapshot.path: expected regular snapshot file');
+  assert(stat.size <= MAX_SNAPSHOT_BYTES, '$snapshot: snapshot exceeds byte limit');
   snapshotDateFromPath(file);
 }
 
 export function snapshotFiles(target = 'funding') {
   const resolved = path.resolve(target);
   const stat = fs.lstatSync(resolved);
-  assert(!stat.isSymbolicLink(), `${target}: symlinks are forbidden`);
+  assert(!stat.isSymbolicLink(), '$snapshot.path: symlinks are forbidden');
   if (stat.isFile()) {
     assertRegularSnapshot(resolved);
     return [resolved];
   }
-  assert(stat.isDirectory(), `${target}: expected file or directory`);
+  assert(stat.isDirectory(), '$snapshot.path: expected file or directory');
   const files = fs.readdirSync(resolved)
-    .filter((name) => SNAPSHOT_FILENAME_PATTERN.test(name))
+    .filter((name) => name.startsWith('candidates-'))
     .sort()
     .map((name) => path.join(resolved, name));
-  assert(files.length > 0, `${target}: no candidate snapshots found`);
+  assert(files.length > 0, '$snapshot.path: no candidate snapshots found');
   files.forEach(assertRegularSnapshot);
   return files;
 }
@@ -170,11 +214,20 @@ export function validateTarget(target = 'funding') {
   const files = snapshotFiles(target);
   let candidates = 0;
   for (const file of files) {
-    const raw = fs.readFileSync(file, 'utf8');
-    const parsed = JSON.parse(raw);
+    const bytes = fs.readFileSync(file);
+    assert(bytes.length <= MAX_SNAPSHOT_BYTES, '$snapshot: snapshot exceeds byte limit');
+    let raw;
+    let parsed;
+    try {
+      raw = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      parsed = parseJsonStrict(raw, 'candidate snapshot');
+    } catch {
+      // Parser diagnostics can contain input keys or fragments. Do not echo them.
+      throw new Error('$snapshot: invalid or ambiguous JSON / UTF-8');
+    }
     validateSnapshot(parsed, raw);
     const filenameDate = snapshotDateFromPath(file);
-    assert(filenameDate === parsed.verified_on, `${file}: filename date ${filenameDate} must match verified_on ${parsed.verified_on}`);
+    assert(filenameDate === parsed.verified_on, '$snapshot.path: filename date must match verified_on');
     candidates += parsed.candidates.length;
   }
   return { files, candidates };
@@ -189,8 +242,9 @@ function main() {
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   try {
     main();
-  } catch (error) {
-    console.error(`ERROR: ${error.message}`);
+  } catch {
+    // Filesystem errors can echo an untrusted path. Keep public CI logs redacted.
+    console.error('ERROR: candidate snapshot validation failed; inspect the input locally');
     process.exitCode = 1;
   }
 }
