@@ -1,0 +1,16 @@
+{
+  "name": "@oresoftware/infra-isolation-tests",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test checks/*.spec.mjs contract.spec.mjs",
+    "test:acceptance": "node acceptance.mjs",
+    "probe": "node probe.mjs"
+  },
+  "dependencies": {
+    "ajv": "8.20.0",
+    "pg": "8.16.3"
+  }
+}
