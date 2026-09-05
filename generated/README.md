@@ -1,3 +1,5 @@
+<!-- generated-policy: frozen -->
+
 # generated — machine-written outputs
 
 Checked-in artifacts produced by `tools/render.mjs` from `topology.toml`. **Do not
@@ -8,3 +10,17 @@ hand-edit** — regenerate with `node tools/render.mjs` and let CI's `--check` c
 
 (Per-cluster generated inputs — `topology.env`, `patches.yaml` — live next to each
 overlay under `clusters/<name>/`, not here.)
+
+## Read-only + runtime contract
+
+<!-- generated-policy: frozen -->
+
+Files in this `generated/` tree are frozen with `chmod a-w` after generation.
+This README stays writable. Git does not persist the write bit; re-run:
+
+```sh
+python3 scripts/check-generated-contract.py --freeze --require-readonly
+```
+
+JSON Schema is a runtime **cross-check** (fixtures must validate; invalid
+fixtures must fail). Compile-time types alone are not the contract.
