@@ -1,0 +1,8 @@
+{
+ "contract":"SharedAuthTopology","version":1,"githubOrg":"fiducia-cloud","integration":"ores-middleware",
+ "supabase":{"runtimeOrg":"oresoftware","targetOrg":"fiducia-cloud","placement":"shared-org-schema","schema":"fiducia_cloud","authDatabaseUrlEnv":"SUPABASE_AUTH_DATABASE_URL","adminDatabaseUrlEnv":"SUPABASE_ADMIN_DATABASE_URL"},
+ "neon":{"runtimeOrg":"fiducia-cloud","targetOrg":"fiducia-cloud","placement":"dedicated-org","authDatabaseUrlEnv":"NEON_AUTH_DATABASE_URL","adminDatabaseUrlEnv":"NEON_ADMIN_DATABASE_URL"},
+ "requestPolicy":{"requireBothProvidersConfigured":true,"customerMode":"strict-paired","adminMode":"strict-paired","sensitiveMode":"strict-paired"},
+ "roles":{"webServer":{"dataPlane":"customer-auth","supabaseDatabaseUrlEnv":"SUPABASE_AUTH_DATABASE_URL","neonDatabaseUrlEnv":"NEON_AUTH_DATABASE_URL"},"apiServer":{"dataPlane":"customer-auth","supabaseDatabaseUrlEnv":"SUPABASE_AUTH_DATABASE_URL","neonDatabaseUrlEnv":"NEON_AUTH_DATABASE_URL"},"adminWebServer":{"dataPlane":"admin-auth","supabaseDatabaseUrlEnv":"SUPABASE_ADMIN_DATABASE_URL","neonDatabaseUrlEnv":"NEON_ADMIN_DATABASE_URL"},"adminApiServer":{"dataPlane":"admin-auth","supabaseDatabaseUrlEnv":"SUPABASE_ADMIN_DATABASE_URL","neonDatabaseUrlEnv":"NEON_ADMIN_DATABASE_URL"}},
+ "auditRepositories":["fiducia-cloud/fiducia-web-server.rs","fiducia-cloud/fiducia-api-server.rs","fiducia-cloud/fiducia-admin-web-server.rs","fiducia-cloud/fiducia-admin-api-server.rs","fiducia-cloud/fiducia-infra"]
+}

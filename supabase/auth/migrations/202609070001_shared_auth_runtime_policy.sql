@@ -1,0 +1,5 @@
+BEGIN;
+CREATE SCHEMA IF NOT EXISTS fiducia_cloud;
+CREATE TABLE IF NOT EXISTS fiducia_cloud.shared_auth_runtime_policy(provider text NOT NULL CHECK(provider IN('supabase','neon')),data_plane text NOT NULL CHECK(data_plane IN('customer-auth','admin-auth')),contract_version integer NOT NULL CHECK(contract_version>0),github_org text NOT NULL,runtime_org text NOT NULL,target_org text NOT NULL,database_url_env text NOT NULL,decision_mode text NOT NULL CHECK(decision_mode IN('availability-first','strict-paired')),server_roles text[] NOT NULL,recorded_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(provider,data_plane,contract_version));
+INSERT INTO fiducia_cloud.shared_auth_runtime_policy(provider,data_plane,contract_version,github_org,runtime_org,target_org,database_url_env,decision_mode,server_roles)VALUES('supabase','customer-auth',1,'fiducia-cloud','oresoftware','fiducia-cloud','SUPABASE_AUTH_DATABASE_URL','strict-paired',ARRAY['web-server','api-server'])ON CONFLICT DO NOTHING;
+COMMIT;
