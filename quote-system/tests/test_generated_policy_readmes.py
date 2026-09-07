@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
 import unittest
 
 
@@ -39,8 +40,22 @@ class GeneratedPolicyReadmeTests(unittest.TestCase):
     def test_ephemeral_contract_projection_is_explicitly_ignored(self) -> None:
         directory = ROOT / "quote-system" / "generated"
         self.assertEqual(self.policy_for(directory), "<!-- generated-policy: ignored -->")
-        rules = set((directory / ".gitignore").read_text(encoding="utf-8").splitlines())
-        self.assertTrue({"*", "!.gitignore", "!README.md"}.issubset(rules))
+        self.assertFalse((directory / ".gitignore").exists())
+
+        root_rules = set((ROOT / ".gitignore").read_text(encoding="utf-8").splitlines())
+        self.assertTrue(
+            {
+                "/quote-system/generated/*",
+                "!/quote-system/generated/README.md",
+            }.issubset(root_rules)
+        )
+
+        tracked = subprocess.check_output(
+            ["git", "ls-files", "--", "quote-system/generated"],
+            cwd=ROOT,
+            text=True,
+        ).splitlines()
+        self.assertEqual(tracked, ["quote-system/generated/README.md"])
 
     def test_rust_manifest_projection_is_frozen_and_parseable(self) -> None:
         directory = ROOT / "quote-system" / "rust" / "generated"
