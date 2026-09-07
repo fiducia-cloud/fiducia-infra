@@ -46,6 +46,12 @@ crash.log
 # repository-local default as a final defense against credential/status leakage.
 /evidence/
 
+# Ephemeral quote-system contract projections remain local. Keep the policy
+# README visible and tracked; ignore contents rather than the directory node so
+# Git can re-include that declaration.
+/quote-system/generated/*
+!/quote-system/generated/README.md
+
 # Scratch / git worktrees (tmp/worktrees/*)
 tmp/
 
