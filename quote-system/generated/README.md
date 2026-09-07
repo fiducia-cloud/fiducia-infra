@@ -1,3 +1,5 @@
+<!-- generated-policy: ignored -->
+
 # Generated contract artifacts
 
 Files created in this directory are derivative build artifacts. **Do not edit them directly.**
