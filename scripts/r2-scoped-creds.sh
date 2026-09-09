@@ -5,9 +5,16 @@ usage() {
   cat <<'EOF'
 Usage: r2-scoped-creds.sh --bucket NAME --permission PERMISSION [--ttl SECONDS] [--prefix PATH]...
 
-Mint short-lived R2 S3 credentials scoped to one bucket. The parent Cloudflare
-API token and R2 access key stay in the trusted caller environment; only the
-temporary credential is emitted.
+Mint short-lived R2 S3 credentials scoped to one Fiducia-owned bucket. The
+parent Cloudflare API token and R2 access key stay in the trusted caller
+environment; only the temporary credential is emitted.
+
+Bucket naming:
+  - Cloudflare R2 names are 3-63 characters using lowercase a-z, 0-9, and '-'.
+  - Names must begin and end with an alphanumeric character.
+  - Fiducia-owned buckets must begin with the reserved 'fiducia-' prefix.
+  - Multiple buckets are supported, including per-customer names such as
+    fiducia-customer-<stable-id>-<purpose>-<environment>.
 
 Required environment:
   CLOUDFLARE_ACCOUNT_ID    Cloudflare account ID
@@ -42,6 +49,33 @@ done
 : "${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN is required}"
 : "${R2_ACCESS_KEY_ID:?R2_ACCESS_KEY_ID is required}"
 [[ -n "$bucket" ]] || { echo "--bucket is required" >&2; exit 2; }
+
+validate_bucket_name() {
+  local candidate=$1
+  local length=${#candidate}
+
+  if (( length < 3 || length > 63 )); then
+    echo "invalid --bucket: R2 bucket names must be 3-63 characters" >&2
+    return 2
+  fi
+
+  if [[ ! "$candidate" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]]; then
+    echo "invalid --bucket: use lowercase letters, numbers, and hyphens; begin/end with alphanumeric" >&2
+    return 2
+  fi
+
+  if [[ "$candidate" != fiducia-* ]]; then
+    echo "invalid --bucket: Fiducia R2 buckets must begin with the reserved fiducia- prefix" >&2
+    return 2
+  fi
+
+  if [[ "$candidate" == "fiducia-" ]]; then
+    echo "invalid --bucket: Fiducia R2 bucket name is missing its purpose/customer suffix" >&2
+    return 2
+  fi
+}
+
+validate_bucket_name "$bucket"
 
 case "$permission" in
   object-read-only|object-read-write|admin-read-only|admin-read-write) ;;

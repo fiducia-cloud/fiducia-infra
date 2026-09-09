@@ -61,12 +61,54 @@ grep -Fq "export AWS_SECRET_ACCESS_KEY=TMP_SECRET" <<<"$output"
 grep -Fq "export AWS_SESSION_TOKEN=TMP_SESSION" <<<"$output"
 grep -Fq "export AWS_ENDPOINT_URL=https://acct-test.r2.cloudflarestorage.com" <<<"$output"
 
-if bash "$repo_root/scripts/r2-scoped-creds.sh" --bucket test --permission root >/dev/null 2>&1; then
+# A single organization may own many buckets, including multiple buckets for
+# one customer and buckets for different customers. The reserved org prefix is
+# the collision boundary; the helper must not collapse those valid names.
+for customer_bucket in \
+  fiducia-customer-acme-audio-prod \
+  fiducia-customer-acme-evidence-prod \
+  fiducia-customer-beta-audio-prod
+do
+  bash "$repo_root/scripts/r2-scoped-creds.sh" \
+    --bucket "$customer_bucket" \
+    --permission object-read-only \
+    --ttl 900 \
+    >/dev/null
+  python3 - "$REQUEST_CAPTURE" "$customer_bucket" <<'PY'
+import json,sys
+with open(sys.argv[1], encoding="utf-8") as fh:
+    request=json.load(fh)
+assert request["bucket"] == sys.argv[2], request
+PY
+done
+
+expect_bucket_rejected() {
+  local candidate=$1
+  if bash "$repo_root/scripts/r2-scoped-creds.sh" \
+    --bucket "$candidate" \
+    --permission object-read-only \
+    --ttl 900 \
+    >/dev/null 2>&1; then
+    echo "invalid or foreign bucket unexpectedly succeeded: $candidate" >&2
+    exit 1
+  fi
+}
+
+# Foreign organization names, provider-invalid syntax, and names outside the
+# Cloudflare 3-63 character bound must fail before any credential request.
+expect_bucket_rejected cliptown-logs-prod
+expect_bucket_rejected Fiducia-logs-prod
+expect_bucket_rejected fiducia_logs_prod
+expect_bucket_rejected fiducia-logs-prod-
+too_long_bucket="fiducia-$(printf 'a%.0s' {1..56})"
+expect_bucket_rejected "$too_long_bucket"
+
+if bash "$repo_root/scripts/r2-scoped-creds.sh" --bucket fiducia-test --permission root >/dev/null 2>&1; then
   echo "invalid permission unexpectedly succeeded" >&2
   exit 1
 fi
 
-if bash "$repo_root/scripts/r2-scoped-creds.sh" --bucket test --permission object-read-only --ttl 604801 >/dev/null 2>&1; then
+if bash "$repo_root/scripts/r2-scoped-creds.sh" --bucket fiducia-test --permission object-read-only --ttl 604801 >/dev/null 2>&1; then
   echo "oversized TTL unexpectedly succeeded" >&2
   exit 1
 fi
