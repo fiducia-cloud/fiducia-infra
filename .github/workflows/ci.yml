@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   topology:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -92,11 +92,13 @@ jobs:
           done
       - name: Validate operator scripts
         run: bash -n scripts/hetzner-e2e-*.sh
+      - name: Validate R2 scoped credential contract
+        run: bash scripts/test-r2-scoped-creds.sh
       # Dependency advisories are a required supply-chain gate.
       - run: npm audit
 
   operator:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -127,7 +129,7 @@ jobs:
   # only format-checked and validated. `terraform validate` needs `terraform init`
   # to fetch provider schemas, which is why this runs with network (GH-hosted).
   terraform:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -152,7 +154,7 @@ jobs:
   # path the fiducia-e2e suite consumes; see docs/e2e.md.
   kind-e2e:
     if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     # No `environment:` gate — the repo defines no deployment environments, so a
     # reference here would be ungated scaffolding. Add `environment: e2e` once a
