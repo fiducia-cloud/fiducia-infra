@@ -25,17 +25,28 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout consumer repository
+        uses: actions/checkout@v4
+      - name: Checkout pinned TJSV source
+        uses: actions/checkout@v4
+        with:
+          repository: ORESoftware/typespec-json-schema-validator
+          ref: 2281843126ab644607b11cf8281d84f382d68dfc
+          path: .tjsv-tool
       - uses: actions/setup-node@v4
         with:
           node-version: '22.14.0'
+          cache: npm
+          cache-dependency-path: .tjsv-tool/package-lock.json
+      - name: Install TJSV locked dependencies
+        run: npm ci --prefix .tjsv-tool
+      - name: Expose pinned TypeSpec toolchain to consumer source
+        run: ln -s .tjsv-tool/node_modules node_modules
       - name: Test effect-free booking planner
         run: node --test tools/interview-booking-policy.test.mjs
       - name: Enforce TypeSpec and JSON Schema peer-authority parity
         run: >-
-          npm exec --yes
-          --package=github:ORESoftware/typespec-json-schema-validator#2281843126ab644607b11cf8281d84f382d68dfc
-          -- tjsv check
+          node .tjsv-tool/bin/typespec-json-schema-validator.mjs check
           --typespec=contracts/interview-booking/main.tsp
           --schema=contracts/interview-booking/authored.schema.json
           --instances=contracts/interview-booking/instances
