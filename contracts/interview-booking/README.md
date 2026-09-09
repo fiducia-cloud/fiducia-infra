@@ -15,13 +15,15 @@ The v1 policy is intentionally narrow: `America/New_York`, a 10:00 through 19:00
 
 ## Validation
 
-The GitHub workflow pins the exact `ORESoftware/typespec-json-schema-validator` source revision instead of consuming an unreviewed moving branch:
+The GitHub workflow follows TJSV's fleet-rollout guidance by checking out the exact TJSV source revision and installing its committed lockfile before validation. The consumer source sees that same pinned TypeSpec toolchain; neither authority is rewritten.
 
 ```sh
+# CI checks out ORESoftware/typespec-json-schema-validator at:
+# 2281843126ab644607b11cf8281d84f382d68dfc
+npm ci --prefix .tjsv-tool
+ln -s .tjsv-tool/node_modules node_modules
 node --test tools/interview-booking-policy.test.mjs
-npm exec --yes \
-  --package=github:ORESoftware/typespec-json-schema-validator#2281843126ab644607b11cf8281d84f382d68dfc \
-  -- tjsv check \
+node .tjsv-tool/bin/typespec-json-schema-validator.mjs check \
   --typespec=contracts/interview-booking/main.tsp \
   --schema=contracts/interview-booking/authored.schema.json \
   --instances=contracts/interview-booking/instances \
@@ -29,4 +31,4 @@ npm exec --yes \
   --quiet
 ```
 
-The generated witness/report directory is local CI evidence and is ignored by Git. Recorded valid and invalid instances under this directory remain source-controlled contract evidence.
+The generated witness/report directory and CI-only tool checkout are reproducible validation evidence rather than contract authorities. Recorded valid and invalid instances under this directory remain source-controlled contract evidence.
