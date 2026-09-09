@@ -1,0 +1,43 @@
+name: interview booking contract
+
+on:
+  pull_request:
+    paths:
+      - 'contracts/interview-booking/**'
+      - 'tools/interview-booking-policy.mjs'
+      - 'tools/interview-booking-policy.test.mjs'
+      - '.github/workflows/interview-booking-contract.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'contracts/interview-booking/**'
+      - 'tools/interview-booking-policy.mjs'
+      - 'tools/interview-booking-policy.test.mjs'
+      - '.github/workflows/interview-booking-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+      - name: Test effect-free booking planner
+        run: node --test tools/interview-booking-policy.test.mjs
+      - name: Enforce TypeSpec and JSON Schema peer-authority parity
+        run: >-
+          npm exec --yes
+          --package=github:ORESoftware/typespec-json-schema-validator#2281843126ab644607b11cf8281d84f382d68dfc
+          -- tjsv check
+          --typespec=contracts/interview-booking/main.tsp
+          --schema=contracts/interview-booking/authored.schema.json
+          --instances=contracts/interview-booking/instances
+          --report=.typespec-json-schema-validator/interview-booking-report.json
+          --quiet
