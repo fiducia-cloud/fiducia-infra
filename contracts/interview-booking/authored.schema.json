@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "fiducia.interview-booking.authored.schema.json",
+  "$defs": {
+    "BookingPolicyVersion": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "BookingPolicyVersion",
+      "type": "string",
+      "enum": ["v1"]
+    },
+    "BookingTimezone": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "BookingTimezone",
+      "type": "string",
+      "enum": ["America/New_York"]
+    },
+    "BookingWindowStart": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "BookingWindowStart",
+      "type": "string",
+      "enum": ["10:00"]
+    },
+    "BookingWindowEnd": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "BookingWindowEnd",
+      "type": "string",
+      "enum": ["19:00"]
+    },
+    "BookingConflictPolicy": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "BookingConflictPolicy",
+      "type": "string",
+      "enum": ["avoid_existing_events"]
+    },
+    "BookingSlotPreference": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "BookingSlotPreference",
+      "type": "string",
+      "enum": ["earliest_available"]
+    },
+    "ExternalSchedulerPolicy": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "ExternalSchedulerPolicy",
+      "type": "string",
+      "enum": ["surface_link_when_unsupported"]
+    },
+    "BookingOpportunityKind": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "BookingOpportunityKind",
+      "type": "string",
+      "enum": ["engineering_job"]
+    },
+    "InterviewBookingPolicy": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "InterviewBookingPolicy",
+      "type": "object",
+      "properties": {
+        "schemaVersion": { "$ref": "BookingPolicyVersion" },
+        "timezone": { "$ref": "BookingTimezone" },
+        "windowStart": { "$ref": "BookingWindowStart" },
+        "windowEnd": { "$ref": "BookingWindowEnd" },
+        "conflictPolicy": { "$ref": "BookingConflictPolicy" },
+        "slotPreference": { "$ref": "BookingSlotPreference" },
+        "externalSchedulerPolicy": { "$ref": "ExternalSchedulerPolicy" },
+        "opportunityKind": { "$ref": "BookingOpportunityKind" },
+        "autoBookWhenSupported": { "type": "boolean" },
+        "actionableNotificationsOnly": { "type": "boolean" }
+      },
+      "required": [
+        "schemaVersion",
+        "timezone",
+        "windowStart",
+        "windowEnd",
+        "conflictPolicy",
+        "slotPreference",
+        "externalSchedulerPolicy",
+        "opportunityKind",
+        "autoBookWhenSupported",
+        "actionableNotificationsOnly"
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}
