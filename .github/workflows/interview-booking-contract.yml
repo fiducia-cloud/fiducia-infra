@@ -33,7 +33,7 @@ jobs:
           repository: ORESoftware/typespec-json-schema-validator
           ref: 2281843126ab644607b11cf8281d84f382d68dfc
           path: .tjsv-tool
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22.14.0'
           cache: npm
