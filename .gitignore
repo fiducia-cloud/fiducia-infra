@@ -52,6 +52,9 @@ crash.log
 /quote-system/generated/*
 !/quote-system/generated/README.md
 
+# TypeSpec/JSON Schema parity witnesses and receipts are reproducible CI evidence.
+.typespec-json-schema-validator/
+
 # Scratch / git worktrees (tmp/worktrees/*)
 tmp/
 

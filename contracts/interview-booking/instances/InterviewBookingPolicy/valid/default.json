@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "v1",
+  "timezone": "America/New_York",
+  "windowStart": "10:00",
+  "windowEnd": "19:00",
+  "conflictPolicy": "avoid_existing_events",
+  "slotPreference": "earliest_available",
+  "externalSchedulerPolicy": "surface_link_when_unsupported",
+  "opportunityKind": "engineering_job",
+  "autoBookWhenSupported": true,
+  "actionableNotificationsOnly": true
+}
