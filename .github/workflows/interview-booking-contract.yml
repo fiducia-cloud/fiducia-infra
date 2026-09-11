@@ -26,9 +26,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout consumer repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Checkout pinned TJSV source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ORESoftware/typespec-json-schema-validator
           ref: 2281843126ab644607b11cf8281d84f382d68dfc
