@@ -1,0 +1,145 @@
+{
+  "schema": "ores.typespec-json-schema-validator.mapping/v1",
+  "declarations": [
+    {
+      "typespec": "Fiducia.CommercialIntake.OpaqueId",
+      "generated": "OpaqueId",
+      "authored": "opaqueId"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.Sha",
+      "generated": "Sha",
+      "authored": "sha256"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.Timestamp",
+      "generated": "Timestamp",
+      "authored": "isoDateTime"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.CurrencyCode",
+      "generated": "CurrencyCode",
+      "authored": "currencyCode"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.EmailAddress",
+      "generated": "EmailAddress",
+      "authored": "email"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.Money",
+      "generated": "Money",
+      "authored": "money"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.Address",
+      "generated": "Address",
+      "authored": "address"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.Contact",
+      "generated": "Contact",
+      "authored": "contact"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.Organization",
+      "generated": "Organization",
+      "authored": "organization"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.NeedSummary",
+      "generated": "NeedSummary",
+      "authored": "needSummary"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.UsageForecast",
+      "generated": "UsageForecast",
+      "authored": "usageForecast"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.TechnicalRequirements",
+      "generated": "TechnicalRequirements",
+      "authored": "technicalRequirements"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.DataSecurityRequirements",
+      "generated": "DataSecurityRequirements",
+      "authored": "dataSecurityRequirements"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.MigrationRequirements",
+      "generated": "MigrationRequirements",
+      "authored": "migrationRequirements"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.CommercialRequirements",
+      "generated": "CommercialRequirements",
+      "authored": "commercialRequirements"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.SupportRequirements",
+      "generated": "SupportRequirements",
+      "authored": "supportRequirements"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.SeverityTarget",
+      "generated": "SeverityTarget",
+      "authored": "severityTarget"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.LegalRequirements",
+      "generated": "LegalRequirements",
+      "authored": "legalRequirements"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.AttachmentReference",
+      "generated": "AttachmentReference",
+      "authored": "attachment"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.ConsentEvidence",
+      "generated": "ConsentEvidence",
+      "authored": "consent"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.PreInterestRequest",
+      "generated": "PreInterestRequest",
+      "authored": "preInterest"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.ApplicationDocument",
+      "generated": "ApplicationDocument",
+      "authored": "application"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.QuoteLineItem",
+      "generated": "QuoteLineItem",
+      "authored": "quoteLineItem"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.ContractReference",
+      "generated": "ContractReference",
+      "authored": "contractReference"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.QuoteDocument",
+      "generated": "QuoteDocument",
+      "authored": "quote"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.Signer",
+      "generated": "Signer",
+      "authored": "signer"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.ContractAcceptanceRequest",
+      "generated": "ContractAcceptanceRequest",
+      "authored": "contractAcceptance"
+    }
+  ],
+  "ignore": {
+    "typespec": [],
+    "generated": [],
+    "authored": []
+  }
+}
