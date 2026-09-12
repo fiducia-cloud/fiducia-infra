@@ -7,14 +7,19 @@
       "authored": "opaqueId"
     },
     {
-      "typespec": "Fiducia.CommercialIntake.Sha",
-      "generated": "Sha",
+      "typespec": "Fiducia.CommercialIntake.Sha256Digest",
+      "generated": "Sha256Digest",
       "authored": "sha256"
     },
     {
       "typespec": "Fiducia.CommercialIntake.Timestamp",
       "generated": "Timestamp",
       "authored": "isoDateTime"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.CountryCode",
+      "generated": "CountryCode",
+      "authored": "countryCode"
     },
     {
       "typespec": "Fiducia.CommercialIntake.CurrencyCode",
@@ -25,6 +30,16 @@
       "typespec": "Fiducia.CommercialIntake.EmailAddress",
       "generated": "EmailAddress",
       "authored": "email"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.NonEmptyText",
+      "generated": "NonEmptyText",
+      "authored": "nonEmptyText"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.BoundedStringArray",
+      "generated": "BoundedStringArray",
+      "authored": "boundedStringArray"
     },
     {
       "typespec": "Fiducia.CommercialIntake.Money",
@@ -112,6 +127,21 @@
       "authored": "application"
     },
     {
+      "typespec": "Fiducia.CommercialIntake.SupportPlanDocument",
+      "generated": "SupportPlanDocument",
+      "authored": "supportPlan"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.CreditTier",
+      "generated": "CreditTier",
+      "authored": "creditTier"
+    },
+    {
+      "typespec": "Fiducia.CommercialIntake.SlaPolicyDocument",
+      "generated": "SlaPolicyDocument",
+      "authored": "slaPolicy"
+    },
+    {
       "typespec": "Fiducia.CommercialIntake.QuoteLineItem",
       "generated": "QuoteLineItem",
       "authored": "quoteLineItem"
@@ -138,8 +168,67 @@
     }
   ],
   "ignore": {
-    "typespec": [],
-    "generated": [],
+    "typespec": [
+      "Fiducia.CommercialIntake.ApplicationStatus",
+      "Fiducia.CommercialIntake.QuoteStatus",
+      "Fiducia.CommercialIntake.PolicyStatus",
+      "Fiducia.CommercialIntake.SupportTier",
+      "Fiducia.CommercialIntake.SupportCoverage",
+      "Fiducia.CommercialIntake.SupportChannel",
+      "Fiducia.CommercialIntake.Severity",
+      "Fiducia.CommercialIntake.ContactChannel",
+      "Fiducia.CommercialIntake.ContactRole",
+      "Fiducia.CommercialIntake.EntityType",
+      "Fiducia.CommercialIntake.EmployeeBand",
+      "Fiducia.CommercialIntake.RevenueBand",
+      "Fiducia.CommercialIntake.Urgency",
+      "Fiducia.CommercialIntake.ProcurementStage",
+      "Fiducia.CommercialIntake.Environment",
+      "Fiducia.CommercialIntake.IdentityProtocol",
+      "Fiducia.CommercialIntake.DeploymentModel",
+      "Fiducia.CommercialIntake.NetworkConnectivity",
+      "Fiducia.CommercialIntake.ClientPlatform",
+      "Fiducia.CommercialIntake.ApiStyle",
+      "Fiducia.CommercialIntake.DataClassification",
+      "Fiducia.CommercialIntake.RegulatedData",
+      "Fiducia.CommercialIntake.SecurityAssessment",
+      "Fiducia.CommercialIntake.CutoverStrategy",
+      "Fiducia.CommercialIntake.BudgetBand",
+      "Fiducia.CommercialIntake.CommercialBillingFrequency",
+      "Fiducia.CommercialIntake.LineBillingFrequency",
+      "Fiducia.CommercialIntake.SignatureMethod",
+      "Fiducia.CommercialIntake.AttachmentPurpose",
+      "Fiducia.CommercialIntake.MalwareScanStatus",
+      "Fiducia.CommercialIntake.MeasurementWindow",
+      "Fiducia.CommercialIntake.LatencyPercentile",
+      "Fiducia.CommercialIntake.QuoteLineCategory",
+      "Fiducia.CommercialIntake.ContractKind",
+      "Fiducia.CommercialIntake.BoundedString",
+      "Fiducia.CommercialIntake.Hostname",
+      "Fiducia.CommercialIntake.IdempotencyKey",
+      "Fiducia.CommercialIntake.PreInterestReceipt",
+      "Fiducia.CommercialIntake.ApplicationPatch",
+      "Fiducia.CommercialIntake.ApiError",
+      "Fiducia.CommercialIntake.FieldError",
+      "Fiducia.CommercialIntake.NoContentResponse",
+      "Fiducia.CommercialIntake.ErrorResponse",
+      "Fiducia.CommercialIntake.AdminTransitionRequest",
+      "Fiducia.CommercialIntake.CreatedResponse",
+      "Fiducia.CommercialIntake.OkResponse",
+      "Fiducia.CommercialIntake.AcceptedResponse"
+    ],
+    "generated": [
+      "BoundedString",
+      "Hostname",
+      "IdempotencyKey",
+      "PreInterestReceipt",
+      "ApplicationPatch",
+      "ApiError",
+      "FieldError",
+      "NoContentResponse",
+      "ErrorResponse",
+      "AdminTransitionRequest"
+    ],
     "authored": []
   }
 }
