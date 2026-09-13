@@ -56,7 +56,7 @@ jobs:
           test -f node_modules/@typespec/rest/package.json
 
       - name: Compare independent TypeSpec and JSON Schema authorities
-        uses: ORESoftware/typespec-json-schema-validator@f781e4493747f426d3ce56451fb02b57996ab7d1
+        uses: ORESoftware/typespec-json-schema-validator@3f3433cbe1b5de168b50cf525660ab44d2f71c3c
         with:
           typespec: quote-system/contracts/main.tsp
           schema: quote-system/contracts/commercial-intake.schema.json
