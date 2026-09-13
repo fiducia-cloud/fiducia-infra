@@ -7,6 +7,18 @@ The Fiducia quote and pre-interest boundary intentionally keeps two independent 
 
 Neither source is generated from the other. This prevents one compiler path from masking a mistake in the other. Build-time generation produces reviewable evidence from both sources and stops on discrepancies.
 
+## Naming and peer-authority policy
+
+Serialized contract properties use `snake_case` by default. This is the common boundary convention for JSON wire fields, SQL/Postgres/CockroachDB columns, Rust fields, generated TypeScript properties, TypeSpec properties, and independently authored JSON Schema properties unless an established external wire contract requires another spelling.
+
+Nominal declarations and language-local type names may remain idiomatic for their language or generator, for example `CommercialApplication`, `ProviderIdentity`, or a Rust `CommercialApplication` struct. The naming rule applies to serialized property names and persisted columns, not to every identifier in every source language.
+
+Reserved words and language restrictions are handled with source-language escaping or an explicit wire-name alias. Escaping must preserve the established serialized name; it must not silently create a second spelling on the wire. Compatibility with an already-published external field name takes precedence over cosmetic renaming.
+
+TypeSpec and the independently authored Draft 2020-12 JSON Schema remain peer authorities. TypeSpec-derived Schema B is comparison evidence only: it must never overwrite or regenerate the authored JSON Schema authority. Likewise, the authored JSON Schema must not be used to rewrite TypeSpec merely to make a parity counter reach zero. Differences are reconciled semantically and intentionally at the source-authority level.
+
+The parity gate may canonicalize only representation differences whose semantic equivalence is proven. Runtime/executable schemas remain unchanged by comparison-only canonicalization. Unresolved references, ambiguous resource scope, unsupported dialect/vocabulary, or any difference whose equivalence is not proven remain fail-closed and visible in the receipt.
+
 ## Commands
 
 Run from `quote-system/` with Node 22:
