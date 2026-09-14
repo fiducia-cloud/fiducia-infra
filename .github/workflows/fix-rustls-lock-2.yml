@@ -1,0 +1,57 @@
+name: Resolve rustls security lock update 2
+
+on:
+  push:
+    branches:
+      - infra/modules-provider-sync
+    paths:
+      - .github/workflows/fix-rustls-lock-2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  resolve-lock:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out current PR branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: infra/modules-provider-sync
+          fetch-depth: 0
+
+      - name: Install Rust 1.96.0
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.96.0
+          components: rustfmt, clippy
+
+      - name: Resolve patched rustls
+        working-directory: operator
+        run: |
+          set -euo pipefail
+          cargo update -p rustls --precise 0.23.45
+          awk '
+            $0 == "name = \"rustls\"" { in_rustls=1; next }
+            in_rustls && /^version = / { print; exit }
+          ' Cargo.lock | grep -Fx 'version = "0.23.45"'
+
+      - name: Verify generated lock
+        working-directory: operator
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --all-targets --locked
+          cargo run --quiet --locked --bin crdgen | diff -u config/crd.yaml -
+
+      - name: Commit generated lockfile
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -n "$(git status --porcelain -- operator/Cargo.lock)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add operator/Cargo.lock
+          git commit -m "fix(operator): update rustls for RUSTSEC-2026-0285"
+          git push origin HEAD:infra/modules-provider-sync
