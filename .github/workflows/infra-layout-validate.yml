@@ -1,0 +1,36 @@
+name: infra-layout-validate
+on:
+  pull_request:
+    paths: [".ores-infra.toml", "modules/**", "environments/**", ".github/workflows/infra-layout-validate.yml"]
+  push:
+    branches: [main]
+    paths: [".ores-infra.toml", "modules/**", "environments/**"]
+permissions: { contents: read }
+concurrency: { group: "infra-layout-${{ github.workflow }}-${{ github.ref }}", cancel-in-progress: true }
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    strategy: { fail-fast: false, matrix: { environment: [preview, staging, production] } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: 1.16.2 }
+      - run: terraform fmt -check -recursive modules/cloudflare/terraform
+      - run: terraform fmt -check -recursive "environments/${{ matrix.environment }}"
+      - working-directory: environments/${{ matrix.environment }}
+        run: terraform init -backend=false -input=false
+      - working-directory: environments/${{ matrix.environment }}
+        run: terraform validate -no-color
+  cloudflare-worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - shell: bash
+        run: |
+          if [[ ! -f modules/cloudflare/durable-coordinator/package.json ]]; then exit 0; fi
+          cd modules/cloudflare/durable-coordinator
+          node --check worker.mjs
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run check

@@ -1,0 +1,1 @@
+{"name":"@fiducia-cloud/durable-coordinator","private":true,"version":"0.0.0","type":"module","scripts":{"check":"node --check worker.mjs && wrangler deploy --dry-run --env preview","deploy:preview":"wrangler deploy --env preview","deploy:staging":"wrangler deploy --env staging","deploy:production":"wrangler deploy --env production"},"devDependencies":{"wrangler":"4.131.1"}}
