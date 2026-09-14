@@ -29,8 +29,8 @@ variable "cloudflare_root_directories" {
 
 locals {
   provider_sync = {
-    supabase_working_directory = "modules"
-    neon_working_directory     = "modules/neon"
+    supabase_working_directory  = "modules"
+    neon_working_directory      = "modules/neon"
     cloudflare_root_directories = var.cloudflare_root_directories
   }
   tags = {
@@ -41,5 +41,10 @@ locals {
   }
 }
 
-output "provider_sync" { value = local.provider_sync }
-output "tags" { value = local.tags }
+output "provider_sync" {
+  value = local.provider_sync
+}
+
+output "tags" {
+  value = local.tags
+}
