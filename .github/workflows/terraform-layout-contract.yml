@@ -1,0 +1,40 @@
+name: Terraform layout contract
+
+on:
+  pull_request:
+    paths:
+      - '**/*.tf'
+      - '**/*.tfvars'
+      - '.ores-infra.toml'
+      - 'TERRAFORM_LAYOUT.md'
+      - '.github/workflows/terraform-layout-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - '**/*.tf'
+      - '**/*.tfvars'
+      - '.ores-infra.toml'
+      - 'TERRAFORM_LAYOUT.md'
+      - '.github/workflows/terraform-layout-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  layout-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Terraform root/child-module contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f .ores-infra.toml
+          grep -Eq '^modules_dir[[:space:]]*=[[:space:]]*"modules"[[:space:]]*$' .ores-infra.toml
+          grep -Eq '^environments_dir[[:space:]]*=[[:space:]]*"environments"[[:space:]]*$' .ores-infra.toml
+          if [ -e modules ] && [ ! -d modules ]; then echo 'modules must be a directory' >&2; exit 1; fi
+          if [ -e environments ] && [ ! -d environments ]; then echo 'environments must be a directory' >&2; exit 1; fi
+          if [ -d modules ] && grep -R -n -E '^[[:space:]]*backend[[:space:]]+"' modules --include='*.tf'; then echo 'Terraform backend blocks are forbidden in child modules.' >&2; exit 1; fi
+          if [ -d modules ] && find modules -type f \( -name '*.tfvars' -o -name '*.tfstate' -o -name '*.tfstate.*' \) -print -quit | grep -q .; then echo 'Environment values/state must not live in reusable child modules.' >&2; exit 1; fi
+          if git ls-files | grep -E '(^|/)\.terraform/|\.tfstate($|\.)' >/dev/null; then echo 'Terraform state or .terraform data is committed.' >&2; exit 1; fi
+          echo 'Terraform layout contract satisfied.'

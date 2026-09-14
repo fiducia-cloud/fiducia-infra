@@ -1,0 +1,23 @@
+schema_version = 1
+contract = "provider-sync-adapters-v1"
+
+[layout]
+modules_dir = "modules"
+environments_dir = "environments"
+
+[providers.supabase]
+working_directory = "."
+native_directory = "supabase"
+native_config = "supabase/config.toml"
+module_directory = "modules/supabase"
+
+[providers.cloudflare]
+root_directory_strategy = "directory-containing-wrangler-config"
+native_config_names = ["wrangler.jsonc", "wrangler.json", "wrangler.toml"]
+root_candidates = ["cloudflare", "workers", "."]
+module_directory = "modules/cloudflare"
+
+[providers.neon]
+working_directory = "."
+native_config = "neon.ts"
+module_directory = "modules/neon"
