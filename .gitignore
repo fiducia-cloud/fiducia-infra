@@ -1,35 +1,13 @@
 *.log
 .DS_Store
-
-# --- environment / secrets (ores-sops + age) -------------------------------
-# Plaintext dotenv is local-only at every depth, including common suffixes.
-*.env
-*/*.env
-*/**/*.env
+.env
 .env.*
-*.env.*
 !.env.example
-
-# Decrypted material is runtime-only.
-/env/dec/
-
-# Deny every encrypted environment path, then permit only the two canonical
-# version-controlled stores. This prevents one-off/misspelled env names from
-# becoming an unaudited configuration authority.
-/env/enc/*
-!/env/enc/dev.env.enc
-!/env/enc/prod.env.enc
-
-# age private keys — never commit these.
-*.agekey
-*.age-key
-keys.txt
-sops-private*.txt
-
 # rendered output / local secrets — never commit
 rendered/
 *.local.yaml
 secrets/
+.env
 
 # Terraform plans/state and local variable files can contain provider credentials,
 # join tokens, and infrastructure identifiers. Provider lock files stay tracked.
@@ -46,21 +24,8 @@ crash.log
 # repository-local default as a final defense against credential/status leakage.
 /evidence/
 
-# Ephemeral quote-system contract projections remain local. Keep the policy
-# README visible and tracked; ignore contents rather than the directory node so
-# Git can re-include that declaration.
-/quote-system/generated/*
-!/quote-system/generated/README.md
-
-# TypeSpec/JSON Schema parity witnesses and receipts are reproducible CI evidence.
-.typespec-json-schema-validator/
-
 # Scratch / git worktrees (tmp/worktrees/*)
 tmp/
-
-# Generated Python bytecode is never source or review evidence.
-__pycache__/
-*.py[cod]
 
 # --- hardened baseline (auto) ---
 Thumbs.db
@@ -82,10 +47,3 @@ tmp
 temp
 tmp/worktrees
 temp/worktrees
-
-# Sanctioned scratch locations - AGENTS.md requires both, trailing-slash form
-temp/
-# ores-sops dotenv hardening: plaintext dotenv is local-only at every depth;
-# only env/enc/*.env.enc (sops ciphertext) is tracked. See env/README.md.
-**/**/*.env
-env/dec

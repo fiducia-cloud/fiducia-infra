@@ -1,22 +1,14 @@
-# Dependabot: weekly automated dependency-update PRs for application packages,
-# GitHub Actions, containers, and the Rust operator.
+# Dependabot: weekly automated dependency-update PRs for npm packages and GitHub Actions.
 version: 2
 updates:
   - package-ecosystem: npm
     directory: "/"
     schedule:
       interval: weekly
-
-  - package-ecosystem: cargo
-    directory: "/operator"
-    schedule:
-      interval: weekly
-
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
-
   - package-ecosystem: docker
     directory: "/"
     schedule:

@@ -1,7 +1,0 @@
-node_modules/
-evidence/
-*.local.json
-*.log
-.env
-.env.*
-*.env

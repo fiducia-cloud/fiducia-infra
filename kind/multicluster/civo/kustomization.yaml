@@ -8,6 +8,6 @@ resources:
 configMapGenerator:
   - name: fiducia-cluster
     envs:
-      - topology.properties
+      - topology.env
 generatorOptions:
   disableNameSuffixHash: true
