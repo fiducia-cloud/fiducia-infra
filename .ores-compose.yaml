@@ -1,24 +1,11 @@
 schema_version: ores.compose.v1
 project: fiducia-cloud
 allow_lazy_start: false
+# Requires ORESoftware/ores-compose#156. Configure ORES_LOCAL_OBJECT_ACCESS_KEY,
+# ORES_LOCAL_OBJECT_SECRET_KEY and ORES_LOCAL_MC_HOST in project-root .env.
 services:
-  redis:
-    runtime: host
-    build: [["mkdir", "-p", "tmp/redis"]]
-    command: ["redis-server", "--bind", "127.0.0.1", "--port", "6379", "--appendonly", "yes", "--dir", "tmp/redis"]
-    healthcheck: { command: ["redis-cli", "-h", "127.0.0.1", "-p", "6379", "ping"], interval_ms: 1000, timeout_ms: 500, retries: 20 }
-  nats:
-    runtime: host
-    build: [["mkdir", "-p", "tmp/nats"]]
-    command: ["nats-server", "-js", "-sd", "tmp/nats", "-a", "127.0.0.1", "-p", "4222", "-m", "8222"]
-    healthcheck: { command: ["curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8222/healthz"], interval_ms: 1000, timeout_ms: 500, retries: 20 }
-  s3-local:
-    runtime: host
-    build: [["mkdir", "-p", "tmp/minio-s3"]]
-    command: ["minio", "server", "tmp/minio-s3", "--address", "127.0.0.1:9000", "--console-address", "127.0.0.1:9001"]
-    healthcheck: { command: ["curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:9000/minio/health/live"], interval_ms: 1000, timeout_ms: 500, retries: 20 }
-  r2-local:
-    runtime: host
-    build: [["mkdir", "-p", "tmp/minio-r2"]]
-    command: ["minio", "server", "tmp/minio-r2", "--address", "127.0.0.1:9100", "--console-address", "127.0.0.1:9101"]
-    healthcheck: { command: ["curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:9100/minio/health/live"], interval_ms: 1000, timeout_ms: 500, retries: 20 }
+  redis: { runtime: auto, image: "redis:7.4.11-alpine", command: ["redis-server", "--appendonly", "yes"], ports: [{ host: 127.0.0.1, published: 6379, target: 6379 }], mounts: [{ type: volume, source: ores-redis-data, target: /data }] }
+  nats: { runtime: auto, image: "nats:2.15.0-alpine", command: ["-js", "-sd", "/data", "-m", "8222"], ports: [{ host: 127.0.0.1, published: 4222, target: 4222 }, { host: 127.0.0.1, published: 8222, target: 8222 }], mounts: [{ type: volume, source: ores-nats-data, target: /data }] }
+  object-store: { runtime: auto, image: "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z", command: ["server", "/data", "--address", ":9000"], environment: { MINIO_ROOT_USER: { from_env: ORES_LOCAL_OBJECT_ACCESS_KEY } }, secrets: { MINIO_ROOT_PASSWORD: { from_env: ORES_LOCAL_OBJECT_SECRET_KEY } }, ports: [{ host: 127.0.0.1, published: 9000, target: 9000 }], mounts: [{ type: volume, source: ores-object-store-data, target: /data }] }
+  storage-ready: { runtime: auto, image: "minio/mc:RELEASE.2025-08-13T08-35-41Z", lifecycle: one-shot, depends_on: [object-store], secrets: { MC_HOST_local: { from_env: ORES_LOCAL_MC_HOST } }, command: ["ready", "local"] }
+  storage-init: { runtime: auto, image: "minio/mc:RELEASE.2025-08-13T08-35-41Z", lifecycle: one-shot, depends_on: [storage-ready], secrets: { MC_HOST_local: { from_env: ORES_LOCAL_MC_HOST } }, command: ["mb", "--ignore-existing", "local/s3-local-dummy", "local/r2-local-dummy"] }
