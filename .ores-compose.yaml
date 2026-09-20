@@ -1,6 +1,11 @@
 schema_version: ores.compose.v1
+# ores-compose-nano-id: eM6I-8ZQ0XpvCPyTvlk_E
 project: fiducia-cloud
 allow_lazy_start: false
+source:
+  repository: https://github.com/fiducia-cloud/fiducia-monorepo.git
+  commit: 4fff6e6733e08d36134133691fae7bd97447fbfc
+  checkout_dir: .ores/sources/fiducia-monorepo
 # Requires ORESoftware/ores-compose#156. Configure ORES_LOCAL_OBJECT_ACCESS_KEY,
 # ORES_LOCAL_OBJECT_SECRET_KEY and ORES_LOCAL_MC_HOST in project-root .env.
 services:
