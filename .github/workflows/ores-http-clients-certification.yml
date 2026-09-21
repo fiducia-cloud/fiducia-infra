@@ -1,0 +1,92 @@
+name: ores-http-clients certification
+
+on:
+  push:
+    branches: [ci/ores-http-clients-certification]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ORESoftware/ores-http-clients
+          ref: audit/harden-representations
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - working-directory: source/src/ts
+        run: npm install --no-audit --no-fund
+      - working-directory: source/src/ts
+        run: npm test
+
+  dart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ORESoftware/ores-http-clients
+          ref: audit/harden-representations
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: source
+          persist-credentials: false
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - working-directory: source/src/dart
+        run: dart pub get
+      - working-directory: source/src/dart
+        run: dart analyze --fatal-infos
+      - working-directory: source/src/dart
+        run: dart test
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ORESoftware/ores-http-clients
+          ref: audit/harden-representations
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: source
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt,clippy
+      - working-directory: source/src/rust
+        run: cargo fmt --all -- --check
+      - working-directory: source/src/rust
+        run: cargo test --all-targets
+      - working-directory: source/src/rust
+        run: cargo test --all-targets --features rxrust-support
+      - working-directory: source/src/rust
+        run: cargo clippy --all-targets --features rxrust-support -- -D warnings
+
+  contract-shape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ORESoftware/ores-http-clients
+          ref: audit/harden-representations
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: source
+          persist-credentials: false
+      - run: |
+          set -euo pipefail
+          test -f source/src/ts/src/websockets.ts
+          test -f source/src/dart/lib/src/websocket_hub.dart
+          test -f source/src/rust/src/websocket_hub.rs
+          test -f source/.contracts/runtime-config.schema.json
+          test -f source/.contracts/runtime-config.tsp
+          grep -q 'supabase' source/src/ts/src/websockets.ts
+          grep -q 'supabase' source/src/dart/lib/src/websocket_hub.dart
+          grep -q 'supabase' source/src/rust/src/websocket_hub.rs
