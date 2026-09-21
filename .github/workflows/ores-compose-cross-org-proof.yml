@@ -1,0 +1,195 @@
+name: ores-compose-cross-org-proof
+
+on:
+  push:
+    branches:
+      - proof/ores-compose-cross-org
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prove:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      ORES_COMPOSE_SHA: aa0a2c758ac8ea3444534ddc3b72a0d68de6c8f1
+    steps:
+      - name: Checkout proof repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Admit private-source credential
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${ORE_SOURCE_PAT:-}" ]]; then
+            echo 'ORE_SOURCE_PAT is not configured for this *-infra repository' >&2
+            exit 2
+          fi
+          echo 'private source credential is configured'
+
+      - name: Checkout exact private ores-compose revision
+        uses: actions/checkout@v4
+        with:
+          repository: ORESoftware/ores-compose
+          ref: aa0a2c758ac8ea3444534ddc3b72a0d68de6c8f1
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: _proof/ores-compose
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify source provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git -C _proof/ores-compose rev-parse HEAD)"
+          test "$actual" = "$ORES_COMPOSE_SHA"
+          printf 'upstream_repository=ORESoftware/ores-compose\nupstream_commit=%s\n' "$actual" | tee _proof/provenance.txt
+
+      - name: Build exact ores-compose binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked --release --manifest-path _proof/ores-compose/Cargo.toml --bin ores-compose
+          install -m 0755 _proof/ores-compose/target/release/ores-compose _proof/ores-compose.bin
+          sha256sum _proof/ores-compose.bin | tee _proof/ores-compose.sha256
+
+      - name: Create isolated compose proof fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          proof_root="$(mktemp -d /tmp/ores-compose-proof.XXXXXX)"
+          echo "$proof_root" > _proof/proof-root.txt
+          cat > "$proof_root/.ores-compose.yaml" <<'YAML'
+          schema_version: ores.compose.v1
+          project: cross-org-proof
+          allow_lazy_start: false
+          services:
+            alpha:
+              runtime: host
+              command: ["python3", "-m", "http.server", "18081", "--bind", "127.0.0.1"]
+              healthcheck:
+                command: ["curl", "--fail", "--silent", "http://127.0.0.1:18081/"]
+                interval_ms: 250
+                timeout_ms: 1000
+                retries: 20
+            beta:
+              runtime: host
+              command: ["python3", "-m", "http.server", "18082", "--bind", "127.0.0.1"]
+              depends_on: [alpha]
+              healthcheck:
+                command: ["curl", "--fail", "--silent", "http://127.0.0.1:18082/"]
+                interval_ms: 250
+                timeout_ms: 1000
+                retries: 20
+          YAML
+
+      - name: Prove check and deterministic plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$GITHUB_WORKSPACE/_proof/ores-compose.bin"
+          ROOT="$(cat _proof/proof-root.txt)"
+          "$BIN" check "$ROOT/.ores-compose.yaml" | tee _proof/check.log
+          "$BIN" plan "$ROOT/.ores-compose.yaml" | tee _proof/plan.log
+          grep -F 'wave 0: [alpha]' _proof/plan.log
+          grep -F 'wave 1: [beta]' _proof/plan.log
+
+      - name: Prove real up, duplicate admission, and down
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$GITHUB_WORKSPACE/_proof/ores-compose.bin"
+          ROOT="$(cat _proof/proof-root.txt)"
+          CFG="$ROOT/.ores-compose.yaml"
+          cleanup() {
+            "$BIN" down "$CFG" --shutdown-timeout-ms 3000 >/dev/null 2>&1 || true
+            if [[ -f _proof/up.pid ]]; then
+              kill "$(cat _proof/up.pid)" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup EXIT
+
+          "$BIN" up "$CFG" \
+            --skip-zed-pkg \
+            --skip-rpc-gen \
+            --skip-source-sync \
+            >_proof/up.log 2>&1 &
+          echo $! > _proof/up.pid
+
+          for _ in $(seq 1 80); do
+            if curl --fail --silent http://127.0.0.1:18081/ >/dev/null \
+              && curl --fail --silent http://127.0.0.1:18082/ >/dev/null; then
+              break
+            fi
+            if ! kill -0 "$(cat _proof/up.pid)" 2>/dev/null; then
+              cat _proof/up.log >&2
+              exit 3
+            fi
+            sleep 0.25
+          done
+          curl --fail --silent http://127.0.0.1:18081/ >/dev/null
+          curl --fail --silent http://127.0.0.1:18082/ >/dev/null
+          echo 'both dependency-wave services are live' | tee _proof/live.log
+
+          set +e
+          timeout 8s "$BIN" up "$CFG" \
+            --skip-zed-pkg \
+            --skip-rpc-gen \
+            --skip-source-sync \
+            >_proof/duplicate-up.log 2>&1
+          duplicate_status=$?
+          set -e
+          if [[ $duplicate_status -eq 0 || $duplicate_status -eq 124 ]]; then
+            echo "duplicate up did not fail closed; status=$duplicate_status" >&2
+            cat _proof/duplicate-up.log >&2
+            exit 4
+          fi
+          echo "duplicate up rejected with status=$duplicate_status" | tee -a _proof/duplicate-up.log
+
+          "$BIN" down "$CFG" --shutdown-timeout-ms 3000 | tee _proof/down.log
+          for _ in $(seq 1 40); do
+            if ! kill -0 "$(cat _proof/up.pid)" 2>/dev/null; then
+              break
+            fi
+            sleep 0.25
+          done
+          if kill -0 "$(cat _proof/up.pid)" 2>/dev/null; then
+            echo 'ores-compose up supervisor remained alive after down' >&2
+            cat _proof/up.log >&2
+            exit 5
+          fi
+          if curl --fail --silent --max-time 1 http://127.0.0.1:18081/ >/dev/null 2>&1; then
+            echo 'alpha still reachable after down' >&2
+            exit 6
+          fi
+          if curl --fail --silent --max-time 1 http://127.0.0.1:18082/ >/dev/null 2>&1; then
+            echo 'beta still reachable after down' >&2
+            exit 7
+          fi
+          trap - EXIT
+          echo 'real ores-compose lifecycle proof passed' | tee _proof/result.txt
+
+      - name: Upload proof artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ores-compose-cross-org-proof-${{ github.sha }}
+          path: |
+            _proof/ores-compose.bin
+            _proof/ores-compose.sha256
+            _proof/provenance.txt
+            _proof/check.log
+            _proof/plan.log
+            _proof/up.log
+            _proof/duplicate-up.log
+            _proof/down.log
+            _proof/live.log
+            _proof/result.txt
+          if-no-files-found: warn
+          retention-days: 7
