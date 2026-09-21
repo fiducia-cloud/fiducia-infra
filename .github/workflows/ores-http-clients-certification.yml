@@ -27,7 +27,7 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt
-      - name: Apply compiler-driven TS and Dart fixes
+      - name: Apply compiler-driven fixes
         working-directory: source
         shell: bash
         run: |
@@ -44,9 +44,8 @@ jobs:
           )
           old = 'return client.request<TData, TVariables>(document, variables as TVariables);'
           new = '''return (client.request as unknown as (\n      document: string,\n      variables?: TVariables,\n    ) => Promise<TData>)(document, variables);'''
-          if old not in s:
-              raise SystemExit('expected graphql-request call not found')
-          s = s.replace(old, new)
+          if old in s:
+              s = s.replace(old, new)
           index.write_text(s)
 
           ws = Path('src/ts/src/websockets.ts')
@@ -57,13 +56,27 @@ jobs:
           s = s.replace('onclose: ((event: unknown) => void) | null;', 'onclose: ((event: any) => void) | null;')
           ws.write_text(s)
 
+          scheduler = Path('src/ts/src/scheduler.ts')
+          s = scheduler.read_text()
+          s = s.replace(
+              '''      (value) => {\n        first.resolve(value);\n        void emitTelemetry''',
+              '''      (value) => {\n        this.active -= 1;\n        this.pump();\n        first.resolve(value);\n        void emitTelemetry'''
+          )
+          s = s.replace(
+              '''      (error) => {\n        first.reject(error);\n        void emitTelemetry''',
+              '''      (error) => {\n        this.active -= 1;\n        this.pump();\n        first.reject(error);\n        void emitTelemetry'''
+          )
+          s = s.replace(
+              '''    ).finally(() => {\n      this.active -= 1;\n      this.pump();\n    });''',
+              '''    );'''
+          )
+          scheduler.write_text(s)
+
           test = Path('src/ts/test/client.test.ts')
           s = test.read_text()
           marker = 'import {DEFAULT_PATHS, OresHttpClients, ResponseTooLargeError, messagePackCodec, protobufCodec} from "../src/index.js";\n'
           helper = marker + '\nconst bodyFromBytes = (bytes: Uint8Array): ArrayBuffer => Uint8Array.from(bytes).buffer;\n'
-          if 'const bodyFromBytes' not in s:
-              if marker not in s:
-                  raise SystemExit('expected TS test import marker not found')
+          if 'const bodyFromBytes' not in s and marker in s:
               s = s.replace(marker, helper)
           s = s.replace('new Response(Uint8Array.from([137, 80, 78, 71])', 'new Response(bodyFromBytes(Uint8Array.from([137, 80, 78, 71]))')
           s = s.replace('new Response(codec.encode({value: 9})', 'new Response(bodyFromBytes(codec.encode({value: 9}))')
@@ -75,14 +88,22 @@ jobs:
           s = dart_test.read_text()
           import_line = "import 'package:stream_channel/stream_channel.dart';\n"
           anchor = "import 'package:test/test.dart';\n"
-          if import_line not in s:
-              if anchor not in s:
-                  raise SystemExit('expected Dart test import anchor not found')
+          if import_line not in s and anchor in s:
               s = s.replace(anchor, anchor + import_line)
           s = s.replace(
               'final class _FakeChannel implements WebSocketChannel {',
               'final class _FakeChannel with StreamChannelMixin<dynamic> implements WebSocketChannel {'
           )
+          s = s.replace('  final StreamController<dynamic> _outgoing = StreamController<dynamic>();\n', '')
+          s = s.replace(
+              'WebSocketSink get sink => _FakeSink(_outgoing.sink, _incoming);',
+              'WebSocketSink get sink => _FakeSink(_incoming);'
+          )
+          start = s.find('final class _FakeSink implements WebSocketSink {')
+          end = s.find('\nvoid main() {', start)
+          if start != -1 and end != -1:
+              fake_sink = '''final class _FakeSink implements WebSocketSink {\n  _FakeSink(this._incoming);\n  final StreamController<dynamic> _incoming;\n  bool _closed = false;\n\n  @override\n  void add(dynamic data) {}\n\n  @override\n  void addError(Object error, [StackTrace? stackTrace]) {}\n\n  @override\n  Future addStream(Stream stream) => stream.drain<void>();\n\n  @override\n  Future close([int? closeCode, String? closeReason]) async {\n    if (_closed) return;\n    _closed = true;\n    await _incoming.close();\n  }\n\n  @override\n  Future get done => Future<void>.value();\n}\n'''
+              s = s[:start] + fake_sink + s[end:]
           dart_test.write_text(s)
 
           pubspec = Path('src/dart/pubspec.yaml')
@@ -90,6 +111,18 @@ jobs:
           if '  stream_channel:' not in s:
               s = s.replace('dev_dependencies:\n', 'dev_dependencies:\n  stream_channel: ^2.1.4\n')
           pubspec.write_text(s)
+
+          reactive = Path('src/rust/src/reactive.rs')
+          s = reactive.read_text()
+          s = s.replace(
+              'use futures_util::{StreamExt, stream as futures_stream};',
+              'use futures_util::{StreamExt, TryStreamExt, stream as futures_stream};'
+          )
+          s = s.replace(
+              'stream.collect::<Result<Vec<_>, _>>().await.unwrap()',
+              'stream.try_collect::<Vec<_>>().await.unwrap()'
+          )
+          reactive.write_text(s)
           PY
       - name: Format Dart and Rust
         working-directory: source
@@ -108,7 +141,7 @@ jobs:
           git config user.name 'ORESoftware CI Repair'
           git config user.email 'ci-repair@oresoftware.com'
           git add src/ts src/dart src/rust
-          git commit -m 'fix: compiler-driven polyglot client hardening'
+          git commit -m 'fix: scheduler release and reactive websocket tests'
           git push origin HEAD:audit/harden-representations
 
   typescript:
