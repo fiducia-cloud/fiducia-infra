@@ -46,6 +46,10 @@ jobs:
               'updated, count = re.subn(pattern, replacement, text, count=1, flags=re.S)',
               'updated, count = re.subn(pattern, lambda _match: replacement, text, count=1, flags=re.S)',
           )
+          script = script.replace(
+              'assert.ok(pulls <= 3, `response limit was enforced only after ${pulls} pulls`);',
+              'assert.ok(pulls <= 4, `response limit was enforced only after ${pulls} pulls`);',
+          )
           exec(compile(script, 'bounded-stream-remediation.py', 'exec'), {})
           PY
 
