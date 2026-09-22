@@ -1,0 +1,134 @@
+name: ores-stack-251-cert
+
+on:
+  push:
+    branches:
+      - test/ores-stack-251-cert-20260922
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_BRANCH: feat/ppr-edge-minimal-wrapper-current3-20260922
+  ADMITTED_HEAD: 469dd0339d6e797c30e9322b4711b011d3b44b4d
+  MAIN_HEAD: 1b2eda561882a38bc30f434810520d9c970810d2
+  ORES_MIDDLEWARE_REV: b930660d34896db1ab285c3b9bd97deaa37dc9ad
+  P2_PROTOCOL_REV: 1b2eda561882a38bc30f434810520d9c970810d2
+  CARGO_NET_GIT_FETCH_WITH_CLI: true
+
+jobs:
+  restack-certify-and-fast-forward:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout proof harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Configure authenticated private Git reads
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ORE_SOURCE_PAT:-}"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact source branch and current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --no-tags origin \
+            "+refs/heads/${SOURCE_BRANCH}:refs/remotes/origin/source" \
+            "+refs/heads/main:refs/remotes/origin/main"
+          test "$(git -C ores-stack rev-parse refs/remotes/origin/source)" = "$ADMITTED_HEAD"
+          test "$(git -C ores-stack rev-parse refs/remotes/origin/main)" = "$MAIN_HEAD"
+          git -C ores-stack config user.name ORESoftware
+          git -C ores-stack config user.email alex@oresoftware.com
+          git -C ores-stack checkout -B work refs/remotes/origin/source
+
+      - name: Restack without rewriting history and advance both ABI pins
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge --no-edit "$MAIN_HEAD"
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('crates/ores-stack-cli/src/ppr_middleware_wrapper.rs')
+          text = path.read_text()
+          replacements = {
+              '5c43cea4bf01e13857d353dce5d14b88cfc24695': 'b930660d34896db1ab285c3b9bd97deaa37dc9ad',
+              '1f527c8e25ba10ba0fc9e0e4707b3b40bf05ac71': '1b2eda561882a38bc30f434810520d9c970810d2',
+          }
+          for old, new in replacements.items():
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one {old} pin, found {count}')
+              text = text.replace(old, new)
+          path.write_text(text)
+          PY
+          git add crates/ores-stack-cli/src/ppr_middleware_wrapper.rs
+          git commit -m 'fix(ppr): pin final edge-minimal P2 authority'
+          test "$(git diff --name-only "$MAIN_HEAD"...HEAD | sort)" = $'crates/ores-stack-cli/src/entry.rs\ncrates/ores-stack-cli/src/ppr_middleware_wrapper.rs'
+
+      - name: Install Rust 1.88 with rustfmt and Clippy
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
+
+      - name: Verify source wrapper formatting and compile
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2024 --check \
+            crates/ores-stack-cli/src/entry.rs \
+            crates/ores-stack-cli/src/ppr_middleware_wrapper.rs
+          cargo metadata --locked --format-version 1 --no-deps >/dev/null
+          cargo check --locked -p ores-stack-cli --all-targets
+          cargo test --locked -p ores-stack-cli ppr_middleware_wrapper
+          cargo clippy --locked -p ores-stack-cli --all-targets -- -D warnings
+
+      - name: Generate a real wrapper fixture and compile the generated temp crate
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/ppr-wrapper-fixture"
+          mkdir -p "$APP/src/middleware"
+          printf 'pub mod mw;\n' > "$APP/src/middleware/mod.rs"
+          cat > "$APP/src/middleware/mw.rs" <<'RS'
+          pub async fn middleware(
+              args: ores_middleware::EdgeMinimalCallbackArgs,
+          ) -> Result<ores_middleware::EdgeMinimalDecision, ores_middleware::IntegrationError> {
+              Ok(ores_middleware::EdgeMinimalDecision::Continue(args.request))
+          }
+          RS
+          cargo run --locked -p ores-stack-cli --bin ores-stack -- \
+            __ppr-generate-middleware-wrapper \
+            --root="$APP" \
+            --ores-middleware-rev="$ORES_MIDDLEWARE_REV"
+          MANIFEST="$APP/tmp/ores-stack-ppr-middleware/Cargo.toml"
+          test -s "$MANIFEST"
+          grep -F "rev = \"$ORES_MIDDLEWARE_REV\"" "$MANIFEST"
+          grep -F "rev = \"$P2_PROTOCOL_REV\"" "$MANIFEST"
+          test "$(grep -c 'ores-middleware = ' "$MANIFEST")" -eq 1
+          cargo generate-lockfile --manifest-path "$MANIFEST"
+          cargo check --locked --manifest-path "$MANIFEST"
+
+      - name: Verify final source diff and fast-forward only the admitted branch
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code
+          test "$(git diff --name-only "$MAIN_HEAD"...HEAD | sort)" = $'crates/ores-stack-cli/src/entry.rs\ncrates/ores-stack-cli/src/ppr_middleware_wrapper.rs'
+          CURRENT_REMOTE="$(git ls-remote origin "refs/heads/${SOURCE_BRANCH}" | awk '{print $1}')"
+          test "$CURRENT_REMOTE" = "$ADMITTED_HEAD"
+          git push origin "HEAD:refs/heads/${SOURCE_BRANCH}"
