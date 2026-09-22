@@ -12,13 +12,13 @@ permissions:
 jobs:
   port:
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 45
     env:
       ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
-      PMAP_MAIN_SHA: 9cb5721ff80f5d6a57bc5a9d7f9d44e0f13df611
+      PMAP_MAIN_SHA: 5f8087db093810b22f6a3acb0902a39cc0ad4119
       PR_BASE_SHA: 49ecbc670dcacb50a8211d7250554947d9b565ad
       PR_HEAD_SHA: fe66eafadba7ba4a64582d24b6004d052bc73767
-      PMAP_LIB_CORE_SHA: e374195182745e39f6b58b56c3d02d7beb081f1d
+      PMAP_LIB_CORE_SHA: e4228ff170530b032e6781e04ee967ef54ba5df4
       ORES_API_DOCS_SHA: 2dbd222872a93a6fac02521f8b8d982dc406f146
       PMAP_PACKAGE: pmap-web-server
     steps:
@@ -38,7 +38,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Apply only focused flags runtime diff
+      - name: Apply focused PR 20 diff semantically
         shell: bash
         run: |
           set -euo pipefail
@@ -59,12 +59,23 @@ jobs:
               tools/flags-contract-check/Cargo.toml \
               tools/flags-contract-check/src/lib.rs \
               | git apply --3way --index
+
             sed -i "s#ores-api-docs = { git = \"https://github.com/ORESoftware/api-docs\" }#ores-api-docs = { git = \"https://github.com/ORESoftware/api-docs\", rev = \"${ORES_API_DOCS_SHA}\" }#" Cargo.toml
             grep -Fq "rev = \"${ORES_API_DOCS_SHA}\"" Cargo.toml
-            git add Cargo.toml
+
+            # PR #20 mounts intake at the top level so docs must no longer compile/merge
+            # a second copy of the same module/router.
+            sed -i '/^#\[path = "intake.rs"\]$/,+1d' src/docs.rs
+            sed -i 's/axum_router::router(catalog)\.merge(intake::router())/axum_router::router(catalog)/' src/docs.rs
+            test "$(grep -c 'mod intake;' src/main.rs)" = "1"
+            ! grep -Fq 'merge(intake::router())' src/docs.rs
+
+            sed -i "s/^ARG PMAP_LIB_CORE_REV=.*/ARG PMAP_LIB_CORE_REV=${PMAP_LIB_CORE_SHA}/" Dockerfile
+            grep -Fq "ARG PMAP_LIB_CORE_REV=${PMAP_LIB_CORE_SHA}" Dockerfile
+            git add Cargo.toml Dockerfile src/docs.rs
           )
 
-      - name: Materialize exact private sibling
+      - name: Materialize exact repaired private sibling
         shell: bash
         run: |
           set -euo pipefail
@@ -75,7 +86,7 @@ jobs:
           git -C pmap-lib-core checkout --detach FETCH_HEAD
           test "$(git -C pmap-lib-core rev-parse HEAD)" = "$PMAP_LIB_CORE_SHA"
 
-      - name: Regenerate lock and validate focused source set
+      - name: Regenerate lock and constrain candidate paths
         shell: bash
         run: |
           set -euo pipefail
@@ -86,12 +97,12 @@ jobs:
           printf '%s\n' "$changed"
           while IFS= read -r path; do
             case "$path" in
-              .cli-flags.toml|.github/workflows/flags-contract.yml|Cargo.toml|Cargo.lock|src/flags.rs|src/intake.rs|src/main.rs|tools/flags-contract-check/Cargo.lock|tools/flags-contract-check/Cargo.toml|tools/flags-contract-check/src/lib.rs) ;;
+              .cli-flags.toml|.github/workflows/flags-contract.yml|Cargo.toml|Cargo.lock|Dockerfile|src/docs.rs|src/flags.rs|src/intake.rs|src/main.rs|tools/flags-contract-check/Cargo.lock|tools/flags-contract-check/Cargo.toml|tools/flags-contract-check/src/lib.rs) ;;
               *) echo "unexpected path in semantic port: $path" >&2; exit 1 ;;
             esac
           done <<< "$changed"
 
-      - name: Rust formatting, tests, and warning-free Clippy
+      - name: Rust formatting, tests, warning-free Clippy, and flags contract
         shell: bash
         run: |
           set -euo pipefail
@@ -99,9 +110,10 @@ jobs:
           cargo fmt --package "$PMAP_PACKAGE" -- --check
           cargo test --package "$PMAP_PACKAGE" --locked
           cargo clippy --package "$PMAP_PACKAGE" --all-targets --locked -- -D warnings
+          cargo metadata --manifest-path tools/flags-contract-check/Cargo.toml --locked --no-deps --format-version 1 >/dev/null
           cargo test --manifest-path tools/flags-contract-check/Cargo.toml --locked
 
-      - name: Build real standalone image from candidate
+      - name: Build real standalone image from committed candidate inputs
         shell: bash
         env:
           DOCKER_BUILDKIT: "1"
@@ -123,5 +135,5 @@ jobs:
           test "$remote_main" = "$PMAP_MAIN_SHA"
           git -C pmap-web config user.name "ORESoftware"
           git -C pmap-web config user.email "alex@oresoftware.com"
-          git -C pmap-web commit -m "feat(config): mount intake behind current flags2env runtime contract" -m "Semantic port of focused PR #20 onto the post-image-certification mainline; pins ores-api-docs to the revision proven by the preceding locked image build."
+          git -C pmap-web commit -m "feat(config): mount intake behind current flags2env runtime contract" -m "Semantic port of focused PR #20 onto the post-image-certification mainline. Mount intake once, pin shared runtime authorities, regenerate the root lock, and preserve the strict locked Docker build."
           git -C pmap-web -c "$auth" push origin HEAD:main
