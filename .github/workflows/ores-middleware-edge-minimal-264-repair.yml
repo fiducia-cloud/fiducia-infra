@@ -81,7 +81,19 @@ jobs:
       - name: Repaired portable core Clippy
         shell: bash
         working-directory: ores-middleware
-        run: cargo clippy --locked -p ores-middleware --no-default-features --lib -- -D warnings
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          cargo clippy --locked -p ores-middleware --no-default-features --lib -- -D warnings 2>&1 | tee /tmp/clippy-264.log
+
+      - name: Preserve Clippy diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: clippy-264
+          path: /tmp/clippy-264.log
+          if-no-files-found: ignore
+          retention-days: 1
 
       - name: Repaired provider API tests
         shell: bash
