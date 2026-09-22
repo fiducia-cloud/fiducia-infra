@@ -55,10 +55,28 @@ jobs:
 
           rust_lib = Path('src/rust/src/lib.rs')
           rust_lib_text = rust_lib.read_text()
+          if 'use futures_util::StreamExt;' not in rust_lib_text:
+              import_anchor = 'use graphql_client::{GraphQLQuery, Response as GraphQlResponse};'
+              if rust_lib_text.count(import_anchor) != 1:
+                  raise SystemExit('expected one futures-util import anchor')
+              rust_lib_text = rust_lib_text.replace(
+                  import_anchor,
+                  'use futures_util::StreamExt;\n' + import_anchor,
+                  1,
+              )
+          old_loop = 'while let Some(chunk) = response.chunk().await? {'
+          if rust_lib_text.count(old_loop) != 1:
+              raise SystemExit(f'expected one reqwest chunk loop, got {rust_lib_text.count(old_loop)}')
+          rust_lib_text = rust_lib_text.replace(
+              old_loop,
+              'let mut stream = response.bytes_stream();\n        while let Some(chunk) = stream.next().await {\n            let chunk = chunk?;',
+              1,
+          )
           old_add = 'bytes.len().checked_add(chunk.len()).unwrap_or(usize::MAX)'
           if rust_lib_text.count(old_add) != 1:
               raise SystemExit(f'expected one Rust manual saturating arithmetic target, got {rust_lib_text.count(old_add)}')
-          rust_lib.write_text(rust_lib_text.replace(old_add, 'bytes.len().saturating_add(chunk.len())', 1))
+          rust_lib_text = rust_lib_text.replace(old_add, 'bytes.len().saturating_add(chunk.len())', 1)
+          rust_lib.write_text(rust_lib_text)
 
           rust_test = Path('src/rust/tests/client.rs')
           rust_text = rust_test.read_text()
