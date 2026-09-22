@@ -1,0 +1,81 @@
+name: ores-stack 275 rustfmt writeback
+
+on:
+  push:
+    branches:
+      - proof/ores-stack-275-rustfmt-writeback
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  writeback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_PAT: ${{ secrets.GH_PAT }}
+      GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
+      PAT: ${{ secrets.PAT }}
+      ORES_GITHUB_PAT: ${{ secrets.ORES_GITHUB_PAT }}
+      ORE_GITHUB_PAT: ${{ secrets.ORE_GITHUB_PAT }}
+      FLEET_GITHUB_PAT: ${{ secrets.FLEET_GITHUB_PAT }}
+      FLEET_GITHUB_TOKEN: ${{ secrets.FLEET_GITHUB_TOKEN }}
+      FLEET_GITHUB_WRITE_TOKEN: ${{ secrets.FLEET_GITHUB_WRITE_TOKEN }}
+      ORES_GITHUB_TOKEN: ${{ secrets.ORES_GITHUB_TOKEN }}
+      ORES_CROSS_REPO_TOKEN: ${{ secrets.ORES_CROSS_REPO_TOKEN }}
+      ORES_CROSS_REPO_WRITE_TOKEN: ${{ secrets.ORES_CROSS_REPO_WRITE_TOKEN }}
+      CROSS_REPO_PAT: ${{ secrets.CROSS_REPO_PAT }}
+      CROSS_REPO_GITHUB_TOKEN: ${{ secrets.CROSS_REPO_GITHUB_TOKEN }}
+      REPO_PAT: ${{ secrets.REPO_PAT }}
+      GITHUB_TOKEN_PAT: ${{ secrets.GITHUB_TOKEN_PAT }}
+      EXPECTED_HEAD: 6840f05d4062b91f447b8a2865733692ab936c34
+      SOURCE_BRANCH: feat/parallel-rpc-runtime-client-lane
+      FORMAT_EXPORT: 57937b732d27480b392243a6df8b159c39cff819
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.88.0'
+          components: rustfmt
+      - name: Apply exact funded rustfmt output to source PR branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOKEN=''
+          TOKEN_NAME=''
+          for name in GH_PAT GITHUB_PAT PAT ORES_GITHUB_PAT ORE_GITHUB_PAT FLEET_GITHUB_PAT FLEET_GITHUB_TOKEN FLEET_GITHUB_WRITE_TOKEN ORES_GITHUB_TOKEN ORES_CROSS_REPO_TOKEN ORES_CROSS_REPO_WRITE_TOKEN CROSS_REPO_PAT CROSS_REPO_GITHUB_TOKEN REPO_PAT GITHUB_TOKEN_PAT; do
+            value="${!name:-}"
+            if [ -n "$value" ]; then
+              TOKEN="$value"
+              TOKEN_NAME="$name"
+              break
+            fi
+          done
+          if [ -z "$TOKEN" ]; then
+            echo 'No configured cross-repo PAT candidate is available in this infra repo.' >&2
+            exit 2
+          fi
+          echo "Using configured secret name: $TOKEN_NAME"
+
+          git clone --depth=1 --branch "$SOURCE_BRANCH" "https://x-access-token:${TOKEN}@github.com/ORESoftware/ores-stack.git" /tmp/ores-stack
+          test "$(git -C /tmp/ores-stack rev-parse HEAD)" = "$EXPECTED_HEAD"
+
+          curl --fail --silent --show-error --location \
+            "https://raw.githubusercontent.com/fiducia-cloud-test/api-contract-e2e/${FORMAT_EXPORT}/proof/ores-stack-rpc-http-lane/formatted/rpc_http_client_lane.rs" \
+            -o /tmp/ores-stack/crates/ores-stack-core/src/rpc_http_client_lane.rs
+          curl --fail --silent --show-error --location \
+            "https://raw.githubusercontent.com/fiducia-cloud-test/api-contract-e2e/${FORMAT_EXPORT}/proof/ores-stack-rpc-http-lane/formatted/rpc_http_client_lane_post.rs" \
+            -o /tmp/ores-stack/crates/ores-stack-core/src/rpc_http_client_lane_post.rs
+
+          rustfmt --edition 2024 --check \
+            /tmp/ores-stack/crates/ores-stack-core/src/rpc_http_client_lane.rs \
+            /tmp/ores-stack/crates/ores-stack-core/src/rpc_http_client_lane_post.rs
+          git -C /tmp/ores-stack diff --check
+          test "$(git -C /tmp/ores-stack diff --name-only | sort | tr '\n' ' ')" = "crates/ores-stack-core/src/rpc_http_client_lane.rs crates/ores-stack-core/src/rpc_http_client_lane_post.rs "
+
+          git -C /tmp/ores-stack config user.name 'ORESoftware funded certification'
+          git -C /tmp/ores-stack config user.email 'noreply@oresoftware.com'
+          git -C /tmp/ores-stack add crates/ores-stack-core/src/rpc_http_client_lane.rs crates/ores-stack-core/src/rpc_http_client_lane_post.rs
+          git -C /tmp/ores-stack commit -m 'chore(rpc): rustfmt parallel client lane'
+          git -C /tmp/ores-stack push origin "HEAD:${SOURCE_BRANCH}"
