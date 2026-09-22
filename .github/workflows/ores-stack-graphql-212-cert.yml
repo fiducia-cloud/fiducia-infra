@@ -1,0 +1,58 @@
+name: ores-stack-graphql-212-cert
+
+on:
+  push:
+    branches:
+      - test/ores-stack-graphql-212-cert-20260922
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+  TARGET_SHA: '88daef5fe650653e4172f5d0dd4b98c2f79b0903'
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Configure authenticated GitHub access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact ores-stack head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --depth=1 origin "$TARGET_SHA"
+          git -C ores-stack checkout --detach FETCH_HEAD
+          test "$(git -C ores-stack rev-parse HEAD)" = "$TARGET_SHA"
+
+      - name: Install Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt
+
+      - name: Rustfmt exact tree
+        working-directory: ores-stack
+        run: cargo fmt --all -- --check
+
+      - name: Check ores-stack CLI all targets
+        working-directory: ores-stack
+        run: cargo check --locked -p ores-stack-cli --all-targets
+
+      - name: GraphQL generator unit tests
+        working-directory: ores-stack
+        run: cargo test --locked -p ores-stack-cli graphql_codegen -- --nocapture
