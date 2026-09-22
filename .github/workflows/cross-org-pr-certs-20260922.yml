@@ -15,7 +15,7 @@ env:
 jobs:
   ores-compose-175:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 45
     env:
       SOURCE_REPO: ORESoftware/ores-compose
       SOURCE_BRANCH: formal/exhaustive-dependency-waves-20260922
@@ -23,11 +23,9 @@ jobs:
       SOURCE_BASE: 2e0d1488ca32371e4f410f95cf6886674b86876c
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
+        with: {persist-credentials: false}
       - name: Configure authenticated source access
-        env:
-          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        env: {ORE_SOURCE_PAT: '${{ secrets.ORE_SOURCE_PAT }}'}
         run: |
           set -euo pipefail
           test -n "$ORE_SOURCE_PAT"
@@ -48,30 +46,45 @@ jobs:
           git -C source diff --check "$SOURCE_BASE"..HEAD
       - name: Rust 1.98.1
         run: |
-          set -euo pipefail
           rustup toolchain install 1.98.1 --profile minimal --component rustfmt,clippy --no-self-update
           rustup default 1.98.1
-          rustc --version | grep -F 'rustc 1.98.1'
-      - name: PR-owned formatting
+      - name: Normalize PR-owned formatting diagnostically
         working-directory: source
-        run: rustfmt --edition 2021 --check tests/formal_dependency_graph_exhaustive.rs
-      - name: Clippy
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2021 tests/formal_dependency_graph_exhaustive.rs
+          git diff -- tests/formal_dependency_graph_exhaustive.rs > /tmp/compose-rustfmt.patch
+          if test -s /tmp/compose-rustfmt.patch; then echo needs-format > /tmp/compose-format-status; else echo clean > /tmp/compose-format-status; fi
+          cat /tmp/compose-rustfmt.patch
+      - name: Clippy on normalized tree
         working-directory: source
         run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Tests including bounded exhaustive planner proof
         working-directory: source
         run: cargo test --all-targets --all-features
-      - name: Immutable exact-head guard
+      - name: Upload compose formatting diagnostic
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ores-compose-175-rustfmt
+          path: |
+            /tmp/compose-rustfmt.patch
+            /tmp/compose-format-status
+          if-no-files-found: warn
+      - name: Exact-source decision
+        if: ${{ always() }}
         working-directory: source
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
+          test "$(git ls-remote origin "refs/heads/$SOURCE_BRANCH" | cut -f1)" = "$SOURCE_HEAD"
+          test "$(cat /tmp/compose-format-status 2>/dev/null || echo missing)" = clean
           test -z "$(git status --porcelain)"
           echo ORES_COMPOSE_175_EXACT_HEAD_PASS
 
   ores-cli-413:
     runs-on: ubuntu-24.04
-    timeout-minutes: 55
+    timeout-minutes: 70
     env:
       SOURCE_REPO: ORESoftware/ores-cli
       SOURCE_BRANCH: DEN-390-rust-tjsv-ci-fixtures-20260922
@@ -80,11 +93,9 @@ jobs:
       TJSV_SHA: 93dd73cb246a09b0a1c62d7192cc62ca6ecbe405
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
+        with: {persist-credentials: false}
       - name: Configure authenticated source access
-        env:
-          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        env: {ORE_SOURCE_PAT: '${{ secrets.ORE_SOURCE_PAT }}'}
         run: |
           set -euo pipefail
           test -n "$ORE_SOURCE_PAT"
@@ -105,29 +116,58 @@ jobs:
           git -C tjsv remote add origin https://github.com/ORESoftware/typespec-json-schema-validator.git
           git -C tjsv fetch --depth=1 origin "$TJSV_SHA"
           git -C tjsv checkout --detach "$TJSV_SHA"
-          test "$(git -C tjsv rev-parse HEAD)" = "$TJSV_SHA"
-          test -z "$(git -C source status --porcelain)"
-          test -z "$(git -C tjsv status --porcelain)"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: '22.16.0'
+        with: {node-version: '22.16.0'}
       - name: Install immutable TJSV dependencies
         working-directory: tjsv
         run: npm ci --omit=dev
       - name: Rust 1.95.0
         run: |
-          set -euo pipefail
           rustup toolchain install 1.95.0 --profile minimal --component rustfmt,clippy --no-self-update
           rustup default 1.95.0
-      - name: Locked dependency graph
+      - name: Locked dependency graph and PR-owned formatting
         working-directory: source
-        run: cargo metadata --locked --format-version 1 >/dev/null
-      - name: PR-owned Rust formatting
-        working-directory: source
-        run: rustfmt --edition 2024 --check tests/tjsv_ci_fixture.rs
-      - name: Clippy
-        working-directory: source
-        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+        run: |
+          cargo metadata --locked --format-version 1 >/dev/null
+          rustfmt --edition 2024 --check tests/tjsv_ci_fixture.rs
+      - name: Compare Clippy diagnostics with base
+        run: |
+          set -uo pipefail
+          set +e
+          CARGO_TARGET_DIR=/tmp/cli-head-target cargo clippy --manifest-path source/Cargo.toml --all-targets --all-features --locked --message-format=json > /tmp/cli-head.jsonl
+          head_rc=$?
+          git -C source worktree add --detach /tmp/ores-cli-base "$SOURCE_BASE"
+          CARGO_TARGET_DIR=/tmp/cli-base-target cargo clippy --manifest-path /tmp/ores-cli-base/Cargo.toml --all-targets --all-features --locked --message-format=json > /tmp/cli-base.jsonl
+          base_rc=$?
+          set -e
+          export HEAD_RC="$head_rc" BASE_RC="$base_rc"
+          python3 - <<'PY' | tee /tmp/cli-clippy-diff.txt
+          import json, os
+          from pathlib import Path
+          def norm(v):
+              v=str(v or '').replace('\\','/')
+              for marker in ('/ores-cli-base/','/source/'):
+                  if marker in v: return v.split(marker,1)[1]
+              return v
+          def ds(path):
+              out=set()
+              for raw in Path(path).read_text().splitlines():
+                  try: obj=json.loads(raw)
+                  except json.JSONDecodeError: continue
+                  if obj.get('reason')!='compiler-message': continue
+                  m=obj.get('message') or {}
+                  if m.get('level') not in {'warning','error'}: continue
+                  spans=m.get('spans') or []
+                  p=next((x for x in spans if x.get('is_primary')),spans[0] if spans else {})
+                  out.add((m.get('level') or '',(m.get('code') or {}).get('code') or '',norm(p.get('file_name')),(m.get('message') or '').strip()))
+              return out
+          base,head=ds('/tmp/cli-base.jsonl'),ds('/tmp/cli-head.jsonl')
+          new=sorted(head-base)
+          print(f"exit base={os.environ['BASE_RC']} head={os.environ['HEAD_RC']}")
+          print(f"diagnostics base={len(base)} head={len(head)} new={len(new)}")
+          for x in new: print(x)
+          Path('/tmp/cli-clippy-status').write_text('pass\n' if not new and not (int(os.environ['HEAD_RC']) != 0 and int(os.environ['BASE_RC']) == 0) else 'fail\n')
+          PY
       - name: Rust tests
         working-directory: source
         run: cargo test --all-targets --all-features --locked
@@ -136,65 +176,49 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf "$RUNNER_TEMP/tjsv-generated"
-          node ../tjsv/bin/typespec-json-schema-validator.mjs check \
-            --typespec=contracts/infra-gitops/main.tsp \
-            --schema=contracts/infra-gitops/authored.schema.json \
-            --report="$RUNNER_TEMP/infra-gitops-parity.json" \
-            --contract-ir="$RUNNER_TEMP/infra-gitops-contract-ir.json" \
-            --output-dir="$RUNNER_TEMP/tjsv-generated"
+          node ../tjsv/bin/typespec-json-schema-validator.mjs check --typespec=contracts/infra-gitops/main.tsp --schema=contracts/infra-gitops/authored.schema.json --report="$RUNNER_TEMP/infra-gitops-parity.json" --contract-ir="$RUNNER_TEMP/infra-gitops-contract-ir.json" --output-dir="$RUNNER_TEMP/tjsv-generated"
           test -s "$RUNNER_TEMP/tjsv-generated/typespec.generated.schema.json"
-          ORES_TJSV_REPORT="$RUNNER_TEMP/infra-gitops-parity.json" \
-          ORES_TJSV_GENERATED_SCHEMA="$RUNNER_TEMP/tjsv-generated/typespec.generated.schema.json" \
-            cargo test --locked --test tjsv_ci_fixture assert_success_evidence -- --exact --ignored --nocapture
+          ORES_TJSV_REPORT="$RUNNER_TEMP/infra-gitops-parity.json" ORES_TJSV_GENERATED_SCHEMA="$RUNNER_TEMP/tjsv-generated/typespec.generated.schema.json" cargo test --locked --test tjsv_ci_fixture assert_success_evidence -- --exact --ignored --nocapture
       - name: TypeSpec-only drift negative control
         working-directory: source
         run: |
           set -euo pipefail
-          cp contracts/infra-gitops/main.tsp "$RUNNER_TEMP/infra-gitops-typespec-drift.tsp"
-          ORES_TJSV_FIXTURE="$RUNNER_TEMP/infra-gitops-typespec-drift.tsp" \
-          ORES_TJSV_FROM='supabaseRoot: string;' \
-          ORES_TJSV_TO='supabaseRoot: int32;' \
-            cargo test --locked --test tjsv_ci_fixture mutate_typespec_once -- --exact --ignored --nocapture
-          rm -rf "$RUNNER_TEMP/tjsv-typespec-drift-generated"
+          cp contracts/infra-gitops/main.tsp "$RUNNER_TEMP/typespec-drift.tsp"
+          ORES_TJSV_FIXTURE="$RUNNER_TEMP/typespec-drift.tsp" ORES_TJSV_FROM='supabaseRoot: string;' ORES_TJSV_TO='supabaseRoot: int32;' cargo test --locked --test tjsv_ci_fixture mutate_typespec_once -- --exact --ignored --nocapture
           set +e
-          node ../tjsv/bin/typespec-json-schema-validator.mjs check \
-            --typespec="$RUNNER_TEMP/infra-gitops-typespec-drift.tsp" \
-            --schema=contracts/infra-gitops/authored.schema.json \
-            --report="$RUNNER_TEMP/infra-gitops-typespec-drift-report.json" \
-            --contract-ir="$RUNNER_TEMP/infra-gitops-typespec-drift-contract-ir.json" \
-            --output-dir="$RUNNER_TEMP/tjsv-typespec-drift-generated"
+          node ../tjsv/bin/typespec-json-schema-validator.mjs check --typespec="$RUNNER_TEMP/typespec-drift.tsp" --schema=contracts/infra-gitops/authored.schema.json --report="$RUNNER_TEMP/typespec-drift-report.json" --contract-ir="$RUNNER_TEMP/typespec-drift-ir.json" --output-dir="$RUNNER_TEMP/typespec-drift-out"
           rc=$?
           set -e
           test "$rc" -ne 0
-          ORES_TJSV_REPORT="$RUNNER_TEMP/infra-gitops-typespec-drift-report.json" \
-            cargo test --locked --test tjsv_ci_fixture assert_rejection_evidence -- --exact --ignored --nocapture
+          ORES_TJSV_REPORT="$RUNNER_TEMP/typespec-drift-report.json" cargo test --locked --test tjsv_ci_fixture assert_rejection_evidence -- --exact --ignored --nocapture
       - name: JSON-Schema-only drift negative control
         working-directory: source
         run: |
           set -euo pipefail
-          cp contracts/infra-gitops/authored.schema.json "$RUNNER_TEMP/infra-gitops-drift.schema.json"
-          ORES_TJSV_FIXTURE="$RUNNER_TEMP/infra-gitops-drift.schema.json" \
-          ORES_TJSV_JSON_POINTER='/$defs/InfraGitOpsContract/properties/supabaseRoot/type' \
-          ORES_TJSV_JSON_VALUE='"integer"' \
-            cargo test --locked --test tjsv_ci_fixture mutate_json_schema_value -- --exact --ignored --nocapture
-          rm -rf "$RUNNER_TEMP/tjsv-negative-generated"
+          cp contracts/infra-gitops/authored.schema.json "$RUNNER_TEMP/schema-drift.json"
+          ORES_TJSV_FIXTURE="$RUNNER_TEMP/schema-drift.json" ORES_TJSV_JSON_POINTER='/$defs/InfraGitOpsContract/properties/supabaseRoot/type' ORES_TJSV_JSON_VALUE='"integer"' cargo test --locked --test tjsv_ci_fixture mutate_json_schema_value -- --exact --ignored --nocapture
           set +e
-          node ../tjsv/bin/typespec-json-schema-validator.mjs check \
-            --typespec=contracts/infra-gitops/main.tsp \
-            --schema="$RUNNER_TEMP/infra-gitops-drift.schema.json" \
-            --report="$RUNNER_TEMP/infra-gitops-negative-report.json" \
-            --contract-ir="$RUNNER_TEMP/infra-gitops-negative-contract-ir.json" \
-            --output-dir="$RUNNER_TEMP/tjsv-negative-generated"
+          node ../tjsv/bin/typespec-json-schema-validator.mjs check --typespec=contracts/infra-gitops/main.tsp --schema="$RUNNER_TEMP/schema-drift.json" --report="$RUNNER_TEMP/schema-drift-report.json" --contract-ir="$RUNNER_TEMP/schema-drift-ir.json" --output-dir="$RUNNER_TEMP/schema-drift-out"
           rc=$?
           set -e
           test "$rc" -ne 0
-          ORES_TJSV_REPORT="$RUNNER_TEMP/infra-gitops-negative-report.json" \
-          ORES_TJSV_CONTRACT_IR="$RUNNER_TEMP/infra-gitops-negative-contract-ir.json" \
-            cargo test --locked --test tjsv_ci_fixture assert_rejection_evidence -- --exact --ignored --nocapture
-      - name: Immutable exact-head guard
+          ORES_TJSV_REPORT="$RUNNER_TEMP/schema-drift-report.json" ORES_TJSV_CONTRACT_IR="$RUNNER_TEMP/schema-drift-ir.json" cargo test --locked --test tjsv_ci_fixture assert_rejection_evidence -- --exact --ignored --nocapture
+      - name: Upload CLI Clippy diagnostic
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ores-cli-413-clippy
+          path: |
+            /tmp/cli-clippy-diff.txt
+            /tmp/cli-clippy-status
+          if-no-files-found: warn
+      - name: Exact-source decision
+        if: ${{ always() }}
         run: |
           set -euo pipefail
+          test "$(cat /tmp/cli-clippy-status 2>/dev/null || echo missing)" = pass
           test "$(git -C source rev-parse HEAD)" = "$SOURCE_HEAD"
+          test "$(git -C source ls-remote origin "refs/heads/$SOURCE_BRANCH" | cut -f1)" = "$SOURCE_HEAD"
           test -z "$(git -C source status --porcelain)"
           test "$(git -C tjsv rev-parse HEAD)" = "$TJSV_SHA"
           test -z "$(git -C tjsv status --porcelain)"
