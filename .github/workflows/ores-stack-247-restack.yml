@@ -1,0 +1,86 @@
+name: ores-stack-247-restack
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-stack-247-restack.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+  SOURCE_SHA: '80173862ecffc4fee18fd2dd8b261418e7628048'
+  EXPECTED_MAIN_LIB_BLOB: 'e49532fd603b0bc4167e7b2c56218c6b279c803b'
+  OUTPUT_BRANCH: 'salvage/rpc-http-adapter-latest-main-20260922'
+
+jobs:
+  restack:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: { persist-credentials: false }
+      - name: Configure authenticated GitHub access
+        shell: bash
+        env: { ORE_SOURCE_PAT: '${{ secrets.ORE_SOURCE_PAT }}' }
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Build lossless current-main restack
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --depth=1 origin main
+          git -C ores-stack checkout -b "$OUTPUT_BRANCH" FETCH_HEAD
+          actual_blob="$(git -C ores-stack hash-object crates/ores-fn-adapters/src/lib.rs)"
+          test "$actual_blob" = "$EXPECTED_MAIN_LIB_BLOB" || {
+            echo "current main adapter integration surface moved: $actual_blob" >&2
+            exit 1
+          }
+          git -C ores-stack fetch --depth=1 origin "$SOURCE_SHA"
+          git -C ores-stack checkout FETCH_HEAD -- crates/ores-fn-adapters/src/lib.rs crates/ores-fn-adapters/src/rpc_http.rs
+          git -C ores-stack diff --check
+          changed="$(git -C ores-stack diff --name-only | sort)"
+          expected=$'crates/ores-fn-adapters/src/lib.rs\ncrates/ores-fn-adapters/src/rpc_http.rs'
+          test "$changed" = "$expected" || { printf 'unexpected transplant paths:\n%s\n' "$changed"; exit 1; }
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+      - name: Format and verify adapter
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2024 crates/ores-fn-adapters/src/lib.rs crates/ores-fn-adapters/src/rpc_http.rs
+          rustfmt --edition 2024 --check crates/ores-fn-adapters/src/lib.rs crates/ores-fn-adapters/src/rpc_http.rs
+          git diff --check
+          cargo check --manifest-path crates/ores-fn-adapters/Cargo.toml --all-targets
+          cargo test --manifest-path crates/ores-fn-adapters/Cargo.toml
+          cargo clippy --manifest-path crates/ores-fn-adapters/Cargo.toml --all-targets -- -D warnings
+      - name: Commit and push certified successor
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only | sort)"
+          expected=$'crates/ores-fn-adapters/src/lib.rs\ncrates/ores-fn-adapters/src/rpc_http.rs'
+          test "$changed" = "$expected"
+          git config user.name 'ORESoftware CI salvage'
+          git config user.email 'noreply@oresoftware.com'
+          git add crates/ores-fn-adapters/src/lib.rs crates/ores-fn-adapters/src/rpc_http.rs
+          git commit -m 'feat(lambda): restack canonical RPC provider adapter on current main'
+          test -z "$(git ls-remote origin "refs/heads/$OUTPUT_BRANCH" | cut -f1)" || {
+            echo "refusing to overwrite existing successor branch" >&2
+            exit 1
+          }
+          git push origin HEAD:"$OUTPUT_BRANCH"
