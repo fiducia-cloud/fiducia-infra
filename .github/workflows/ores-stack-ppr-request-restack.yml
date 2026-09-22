@@ -1,0 +1,122 @@
+name: ores-stack PPR merged-main repair
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-stack-ppr-request-restack.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+  TARGET_SHA: '1b2eda561882a38bc30f434810520d9c970810d2'
+  TARGET_BRANCH: 'fix/ppr-request-deadline-hrtb-20260922'
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Configure authenticated source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Fetch exact merged-main repair base
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --depth=1 origin "$TARGET_SHA"
+          git -C ores-stack checkout -b repair FETCH_HEAD
+          test "$(git -C ores-stack rev-parse HEAD)" = "$TARGET_SHA"
+          remote_head="$(git -C ores-stack ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)"
+          test "$remote_head" = "$TARGET_SHA" || { echo "target branch moved: expected $TARGET_SHA got $remote_head"; exit 1; }
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+      - name: Repair merged PPR HTTP defects
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          request = Path('crates/ores-stack-ppr-http/src/request.rs')
+          text = request.read_text()
+          old = '    with_tcp_deadline(stream, deadline, read_request_head)'
+          new = '    with_tcp_deadline(stream, deadline, |reader| read_request_head(reader))'
+          assert text.count(old) == 1, f'unexpected request deadline call count: {text.count(old)}'
+          text = text.replace(old, new, 1)
+          redundant = '    let mut headers = headers;\n    strip_hop_by_hop_headers(&mut headers, &connection_tokens);'
+          replacement = '    strip_hop_by_hop_headers(&mut headers, &connection_tokens);'
+          assert text.count(redundant) == 1, f'unexpected redundant headers binding count: {text.count(redundant)}'
+          request.write_text(text.replace(redundant, replacement, 1))
+
+          strict = Path('crates/ores-stack-ppr-http/src/lib_strict.rs')
+          text = strict.read_text()
+          start_marker = '/// Write one already-validated P3 response head through the canonical P1\n'
+          relay_marker = '/// Relay one complete P3 response body and reject bytes after its declared\n'
+          starts = []
+          offset = 0
+          while True:
+              index = text.find(start_marker, offset)
+              if index < 0:
+                  break
+              starts.append(index)
+              offset = index + len(start_marker)
+          assert len(starts) == 2, f'expected exactly two write_response_head blocks, found {len(starts)}'
+          relay = text.find(relay_marker, starts[1])
+          assert relay > starts[1], 'could not find relay marker after duplicate response writer'
+          strict.write_text(text[:starts[1]] + text[relay:])
+          PY
+          rustfmt --edition 2024 crates/ores-stack-ppr-http/src/request.rs crates/ores-stack-ppr-http/src/lib_strict.rs
+          rustfmt --edition 2024 --check crates/ores-stack-ppr-http/src/request.rs crates/ores-stack-ppr-http/src/lib_strict.rs
+          git diff --check
+          git diff --name-only | sort > /tmp/changed
+          printf '%s\n' crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs | sort > /tmp/allowed
+          diff -u /tmp/allowed /tmp/changed
+      - name: Certify merged PPR HTTP authority
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          cargo metadata --locked --format-version 1 --no-deps >/dev/null
+          cargo check --locked -p ores-stack-ppr-http --all-targets
+          cargo test --locked -p ores-stack-ppr-http -- --nocapture
+          cargo clippy --locked -p ores-stack-ppr-http --all-targets -- -D warnings
+          git diff --check
+          git diff --name-only | sort > /tmp/changed
+          printf '%s\n' crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs | sort > /tmp/allowed
+          diff -u /tmp/allowed /tmp/changed
+      - name: Commit and fast-forward guarded repair
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)"
+          test "$remote_head" = "$TARGET_SHA" || { echo "target branch moved: expected $TARGET_SHA got $remote_head"; exit 1; }
+          git diff --name-only | sort > /tmp/changed
+          printf '%s\n' crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs | sort > /tmp/allowed
+          diff -u /tmp/allowed /tmp/changed
+          git config user.name 'ores-stack certification'
+          git config user.email 'actions@users.noreply.github.com'
+          git add crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs
+          git commit -m 'fix(ppr): repair merged request and response framing authority'
+          git push origin HEAD:"$TARGET_BRANCH"
