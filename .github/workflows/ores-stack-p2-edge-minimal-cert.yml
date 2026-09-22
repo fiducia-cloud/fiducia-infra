@@ -1,0 +1,89 @@
+name: ores-stack-p2-edge-minimal-cert
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-stack-p2-edge-minimal-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+  ORES_STACK_SHA: '9aa20df6323a3749d4ac184903a69b3d72b11675'
+
+jobs:
+  rust:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Configure authenticated GitHub source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact ores-stack PR head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --depth=1 origin "$ORES_STACK_SHA"
+          git -C ores-stack checkout --detach FETCH_HEAD
+          test "$(git -C ores-stack rev-parse HEAD)" = "$ORES_STACK_SHA"
+
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+
+      - name: Format-check portable P2 crate
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2024 --check crates/ores-stack-p2-edge-minimal/src/lib.rs
+          git diff --exit-code
+
+      - name: Bootstrap repository lock evidence
+        shell: bash
+        working-directory: ores-stack
+        run: bash scripts/bootstrap-cargo-lock.sh ensure
+
+      - name: Check portable P2 crate and workspace
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          cargo check --locked -p ores-stack-p2-edge-minimal --all-targets
+          cargo check --locked --workspace --all-targets
+
+      - name: Clippy portable P2 crate
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          cargo clippy --locked -p ores-stack-p2-edge-minimal --all-targets -- -D warnings
+
+      - name: Test portable P2 protocol
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          cargo test --locked -p ores-stack-p2-edge-minimal -- --nocapture
+          git diff --exit-code
