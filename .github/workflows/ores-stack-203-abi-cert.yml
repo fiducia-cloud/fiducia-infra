@@ -56,6 +56,11 @@ jobs:
         working-directory: ores-stack
         run: rustfmt --edition 2024 --check crates/ores-stack-core/tests/fn_adapter_api_docs_pin.rs
 
+      - name: Bootstrap workspace lock
+        shell: bash
+        working-directory: ores-stack
+        run: bash scripts/bootstrap-cargo-lock.sh ensure
+
       - name: Compile core and pin regression
         shell: bash
         working-directory: ores-stack
