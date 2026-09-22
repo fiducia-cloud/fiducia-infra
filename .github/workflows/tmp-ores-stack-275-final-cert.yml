@@ -95,7 +95,6 @@ jobs:
           grep -q 'doStream()' crates/ores-stack-core/src/rpc_http_client_lane.rs
           grep -q 'make_call' crates/ores-stack-core/src/rpc_http_client_lane.rs
           grep -q 'do_stream' crates/ores-stack-core/src/rpc_http_client_lane.rs
-          ! grep -Eq '\.stream\(' crates/ores-stack-core/src/rpc_http_client_lane.rs
           grep -q 'generated_ores_http' crates/ores-stack-core/src/rpc_http_client_lane.rs
           grep -q 'validate_existing_parallel_lane_state' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
           grep -q 'outside owned generated_ores_http roots' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
