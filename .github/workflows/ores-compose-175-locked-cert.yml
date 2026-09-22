@@ -13,7 +13,7 @@ env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
   SOURCE_REPO: ORESoftware/ores-compose
   SOURCE_BRANCH: formal/exhaustive-dependency-waves-20260922
-  SOURCE_SHA: 73bf0cccff26301dce0266a4729aa02ac5c9899d
+  SOURCE_SHA: 2b67eb3307132acbaaa4641f0a7eaeb8bb6f45eb
   SOURCE_BASE: 2e0d1488ca32371e4f410f95cf6886674b86876c
 
 jobs:
@@ -42,7 +42,7 @@ jobs:
           test "$(git -C source rev-parse origin/$SOURCE_BRANCH)" = "$SOURCE_SHA"
           git -C source checkout --detach "$SOURCE_SHA"
           test "$(git -C source merge-base HEAD "$SOURCE_BASE")" = "$SOURCE_BASE"
-          test "$(git -C source diff --name-only "$SOURCE_BASE"..HEAD | tr '\n' ' ')" = "tests/formal_dependency_graph_exhaustive.rs "
+          test "$(git -C source diff --name-only "$SOURCE_BASE"..HEAD | sort | tr '\n' ' ')" = "Cargo.lock tests/formal_dependency_graph_exhaustive.rs "
           git -C source diff --check "$SOURCE_BASE"..HEAD
           test -z "$(git -C source status --porcelain)"
       - name: Rust 1.98.1
