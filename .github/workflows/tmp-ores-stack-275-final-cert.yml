@@ -1,0 +1,106 @@
+name: tmp ores-stack 275 final exact-head cert
+
+on:
+  push:
+    branches:
+      - test/ores-stack-275-final-cert-20260922
+
+permissions:
+  contents: read
+
+env:
+  STACK_HEAD: 3e22ace5653308aab54abf391d4265656998e950
+  STACK_BASE: 253382da3634ce9fde62704e79e42160cee66838
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Configure authenticated source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact source head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --depth=20 origin main "$STACK_HEAD"
+          git -C ores-stack checkout --detach "$STACK_HEAD"
+          test "$(git -C ores-stack rev-parse HEAD)" = "$STACK_HEAD"
+          test "$(git -C ores-stack merge-base HEAD "$STACK_BASE")" = "$STACK_BASE"
+          test "$(git -C ores-stack diff --name-only "$STACK_BASE"..HEAD | sort | tr '\n' ' ')" = "crates/ores-stack-cli/src/legacy/mod.rs crates/ores-stack-core/src/lib.rs crates/ores-stack-core/src/rpc_http_client_lane.rs crates/ores-stack-core/src/rpc_http_client_lane_post.rs "
+          test -z "$(git -C ores-stack status --porcelain)"
+          git -C ores-stack diff --check "$STACK_BASE"..HEAD
+
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt
+
+      - name: Frozen metadata
+        shell: bash
+        working-directory: ores-stack
+        run: cargo metadata --locked --format-version 1 --no-deps >/dev/null
+
+      - name: PR-owned rustfmt gate against dirty baseline
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          if ! git diff --exit-code -- \
+            crates/ores-stack-cli/src/legacy/mod.rs \
+            crates/ores-stack-core/src/lib.rs \
+            crates/ores-stack-core/src/rpc_http_client_lane.rs \
+            crates/ores-stack-core/src/rpc_http_client_lane_post.rs; then
+            echo 'PR-owned files are not rustfmt-clean' >&2
+            exit 1
+          fi
+          git reset --hard "$STACK_HEAD"
+          test -z "$(git status --porcelain)"
+
+      - name: Compile changed crates
+        shell: bash
+        working-directory: ores-stack
+        run: cargo check --locked -p ores-stack-core -p ores-stack-cli --all-targets
+
+      - name: Focused parallel lane tests
+        shell: bash
+        working-directory: ores-stack
+        run: cargo test --locked -p ores-stack-core rpc_http_client_lane -- --nocapture
+
+      - name: Focused post-sync lane tests
+        shell: bash
+        working-directory: ores-stack
+        run: cargo test --locked -p ores-stack-core rpc_http_client_lane_post -- --nocapture
+
+      - name: Verify fluent terminals and exact-source hygiene
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          grep -q 'makeCall()' crates/ores-stack-core/src/rpc_http_client_lane.rs
+          grep -q 'doStream()' crates/ores-stack-core/src/rpc_http_client_lane.rs
+          grep -q 'make_call' crates/ores-stack-core/src/rpc_http_client_lane.rs
+          grep -q 'do_stream' crates/ores-stack-core/src/rpc_http_client_lane.rs
+          ! grep -Eq '\.stream\(' crates/ores-stack-core/src/rpc_http_client_lane.rs
+          grep -q 'generated_ores_http' crates/ores-stack-core/src/rpc_http_client_lane.rs
+          grep -q 'validate_existing_parallel_lane_state' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
+          grep -q 'outside owned generated_ores_http roots' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
+          grep -q 'is a symlink; refusing generated writes' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
+          test "$(git rev-parse HEAD)" = "$STACK_HEAD"
+          test -z "$(git status --porcelain)"
+          git diff --check "$STACK_BASE"..HEAD
+          echo ORES_STACK_275_FINAL_EXACT_HEAD_CERT_PASS
