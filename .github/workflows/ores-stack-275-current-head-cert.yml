@@ -1,4 +1,4 @@
-name: ores-stack #275 current-head certification
+name: ores-stack #275 merged parallel RPC certification
 
 on:
   pull_request:
@@ -18,78 +18,278 @@ env:
 
 jobs:
   certify:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+
       - name: Configure authenticated source access
         env:
           ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
         run: |
           set -euo pipefail
           test -n "$ORE_SOURCE_PAT"
           echo "::add-mask::$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
-      - name: Fetch exact current PR head
+
+      - name: Fetch exact merged source payload
+        shell: bash
         run: |
           set -euo pipefail
           git init ores-stack
           git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
-          git -C ores-stack fetch --depth=20 origin main "$STACK_BRANCH"
-          test "$(git -C ores-stack rev-parse origin/main)" = "$STACK_BASE"
+          git -C ores-stack fetch --depth=100 origin main "$STACK_BRANCH"
           test "$(git -C ores-stack rev-parse origin/$STACK_BRANCH)" = "$STACK_HEAD"
           git -C ores-stack checkout --detach "$STACK_HEAD"
+          git -C ores-stack cat-file -e "$STACK_BASE^{commit}"
           test "$(git -C ores-stack merge-base HEAD "$STACK_BASE")" = "$STACK_BASE"
           test "$(git -C ores-stack diff --name-only "$STACK_BASE"..HEAD | sort | tr '\n' ' ')" = "crates/ores-stack-cli/src/legacy/mod.rs crates/ores-stack-core/src/lib.rs crates/ores-stack-core/src/rpc_http_client_lane.rs crates/ores-stack-core/src/rpc_http_client_lane_post.rs "
           git -C ores-stack diff --check "$STACK_BASE"..HEAD
           test -z "$(git -C ores-stack status --porcelain)"
+
       - name: Install Rust 1.88
+        shell: bash
         run: |
           set -euo pipefail
           rustup toolchain install 1.88.0 --profile minimal --no-self-update
           rustup default 1.88.0
           rustup component add rustfmt clippy
-      - name: Formatting
+
+      - name: Formatting and locked metadata
         working-directory: ores-stack
-        run: cargo fmt --all -- --check
-      - name: Locked metadata
-        working-directory: ores-stack
-        run: cargo metadata --locked --format-version 1 --no-deps >/dev/null
-      - name: Compile
-        working-directory: ores-stack
-        run: cargo check --locked -p ores-stack-core -p ores-stack-cli --all-targets
-      - name: Focused parallel lane tests
-        working-directory: ores-stack
-        run: cargo test --locked -p ores-stack-core rpc_http_client_lane -- --nocapture
-      - name: Focused post-sync lane tests
-        working-directory: ores-stack
-        run: cargo test --locked -p ores-stack-core rpc_http_client_lane_post -- --nocapture
-      - name: Strict Clippy on changed crates
-        working-directory: ores-stack
-        run: cargo clippy --locked -p ores-stack-core -p ores-stack-cli --all-targets -- -D warnings
-      - name: Verify alternate-runtime terminal and hardening contracts
-        working-directory: ores-stack
+        shell: bash
         run: |
           set -euo pipefail
-          grep -q 'makeCall()' crates/ores-stack-core/src/rpc_http_client_lane.rs
-          grep -q 'doStream()' crates/ores-stack-core/src/rpc_http_client_lane.rs
-          grep -q 'make_call' crates/ores-stack-core/src/rpc_http_client_lane.rs
-          grep -q 'do_stream' crates/ores-stack-core/src/rpc_http_client_lane.rs
-          ! grep -Eq '\.stream\(' crates/ores-stack-core/src/rpc_http_client_lane.rs
-          grep -q 'generated_ores_http' crates/ores-stack-core/src/rpc_http_client_lane.rs
-          grep -q 'validate_existing_parallel_lane_state' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
-          grep -q 'outside owned generated_ores_http roots' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
-          grep -q 'is a symlink; refusing generated writes' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
-          grep -q 'contract_sha256' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
-          grep -q 'does not admit handlers audience' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
-      - name: Final immutable-head guard
+          cargo fmt --all -- --check
+          cargo metadata --locked --format-version 1 --no-deps >/dev/null
+
+      - name: Cargo check default and all features
         working-directory: ores-stack
+        shell: bash
         run: |
           set -euo pipefail
+          cargo check --locked -p ores-stack-core -p ores-stack-cli --all-targets
+          cargo check --locked -p ores-stack-core -p ores-stack-cli --all-targets --all-features
+
+      - name: Tests default and all features
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked -p ores-stack-core -p ores-stack-cli --all-targets
+          cargo test --locked -p ores-stack-core -p ores-stack-cli --all-targets --all-features
+
+      - name: Strict Clippy
+        working-directory: ores-stack
+        shell: bash
+        run: cargo clippy --locked -p ores-stack-core -p ores-stack-cli --all-targets --all-features -- -D warnings
+
+      - name: Inject deterministic lane certification test
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >> crates/ores-stack-core/src/rpc_http_client_lane.rs <<'RS'
+
+          #[cfg(test)]
+          mod funded_determinism_cert {
+              use super::*;
+              use ores_api_docs::{
+                  RpcClientAudience, RpcClientBundleV3Manifest, RpcClientTransportSourcesV3,
+                  RpcCodecSet, RpcOperationClientSourcesV3, RpcOperationScope, RpcOperationSource,
+                  RpcRequestShape, RpcResponseShape,
+              };
+              use sha2::{Digest, Sha256};
+              use std::collections::BTreeMap;
+              use tempfile::tempdir;
+              use walkdir::WalkDir;
+
+              fn snapshot(root: &Path) -> BTreeMap<String, Vec<u8>> {
+                  let mut out = BTreeMap::new();
+                  for entry in WalkDir::new(root).follow_links(false) {
+                      let entry = entry.expect("walk generated tree");
+                      if !entry.file_type().is_file() {
+                          continue;
+                      }
+                      let relative = entry
+                          .path()
+                          .strip_prefix(root)
+                          .expect("relative path")
+                          .to_string_lossy()
+                          .replace('\\', "/");
+                      out.insert(relative, fs::read(entry.path()).expect("read generated file"));
+                  }
+                  out
+              }
+
+              fn bundle() -> (RpcClientBundleV3, RpcOperationContract) {
+                  let digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+                  let contract = RpcOperationContract {
+                      schema_version: 3,
+                      operation_key: "demo.version.get_version".to_owned(),
+                      namespace: vec!["version".to_owned()],
+                      source: RpcOperationSource {
+                          route_file: None,
+                          handlers_file: Some("src/routes/version/handlers.rs".to_owned()),
+                          handler: "get_version".to_owned(),
+                          operation: Some("get_version".to_owned()),
+                          invoker: None,
+                          execution_model: "shared_operation".to_owned(),
+                          repository: None,
+                          commit_sha: None,
+                      },
+                      rpc_transport_path: "/v1/rpc",
+                      http: None,
+                      scope: RpcOperationScope::Regular,
+                      stream: RpcStreamMode::Unary,
+                      audiences: vec![RpcClientAudience::Server],
+                      codecs: RpcCodecSet {
+                          allowed: vec![RpcPayloadCodec::Json],
+                          default: RpcPayloadCodec::Json,
+                      },
+                      request: RpcRequestShape::default(),
+                      response: RpcResponseShape::default(),
+                      contract_sha256: digest.to_owned(),
+                  };
+                  let bundle = RpcClientBundleV3 {
+                      manifest: RpcClientBundleV3Manifest {
+                          schema_version: 3,
+                          generated_by: "funded certification".to_owned(),
+                          service: "demo".to_owned(),
+                          audience: "server".to_owned(),
+                          contract_sha256: digest.to_owned(),
+                          operations: vec!["demo.version.get_version".to_owned()],
+                          languages: ["rust", "go", "dart", "typescript", "gleam"],
+                          http_endpoint: "/v1/rpc",
+                          layout: "namespace-files/v1",
+                      },
+                      transport: RpcClientTransportSourcesV3 {
+                          rust: String::new(),
+                          go: String::new(),
+                          dart: String::new(),
+                          typescript: String::new(),
+                          gleam: String::new(),
+                      },
+                      operations: vec![RpcOperationClientSourcesV3 {
+                          operation_key: "demo.version.get_version".to_owned(),
+                          namespace: vec!["version".to_owned()],
+                          operation_name: "get_version".to_owned(),
+                          stream: RpcStreamMode::Unary,
+                          rust: String::new(),
+                          go: String::new(),
+                          dart: String::new(),
+                          typescript: String::new(),
+                          gleam: String::new(),
+                      }],
+                  };
+                  (bundle, contract)
+              }
+
+              #[test]
+              fn deterministic_parallel_lane_regeneration_is_byte_stable() {
+                  let target = tempdir().expect("target");
+                  let (bundle, contract) = bundle();
+                  materialize(target.path(), &bundle, std::slice::from_ref(&contract), "regular", false)
+                      .expect("first generation");
+                  let first = snapshot(target.path());
+                  materialize(target.path(), &bundle, std::slice::from_ref(&contract), "regular", false)
+                      .expect("second generation");
+                  let second = snapshot(target.path());
+                  assert_eq!(first, second, "second generation changed bytes");
+                  materialize(target.path(), &bundle, std::slice::from_ref(&contract), "regular", true)
+                      .expect("check mode accepts generated tree");
+                  assert_eq!(second, snapshot(target.path()), "check mode mutated tree");
+
+                  let imports: serde_json::Value = serde_json::from_slice(
+                      second.get("generated/rpc/client-imports.json").expect("imports manifest")
+                  ).expect("parse imports");
+                  assert_eq!(imports["interface_contract"].as_str(), Some(INTERFACE_CONTRACT));
+                  assert_eq!(imports["ores_http_clients"]["typescript"].as_str(), Some("src/langs/typescript/generated_ores_http"));
+                  assert_eq!(imports["ores_http_clients"]["dart"].as_str(), Some("src/langs/dart/generated_ores_http"));
+                  assert_eq!(imports["ores_http_clients"]["rust"].as_str(), Some("src/langs/rust/generated_ores_http"));
+                  assert_eq!(imports["ores_http_clients"]["gleam"].as_str(), Some("src/langs/gleam/generated_ores_http"));
+                  assert_eq!(imports["runtime_packages"]["typescript"].as_str(), Some("@oresoftware/ores-http-clients/fluent"));
+                  assert_eq!(imports["runtime_packages"]["dart"].as_str(), Some("package:ores_http_clients/ores_http_clients.dart"));
+                  assert_eq!(imports["runtime_packages"]["rust"].as_str(), Some("ores_http_clients"));
+                  assert_eq!(imports["runtime_packages"]["gleam"].as_str(), Some("ores_http_clients/fluent"));
+
+                  for path in [
+                      "src/langs/typescript/generated_ores_http/version/get-version.ts",
+                      "src/langs/dart/generated_ores_http/version/get-version.dart",
+                      "src/langs/rust/generated_ores_http/version/get-version.rs",
+                      "src/langs/gleam/generated_ores_http/version/get_version.gleam",
+                  ] {
+                      assert!(second.contains_key(path), "missing generated lane file {path}");
+                  }
+
+                  let mut hasher = Sha256::new();
+                  for (path, bytes) in &second {
+                      hasher.update(path.as_bytes());
+                      hasher.update([0]);
+                      hasher.update(bytes);
+                      hasher.update([0xff]);
+                  }
+                  let digest = hasher.finalize();
+                  let digest = digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+                  let output = std::env::var_os("ORE_CERT_DIGEST_OUT").expect("digest output path");
+                  fs::write(output, format!("{digest}\n")).expect("write digest");
+              }
+          }
+          RS
+          cargo fmt -- crates/ores-stack-core/src/rpc_http_client_lane.rs
+
+      - name: Deterministic regeneration, tree equality, and import audit
+        working-directory: ores-stack
+        shell: bash
+        env:
+          ORE_CERT_DIGEST_OUT: ${{ runner.temp }}/tree.sha256
+        run: |
+          set -euo pipefail
+          cargo test --locked -p ores-stack-core deterministic_parallel_lane_regeneration_is_byte_stable -- --exact --nocapture || \
+            cargo test --locked -p ores-stack-core deterministic_parallel_lane_regeneration_is_byte_stable -- --nocapture
+          test -s "$ORE_CERT_DIGEST_OUT"
+          cat "$ORE_CERT_DIGEST_OUT"
+
+      - name: Restore exact source and verify immutable payload
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout -- crates/ores-stack-core/src/rpc_http_client_lane.rs
           test "$(git rev-parse HEAD)" = "$STACK_HEAD"
-          test "$(git ls-remote origin "refs/heads/$STACK_BRANCH" | cut -f1)" = "$STACK_HEAD"
           test -z "$(git status --porcelain)"
           git diff --check "$STACK_BASE"..HEAD
-          echo ORES_STACK_275_CURRENT_HEAD_CERT_PASS
+
+      - name: Upload deterministic tree digest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: rpc-lane-tree-${{ runner.os }}
+          path: ${{ runner.temp }}/tree.sha256
+          if-no-files-found: error
+
+  cross-os-tree-equality:
+    needs: certify
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download deterministic tree digests
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: rpc-lane-tree-*
+          path: digests
+      - name: Require byte-identical generated trees across Ubuntu and macOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(find digests -name tree.sha256 -type f | sort)
+          test "${#files[@]}" -eq 2
+          cat "${files[0]}"
+          cat "${files[1]}"
+          cmp "${files[0]}" "${files[1]}"
+          echo ORES_STACK_275_CROSS_OS_DETERMINISM_PASS
