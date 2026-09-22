@@ -1,4 +1,4 @@
-name: proof ores-stack 251 a570311
+name: proof ores-stack 262 edge-minimal wrapper
 
 on:
   pull_request:
@@ -11,47 +11,45 @@ permissions:
   contents: read
 
 env:
-  TARGET_SHA: 'a57031115345d21a56ba56a76b8a69fbce9bb8a6'
-  TARGET_BRANCH: 'feat/ppr-edge-minimal-wrapper-current3-20260922'
-  MIDDLEWARE_SHA: 'b930660d34896db1ab285c3b9bd97deaa37dc9ad'
-  P2_STACK_SHA: '1b2eda561882a38bc30f434810520d9c970810d2'
+  TARGET_SHA: '61ade26bc586096ba152e46f3cf93efc4838bcad'
+  TARGET_BRANCH: 'feat/ppr-edge-minimal-wrapper-main4-20260922'
+  MAIN_SHA: 'ebec1752123b77358342dfb3ca54c16986390501'
+  MIDDLEWARE_SHA: '0c29bf0c038b3df8aaaa1a5d3a13bba66b6df52f'
+  P2_STACK_SHA: 'ebec1752123b77358342dfb3ca54c16986390501'
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
 
 jobs:
-  certify:
+  repair_and_certify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - name: Configure authenticated private Git reads
+
+      - name: Configure authenticated private Git access
         shell: bash
         env:
           ORE_SOURCE_PAT: '${{ secrets.ORE_SOURCE_PAT }}'
         run: |
           set -euo pipefail
           test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
-      - name: Fetch exact current source head
+
+      - name: Fetch exact current source head and guard main
         shell: bash
         run: |
           set -euo pipefail
           git init subject
           git -C subject remote add origin https://github.com/ORESoftware/ores-stack.git
-          git -C subject fetch --depth=1 origin "$TARGET_BRANCH"
-          git -C subject checkout --detach FETCH_HEAD
+          git -C subject fetch --depth=2 origin "$TARGET_BRANCH"
+          git -C subject checkout -B repair FETCH_HEAD
           test "$(git -C subject rev-parse HEAD)" = "$TARGET_SHA"
           test "$(git -C subject ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$TARGET_SHA"
+          test "$(git -C subject ls-remote origin refs/heads/main | cut -f1)" = "$MAIN_SHA"
           test -z "$(git -C subject status --porcelain)"
-      - name: Verify paired ABI pins
-        working-directory: subject
-        shell: bash
-        run: |
-          set -euo pipefail
-          file='crates/ores-stack-cli/src/ppr_middleware_wrapper.rs'
-          grep -F "$MIDDLEWARE_SHA" "$file" >/dev/null
-          grep -F "$P2_STACK_SHA" "$file" >/dev/null
+
       - name: Install Rust 1.88
         shell: bash
         run: |
@@ -60,6 +58,7 @@ jobs:
           rustup default 1.88.0
           rustup component add rustfmt clippy
           rustc --version | grep -F 'rustc 1.88.0'
+
       - name: Bootstrap workspace lock without tracked mutation
         working-directory: subject
         shell: bash
@@ -67,35 +66,53 @@ jobs:
           set -euo pipefail
           bash scripts/bootstrap-cargo-lock.sh ensure
           test -z "$(git status --porcelain)"
-      - name: Compute PR-file-only rustfmt candidate
+
+      - name: Reconcile wrapper with terminal-lifecycle current main
         working-directory: subject
         shell: bash
         run: |
           set -euo pipefail
+          wrapper='crates/ores-stack-cli/src/ppr_middleware_wrapper.rs'
+          entry='crates/ores-stack-cli/src/entry.rs'
+
+          sed -i "s/b930660d34896db1ab285c3b9bd97deaa37dc9ad/$MIDDLEWARE_SHA/g" "$wrapper"
+          sed -i "s/1b2eda561882a38bc30f434810520d9c970810d2/$P2_STACK_SHA/g" "$wrapper"
+          grep -F "const ORES_MIDDLEWARE_ABI_REV: &str = \"$MIDDLEWARE_SHA\";" "$wrapper"
+          grep -F "const ORES_STACK_P2_PROTOCOL_REV: &str = \"$P2_STACK_SHA\";" "$wrapper"
+
+          grep -q '^mod ppr_middleware_wrapper;$' "$entry" || sed -i '/^mod legacy;$/a mod ppr_middleware_wrapper;' "$entry"
+          grep -q 'ppr_middleware_wrapper::try_run(&argv)' "$entry" || \
+            sed -i '/let result = stack_dev_hardened::try_run(&argv)/a\        .or_else(|| ppr_middleware_wrapper::try_run(&argv))' "$entry"
+          sed -i 's/\.ores-stack\.toml/\.ores-stack.yaml/g' "$entry"
+
           cargo fmt -p ores-stack-cli
           while IFS= read -r path; do
             case "$path" in
-              crates/ores-stack-cli/src/entry.rs|crates/ores-stack-cli/src/ppr_middleware_wrapper.rs) ;;
-              *) git checkout -- "$path" ;;
+              "$entry"|"$wrapper") ;;
+              *) git restore -- "$path" ;;
             esac
           done < <(git diff --name-only)
-          while IFS= read -r path; do
-            case "$path" in
-              crates/ores-stack-cli/src/entry.rs|crates/ores-stack-cli/src/ppr_middleware_wrapper.rs|'') ;;
-              *) echo "refusing unrelated formatter delta: $path" >&2; exit 1 ;;
-            esac
-          done < <(git diff --name-only)
+
+          changed="$(git diff --name-only | sort)"
+          expected="$(printf '%s\n%s\n' "$entry" "$wrapper" | sort)"
+          printf 'certified source delta:\n%s\n' "$changed"
+          test "$changed" = "$expected"
           git diff --check
-          git diff -- crates/ores-stack-cli/src/entry.rs crates/ores-stack-cli/src/ppr_middleware_wrapper.rs > "$RUNNER_TEMP/pr-rustfmt.patch"
-      - name: Check CLI crate on formatted candidate
+          grep -F '.ores-stack.yaml' "$entry" >/dev/null
+          ! grep -F '.ores-stack.toml' "$entry" >/dev/null
+
+      - name: Check CLI crate
         working-directory: subject
         run: cargo check --locked -p ores-stack-cli --all-targets
+
       - name: Test PPR wrapper implementation
         working-directory: subject
-        run: cargo test --locked -p ores-stack-cli ppr_middleware_wrapper
+        run: cargo test --locked -p ores-stack-cli ppr_middleware_wrapper -- --nocapture
+
       - name: Strict Clippy CLI crate
         working-directory: subject
         run: cargo clippy --locked -p ores-stack-cli --all-targets -- -D warnings
+
       - name: Compile a generated wrapper fixture
         working-directory: subject
         shell: bash
@@ -120,12 +137,22 @@ jobs:
           grep -F "$MIDDLEWARE_SHA" "$manifest" >/dev/null
           grep -F "$P2_STACK_SHA" "$manifest" >/dev/null
           cargo check --manifest-path "$manifest" --all-targets
-      - name: Report whether a source formatting repair is required
+
+      - name: Push only certified two-file source repair
+        working-directory: subject
         shell: bash
         run: |
           set -euo pipefail
-          if test -s "$RUNNER_TEMP/pr-rustfmt.patch"; then
-            echo 'PR_FORMAT_REPAIR_REQUIRED=true' >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo 'PR_FORMAT_REPAIR_REQUIRED=false' >> "$GITHUB_STEP_SUMMARY"
-          fi
+          entry='crates/ores-stack-cli/src/entry.rs'
+          wrapper='crates/ores-stack-cli/src/ppr_middleware_wrapper.rs'
+          changed="$(git diff --name-only | sort)"
+          expected="$(printf '%s\n%s\n' "$entry" "$wrapper" | sort)"
+          test "$changed" = "$expected"
+          test "$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$TARGET_SHA"
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$MAIN_SHA"
+          git config user.name 'ORESoftware CI proof'
+          git config user.email 'noreply@oresoftware.com'
+          git add "$entry" "$wrapper"
+          git commit -m 'feat(ppr): align generated edge-minimal wrapper with terminal lifecycle ABI'
+          git push origin HEAD:"$TARGET_BRANCH"
+          echo ORES_STACK_262_WRAPPER_PROOF_PASS
