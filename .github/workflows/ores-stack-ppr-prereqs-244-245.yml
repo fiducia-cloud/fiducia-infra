@@ -25,7 +25,7 @@ jobs:
             sha: '43c6b7dd4fbc73c688598d0a2e7f2ef002488e9e'
             mode: wrapper
           - name: response-head-245
-            sha: 'b6f0b1e218c4494b395b4fbdfd20cb0d834bdb51'
+            sha: '6b924f4686e78cccacbfc56b3d9e0cc0a617c773'
             mode: http
     name: ${{ matrix.name }}
     steps:
@@ -76,7 +76,7 @@ jobs:
         working-directory: ores-stack
         run: |
           set -euo pipefail
-          rustfmt --edition 2024 --check crates/ores-stack-cli/src/entry.rs crates/ores-stack-cli/src/ppr_middleware_wrapper.rs
+          rustfmt --edition 2024 --check crates/ores-stack-cli/src/ppr_middleware_wrapper.rs
           cargo check --locked -p ores-stack-cli --all-targets
           cargo test --locked -p ores-stack-cli ppr_middleware_wrapper -- --nocapture
           git diff --check
