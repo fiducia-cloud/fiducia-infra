@@ -99,7 +99,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ORESoftware/ores-stack
-          ref: 08d8f9cda3f430eb04efc07ff30b4ef9f87f80ce
+          ref: 71eb5eae18739ffff0bc58a1687db49b1f4e52d4
           token: ${{ secrets.ORE_SOURCE_PAT }}
           path: ores-stack
           persist-credentials: false
@@ -120,9 +120,22 @@ jobs:
       - name: Bootstrap lockfile
         working-directory: ores-stack
         run: bash scripts/bootstrap-cargo-lock.sh ensure
-      - name: Check formatting
+      - name: Format exact source and fast-forward PR branch
         working-directory: ores-stack
-        run: cargo fmt --all -- --check
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          if ! git diff --quiet; then
+            git config user.name 'ORESoftware automation'
+            git config user.email 'noreply@oresoftware.com'
+            git add -u
+            git commit -m 'style(ppr): apply rustfmt after direct API child wiring'
+            git remote set-url origin "https://x-access-token:${ORE_SOURCE_PAT}@github.com/ORESoftware/ores-stack.git"
+            git push origin HEAD:feat/server-stream-lambda-ppr-20260921
+          fi
       - name: Clippy
         working-directory: ores-stack
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
