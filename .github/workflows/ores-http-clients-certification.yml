@@ -90,15 +90,15 @@ jobs:
       - working-directory: source/src/rust
         run: cargo check --target wasm32-unknown-unknown
 
-  ores-stack-pr178:
+  ores-stack-pr197:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
-      - name: Check out exact ores-stack PR #178 head
+      - name: Check out exact ores-stack PR #197 head
         uses: actions/checkout@v4
         with:
           repository: ORESoftware/ores-stack
-          ref: 7000cc11203ae1192dddac0edc647746a36d5f55
+          ref: ceea90ee4416a491836f467bff93111a4e8f19e2
           token: ${{ secrets.ORE_SOURCE_PAT }}
           path: ores-stack
           persist-credentials: false
@@ -124,8 +124,8 @@ jobs:
       - name: Type-check workspace
         working-directory: ores-stack
         run: cargo check --workspace --all-targets --locked
-      - name: Test focused CLI/core packages
+      - name: Test REST source-boundary and core behavior
         working-directory: ores-stack
         run: |
-          cargo test -p ores-stack-cli --all-targets --locked
           cargo test -p ores-stack-core --all-targets --locked
+          cargo test -p ores-stack-cli --all-targets --locked
