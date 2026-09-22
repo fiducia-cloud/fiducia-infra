@@ -26,7 +26,7 @@ jobs:
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 1
-      - name: Apply candidate and instrument result
+      - name: Apply candidate and repair chunked fixture
         working-directory: source
         run: |
           python3 <<'PY'
@@ -47,16 +47,51 @@ jobs:
 
           test = Path('src/rust/tests/client.rs')
           text = test.read_text()
-          text, count = re.subn(
+          fn_start = text.index('async fn chunked_response_limit_returns_before_body_finishes()')
+          prefix = text[:fn_start]
+          tail = text[fn_start:]
+
+          server_block = r'''let server = tokio::spawn(async move {
+                  let (mut socket, _) = listener.accept().await.unwrap();
+                  let mut request = [0_u8; 4096];
+                  let _ = socket.read(&mut request).await;
+                  socket
+                      .write_all(
+                          b"HTTP/1.1 200 OK\r\ncontent-type: application/octet-stream\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n",
+                      )
+                      .await
+                      .unwrap();
+                  for _ in 0..3 {
+                      socket.write_all(b"4\r\nabcd\r\n").await.unwrap();
+                      socket.flush().await.unwrap();
+                  }
+                  sleep(Duration::from_secs(2)).await;
+                  let _ = socket.write_all(b"0\r\n\r\n").await;
+              });'''
+          tail, count = re.subn(
+              r'let server = tokio::spawn\(async move \{.*?\n\s*\}\);',
+              lambda _match: server_block,
+              tail,
+              count=1,
+              flags=re.S,
+          )
+          if count != 1:
+              raise SystemExit(f'expected one Rust server replacement, got {count}')
+
+          tail, count = re.subn(
               r'(\.expect\("client should reject before the server finishes the response"\);\n)',
               r'\1              eprintln!("bounded-stream result: {result:?}");\n',
-              text,
+              tail,
               count=1,
           )
           if count != 1:
               raise SystemExit(f'expected one debug insertion point, got {count}')
-          test.write_text(text)
+          test.write_text(prefix + tail)
           PY
+      - name: Show generated Rust fixture
+        working-directory: source
+        run: |
+          sed -n '/chunked_response_limit_returns_before_body_finishes/,$p' src/rust/tests/client.rs | head -n 90
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           toolchain: 1.96.0
