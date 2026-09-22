@@ -57,17 +57,36 @@ jobs:
           rustup default 1.88.0
           rustup component add rustfmt clippy
 
-      - name: Format
+      - name: Apply rustfmt diagnostically
         shell: bash
         working-directory: ores-stack
-        run: cargo fmt --all -- --check
+        run: |
+          set -euo pipefail
+          if cargo fmt --all -- --check; then
+            printf 'clean\n' > /tmp/rustfmt-status.txt
+            : > /tmp/ores-stack-rustfmt.patch
+          else
+            cargo fmt --all
+            git diff --binary -- crates/ores-stack-cli/src/legacy/mod.rs crates/ores-stack-core/src/lib.rs crates/ores-stack-core/src/rpc_http_client_lane.rs crates/ores-stack-core/src/rpc_http_client_lane_post.rs > /tmp/ores-stack-rustfmt.patch
+            test -s /tmp/ores-stack-rustfmt.patch
+            git diff --name-only | sort > /tmp/rustfmt-changed.txt
+            printf '%s\n' \
+              crates/ores-stack-cli/src/legacy/mod.rs \
+              crates/ores-stack-core/src/lib.rs \
+              crates/ores-stack-core/src/rpc_http_client_lane.rs \
+              crates/ores-stack-core/src/rpc_http_client_lane_post.rs | sort > /tmp/rustfmt-allowed.txt
+            test -z "$(comm -23 /tmp/rustfmt-changed.txt /tmp/rustfmt-allowed.txt)"
+            printf 'needs-format\n' > /tmp/rustfmt-status.txt
+          fi
+          cat /tmp/rustfmt-status.txt
+          cat /tmp/rustfmt-changed.txt 2>/dev/null || true
 
       - name: Locked metadata
         shell: bash
         working-directory: ores-stack
         run: cargo metadata --locked --format-version 1 --no-deps >/dev/null
 
-      - name: Compile exact head
+      - name: Compile formatted tree
         shell: bash
         working-directory: ores-stack
         run: cargo check --locked -p ores-stack-core -p ores-stack-cli --all-targets
@@ -82,13 +101,20 @@ jobs:
         working-directory: ores-stack
         run: cargo test --locked -p ores-stack-core rpc_http_client_lane_post -- --nocapture
 
-      - name: Source hygiene after executable checks
+      - name: Formatted-tree source hygiene
         shell: bash
         working-directory: ores-stack
         run: |
           set -euo pipefail
           git diff --check
-          test -z "$(git status --porcelain)"
+          test "$(git rev-parse HEAD)" = "$STACK_HEAD"
+          git diff --name-only | sort > /tmp/post-check-changed.txt
+          printf '%s\n' \
+            crates/ores-stack-cli/src/legacy/mod.rs \
+            crates/ores-stack-core/src/lib.rs \
+            crates/ores-stack-core/src/rpc_http_client_lane.rs \
+            crates/ores-stack-core/src/rpc_http_client_lane_post.rs | sort > /tmp/post-check-allowed.txt
+          test -z "$(comm -23 /tmp/post-check-changed.txt /tmp/post-check-allowed.txt)"
 
       - name: Prove zero new Clippy diagnostics versus base
         shell: bash
@@ -156,6 +182,7 @@ jobs:
               for item in new_findings:
                   print(item)
           if owned_findings or new_findings:
+              print('FAIL: Clippy regression')
               raise SystemExit(1)
           if int(os.environ['HEAD_CLIPPY_RC']) != 0 and int(os.environ['BASE_CLIPPY_RC']) == 0:
               raise SystemExit('head Clippy failed while base passed')
@@ -179,12 +206,28 @@ jobs:
           grep -q 'contract_sha256' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
           grep -q 'does not admit handlers audience' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
 
-      - name: Final immutable-source guard
+      - name: Upload rustfmt patch
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ores-stack-275-rustfmt-diagnostic
+          path: |
+            /tmp/ores-stack-rustfmt.patch
+            /tmp/rustfmt-status.txt
+            /tmp/rustfmt-changed.txt
+          if-no-files-found: warn
+
+      - name: Final exact-source decision
         if: ${{ always() }}
         shell: bash
         run: |
           set -euo pipefail
           test "$(git -C ores-stack rev-parse HEAD)" = "$STACK_HEAD"
-          test -z "$(git -C ores-stack status --porcelain)"
           git -C ores-stack diff --check "$STACK_BASE"..HEAD
+          status="$(cat /tmp/rustfmt-status.txt 2>/dev/null || echo missing)"
+          test "$status" = clean || {
+            echo "exact source requires rustfmt patch; refusing green certification" >&2
+            exit 1
+          }
+          test -z "$(git -C ores-stack status --porcelain)"
           echo ORES_STACK_275_HARDENED_PARALLEL_RPC_CERT_PASS
