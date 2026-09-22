@@ -176,11 +176,38 @@ jobs:
           CARGO_NET_GIT_FETCH_WITH_CLI: "true"
         run: |
           set -euo pipefail
-          cargo clippy --locked -p ores-stack-core --all-targets 2>&1 | tee /tmp/ores-stack-core-clippy.log
-          if grep -Eq 'crates/ores-stack-core/src/(lambda_callable_inventory|lambda_execution_leaf_plan)\.rs' /tmp/ores-stack-core-clippy.log; then
-            echo 'Clippy emitted a diagnostic in a touched source file.' >&2
-            exit 1
-          fi
+          cargo clippy --locked -p ores-stack-core --all-targets --message-format=json 2>/tmp/ores-stack-core-clippy-stderr.log | tee /tmp/ores-stack-core-clippy.jsonl
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          suffixes = (
+              'crates/ores-stack-core/src/lambda_callable_inventory.rs',
+              'crates/ores-stack-core/src/lambda_execution_leaf_plan.rs',
+          )
+          bad = []
+          for line in Path('/tmp/ores-stack-core-clippy.jsonl').read_text().splitlines():
+              try:
+                  obj = json.loads(line)
+              except json.JSONDecodeError:
+                  continue
+              if obj.get('reason') != 'compiler-message':
+                  continue
+              message = obj.get('message') or {}
+              if message.get('level') != 'warning':
+                  continue
+              spans = message.get('spans') or []
+              if any(
+                  (span.get('file_name') or '').replace('\\', '/').endswith(suffixes)
+                  for span in spans
+              ):
+                  bad.append(message.get('rendered') or message.get('message') or 'warning')
+          if bad:
+              print('\n'.join(bad), file=sys.stderr)
+              raise SystemExit(1)
+          PY
+          cat /tmp/ores-stack-core-clippy-stderr.log >&2
 
       - name: Commit certified source repair
         working-directory: ores-stack
