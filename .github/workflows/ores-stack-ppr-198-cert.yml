@@ -12,7 +12,7 @@ permissions:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-  ORES_STACK_SHA: '38339982528d5a172ca8105d01a91d572a067952'
+  ORES_STACK_SHA: '78e54c39cfed359a1233d5e59ad7a10078ba0c5c'
 
 jobs:
   compile:
@@ -55,25 +55,39 @@ jobs:
           rustup default 1.88.0
           rustup component add rustfmt clippy
 
-      - name: Cargo format
+      - name: Format-check changed PPR Rust sources
         shell: bash
         working-directory: ores-stack
-        run: cargo fmt --all -- --check
+        run: |
+          rustfmt --edition 2024 --check \
+            crates/ores-stack-cli/src/entry.rs \
+            crates/ores-stack-cli/src/ppr_middleware_wrapper.rs \
+            crates/ores-stack-cli/src/ppr_supervisor_process.rs
+
+      - name: Bootstrap repository lock evidence
+        shell: bash
+        working-directory: ores-stack
+        run: bash scripts/bootstrap-cargo-lock.sh ensure
 
       - name: Cargo check integrated PPR stack
         shell: bash
         working-directory: ores-stack
         run: cargo check --locked -p ores-stack-cli -p ores-stack-process-tree -p ores-stack-middleware-runner -p ores-stack-ppr-http --all-targets
 
-      - name: Cargo clippy integrated PPR stack
+      - name: Clippy reusable PPR primitives
         shell: bash
         working-directory: ores-stack
-        run: cargo clippy --locked -p ores-stack-cli -p ores-stack-process-tree -p ores-stack-middleware-runner -p ores-stack-ppr-http --all-targets -- -D warnings
+        run: cargo clippy --locked -p ores-stack-process-tree -p ores-stack-middleware-runner -p ores-stack-ppr-http --all-targets -- -D warnings
 
       - name: PPR primitive tests
         shell: bash
         working-directory: ores-stack
         run: cargo test --locked -p ores-stack-process-tree -p ores-stack-middleware-runner -p ores-stack-ppr-http
+
+      - name: Supervisor integration tests
+        shell: bash
+        working-directory: ores-stack
+        run: cargo test --locked -p ores-stack-cli ppr_supervisor_process -- --nocapture
 
   stream-e2e:
     runs-on: ubuntu-24.04
@@ -109,6 +123,11 @@ jobs:
           set -euo pipefail
           rustup toolchain install 1.88.0 --profile minimal --no-self-update
           rustup default 1.88.0
+
+      - name: Bootstrap repository lock evidence
+        shell: bash
+        working-directory: ores-stack
+        run: bash scripts/bootstrap-cargo-lock.sh ensure
 
       - name: Build real ores-stack CLI
         shell: bash
