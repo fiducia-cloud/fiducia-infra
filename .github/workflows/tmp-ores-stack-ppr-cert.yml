@@ -1,0 +1,72 @@
+name: tmp-ores-stack-ppr-cert
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/tmp-ores-stack-ppr-cert.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tmp-ores-stack-ppr-cert-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact ores-stack source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/ores-stack
+          ref: bd1a09caa5a0870c21c9ffbb282134f1088b0c15
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Prove exact source and semantic planner invariant
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "bd1a09caa5a0870c21c9ffbb282134f1088b0c15"
+          test ! -e crates/ores-stack-core/src/lambda_execution_leaf_plan.rs
+          grep -q '"crates/ores-stack-ppr-http"' Cargo.toml
+          grep -q '"crates/ores-stack-process-tree"' Cargo.toml
+          git diff --check
+          test -z "$(git status --porcelain)"
+
+      - name: Install repository Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
+
+      - name: Bootstrap Cargo lock using repository authority
+        shell: bash
+        run: ./scripts/bootstrap-cargo-lock.sh ensure
+
+      - name: Check PPR primitives
+        shell: bash
+        run: cargo check --locked -p ores-stack-ppr-http -p ores-stack-process-tree --all-targets
+
+      - name: Clippy PPR primitives
+        shell: bash
+        run: cargo clippy --locked -p ores-stack-ppr-http -p ores-stack-process-tree --all-targets -- -D warnings
+
+      - name: Test strict HTTP framing
+        shell: bash
+        run: cargo test --locked -p ores-stack-ppr-http
+
+      - name: Test process-tree ownership
+        shell: bash
+        run: cargo test --locked -p ores-stack-process-tree
+
+      - name: Re-prove source immutability
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "bd1a09caa5a0870c21c9ffbb282134f1088b0c15"
+          git diff --exit-code -- . ':(exclude)Cargo.lock'
