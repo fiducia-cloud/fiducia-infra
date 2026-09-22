@@ -94,7 +94,7 @@ jobs:
           export GIT_CONFIG_VALUE_0="https://github.com/"
           cargo test --manifest-path pmap-web-server/Cargo.toml --package pmap-web-server --locked
 
-      - name: Validate API against candidate lib-core
+      - name: Validate API v1 route contract against candidate lib-core
         shell: bash
         run: |
           set -euo pipefail
@@ -106,8 +106,23 @@ jobs:
           sed -i 's#pmap-crossborder = { git = "https://github.com/premarital-asset-protection/pmap-lib-core.git", branch = "[^"]*", features = \["serde"\] }#pmap-crossborder = { path = "../pmap-lib-core/crossborder", features = ["serde"] }#' pmap-api-server/Cargo.toml
           sed -i "s#ores-api-docs = { git = \"https://github.com/ORESoftware/api-docs\", features = \[\"axum\"\] }#ores-api-docs = { git = \"https://github.com/ORESoftware/api-docs\", rev = \"${ORES_API_DOCS_SHA}\", features = [\"axum\"] }#" pmap-api-server/Cargo.toml
           (cd pmap-api-server && cargo generate-lockfile)
-          cargo test --manifest-path pmap-api-server/Cargo.toml --package pmap-api-server --locked
+          mkdir -p pmap-api-server/src/bin
+          cat > pmap-api-server/src/bin/route_map_cert.rs <<'RS'
+          fn main() {
+              ores_api_docs::RouteMap::from_json_str(pmap_lib_core::API_ROUTE_MAP_JSON)
+                  .expect("candidate API v1 route map must parse under pinned ores-api-docs");
+          }
+          RS
+          cargo run --manifest-path pmap-api-server/Cargo.toml --bin route_map_cert --locked
+          rm pmap-api-server/src/bin/route_map_cert.rs
+          rmdir pmap-api-server/src/bin
+          cargo check --manifest-path pmap-api-server/Cargo.toml --package pmap-api-server --locked
           cargo clippy --manifest-path pmap-api-server/Cargo.toml --package pmap-api-server --all-targets --locked -- -D warnings
+          while IFS= read -r path; do
+            grep -Fq "\"${path}\"" pmap-api-server/src/main.rs \
+              || grep -Fq "\"${path}\"" pmap-api-server/src/intake.rs \
+              || { echo "candidate API route missing from source: ${path}" >&2; exit 1; }
+          done < <(jq -r '.map[] | if type == "string" then . else .path end' pmap-lib-core/route-maps/api.route-map.json)
 
       - name: Guard exact remote heads and route-map-only diffs
         shell: bash
