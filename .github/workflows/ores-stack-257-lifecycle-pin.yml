@@ -53,6 +53,7 @@ jobs:
           git config user.name 'ORESoftware CI repair'
           git config user.email 'noreply@oresoftware.com'
           git merge --no-edit --no-ff "$EXPECTED_MAIN"
+          test -z "$(git status --porcelain)"
       - name: Rust 1.88
         shell: bash
         run: |
@@ -60,21 +61,19 @@ jobs:
           rustup toolchain install 1.88.0 --profile minimal --no-self-update
           rustup default 1.88.0
           rustup component add rustfmt clippy
-      - name: Reconcile only Cargo lock evidence
+      - name: Resolve and commit only Cargo lock evidence
         working-directory: ores-stack
         shell: bash
         run: |
           set -euo pipefail
           test -z "$(git status --porcelain)"
-          bash scripts/bootstrap-cargo-lock.sh ensure
-          changed="$(git status --porcelain)"
-          if test -n "$changed"; then
-            test "$(git diff --name-only)" = 'Cargo.lock'
-            git add Cargo.lock
-            git commit -m 'fix(p2): reconcile lifecycle middleware lock pin'
-          fi
+          cargo metadata --format-version 1 >/dev/null
+          changed="$(git diff --name-only)"
+          test "$changed" = 'Cargo.lock'
+          git diff --check
+          git add Cargo.lock
+          git commit -m 'fix(p2): reconcile lifecycle middleware lock pin'
           test -z "$(git status --porcelain)"
-          git diff --check HEAD~1..HEAD || true
           echo "CERTIFIED_HEAD=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
       - name: Format P2 crate
         working-directory: ores-stack
@@ -102,6 +101,7 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$CERTIFIED_HEAD"
           test -z "$(git status --porcelain)"
+          git diff --check
           test "$(git ls-remote origin "refs/heads/$SOURCE_BRANCH" | cut -f1)" = "$EXPECTED_HEAD"
           test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_MAIN"
           git push origin HEAD:"refs/heads/$SOURCE_BRANCH"
