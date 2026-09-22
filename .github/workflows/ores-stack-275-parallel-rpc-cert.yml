@@ -17,7 +17,7 @@ env:
 jobs:
   certify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 70
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -50,14 +50,27 @@ jobs:
           rustup toolchain install 1.88.0 --profile minimal --no-self-update
           rustup default 1.88.0
           rustup component add rustfmt clippy
-      - name: PR-owned formatting
+      - name: Prove native Cargo formatter adds no PR-owned diff
         working-directory: ores-stack
         run: |
-          rustfmt --edition 2024 --config skip_children=true --check \
+          set -euo pipefail
+          cargo fmt --all
+          git diff --name-only | sort > /tmp/fmt-changed.txt
+          printf '%s\n' \
             crates/ores-stack-cli/src/legacy/mod.rs \
             crates/ores-stack-core/src/lib.rs \
             crates/ores-stack-core/src/rpc_http_client_lane.rs \
-            crates/ores-stack-core/src/rpc_http_client_lane_post.rs
+            crates/ores-stack-core/src/rpc_http_client_lane_post.rs | sort > /tmp/fmt-owned.txt
+          comm -12 /tmp/fmt-changed.txt /tmp/fmt-owned.txt > /tmp/fmt-owned-changed.txt
+          cat /tmp/fmt-owned-changed.txt
+          if test -s /tmp/fmt-owned-changed.txt; then
+            echo fail > /tmp/fmt-status
+          else
+            echo pass > /tmp/fmt-status
+          fi
+          git reset --hard "$SOURCE_HEAD"
+          test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
+          test -z "$(git status --porcelain)"
       - name: Locked metadata
         working-directory: ores-stack
         run: cargo metadata --locked --format-version 1 --no-deps >/dev/null
@@ -70,7 +83,7 @@ jobs:
       - name: Focused post-sync lane tests
         working-directory: ores-stack
         run: cargo test --locked -p ores-stack-core rpc_http_client_lane_post -- --nocapture
-      - name: Prove zero new Clippy diagnostics versus base
+      - name: Compare Clippy diagnostics with base
         run: |
           set -uo pipefail
           set +e
@@ -81,7 +94,7 @@ jobs:
           base_rc=$?
           set -e
           export HEAD_CLIPPY_RC="$head_rc" BASE_CLIPPY_RC="$base_rc"
-          python3 - <<'PY'
+          python3 - <<'PY' | tee /tmp/ores-stack-clippy-diff.txt
           import json, os
           from pathlib import Path
           owned = {'crates/ores-stack-core/src/rpc_http_client_lane.rs','crates/ores-stack-core/src/rpc_http_client_lane_post.rs','crates/ores-stack-core/src/lib.rs','crates/ores-stack-cli/src/legacy/mod.rs'}
@@ -106,11 +119,11 @@ jobs:
           owned_findings=sorted(d for d in head if d[2] in owned)
           new_findings=sorted(head-base)
           print(f"Clippy exit codes: base={os.environ['BASE_CLIPPY_RC']} head={os.environ['HEAD_CLIPPY_RC']}")
-          print(f"Clippy diagnostics: base={len(base)} head={len(head)}")
+          print(f"Clippy diagnostics: base={len(base)} head={len(head)} new={len(new_findings)} owned={len(owned_findings)}")
           if owned_findings: print('owned-file Clippy findings:', *owned_findings, sep='\n')
           if new_findings: print('new Clippy findings versus base:', *new_findings, sep='\n')
-          if owned_findings or new_findings: raise SystemExit(1)
-          if int(os.environ['HEAD_CLIPPY_RC']) != 0 and int(os.environ['BASE_CLIPPY_RC']) == 0: raise SystemExit(1)
+          ok = not owned_findings and not new_findings and not (int(os.environ['HEAD_CLIPPY_RC']) != 0 and int(os.environ['BASE_CLIPPY_RC']) == 0)
+          Path('/tmp/clippy-status').write_text('pass\n' if ok else 'fail\n')
           PY
       - name: Verify fluent and hardening contracts
         working-directory: ores-stack
@@ -127,10 +140,25 @@ jobs:
           grep -q 'is a symlink; refusing generated writes' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
           grep -q 'contract_sha256' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
           grep -q 'does not admit handlers audience' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
-      - name: Final immutable-head guard
+      - name: Upload certification diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ores-stack-275-cert-diagnostics
+          path: |
+            /tmp/fmt-changed.txt
+            /tmp/fmt-owned-changed.txt
+            /tmp/fmt-status
+            /tmp/ores-stack-clippy-diff.txt
+            /tmp/clippy-status
+          if-no-files-found: warn
+      - name: Final immutable-head decision
+        if: ${{ always() }}
         working-directory: ores-stack
         run: |
           set -euo pipefail
+          test "$(cat /tmp/fmt-status 2>/dev/null || echo missing)" = pass
+          test "$(cat /tmp/clippy-status 2>/dev/null || echo missing)" = pass
           test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
           test "$(git ls-remote origin "refs/heads/$STACK_BRANCH" | cut -f1)" = "$SOURCE_HEAD"
           test -z "$(git status --porcelain)"
