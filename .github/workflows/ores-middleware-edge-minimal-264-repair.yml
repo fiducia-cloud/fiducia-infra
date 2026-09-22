@@ -70,23 +70,40 @@ jobs:
             esac
           done <<< "$changed"
 
-      - name: Verify repaired exact source
+      - name: Repaired rustfmt gate
         shell: bash
         working-directory: ores-middleware
         run: |
           set -euo pipefail
           rustfmt --edition 2024 --check src/rust/src/provider_api.rs src/rust/src/hosts/edge_minimal_local.rs
-          cargo clippy --locked -p ores-middleware --no-default-features --lib -- -D warnings
-          cargo test --locked -p ores-middleware --no-default-features provider_api::tests -- --nocapture
-          cargo test --locked -p ores-middleware --no-default-features hosts::edge_minimal_local::tests -- --nocapture
-          cargo check --locked -p ores-middleware --no-default-features --all-targets
           git diff --check
+
+      - name: Repaired portable core Clippy
+        shell: bash
+        working-directory: ores-middleware
+        run: cargo clippy --locked -p ores-middleware --no-default-features --lib -- -D warnings
+
+      - name: Repaired provider API tests
+        shell: bash
+        working-directory: ores-middleware
+        run: cargo test --locked -p ores-middleware --no-default-features provider_api::tests -- --nocapture
+
+      - name: Repaired LocalEdgeMinimalHost tests
+        shell: bash
+        working-directory: ores-middleware
+        run: cargo test --locked -p ores-middleware --no-default-features hosts::edge_minimal_local::tests -- --nocapture
+
+      - name: Repaired portable all-target check
+        shell: bash
+        working-directory: ores-middleware
+        run: cargo check --locked -p ores-middleware --no-default-features --all-targets
 
       - name: Commit and push guarded repair
         shell: bash
         working-directory: ores-middleware
         run: |
           set -euo pipefail
+          git diff --check
           git config user.name 'ORESoftware CI repair'
           git config user.email 'noreply@oresoftware.com'
           git add src/rust/src/provider_api.rs src/rust/src/hosts/edge_minimal_local.rs
