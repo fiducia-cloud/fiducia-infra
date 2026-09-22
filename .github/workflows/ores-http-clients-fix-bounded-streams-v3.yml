@@ -35,12 +35,13 @@ jobs:
         run: |
           python3 <<'PY'
           from pathlib import Path
+          import textwrap
 
           harness = Path('../harness/.github/workflows/ores-http-clients-fix-bounded-streams-v2.yml').read_text()
           marker = "          python3 <<'PY'\n"
           start = harness.index(marker) + len(marker)
           end = harness.index("\n          PY\n", start)
-          script = harness[start:end]
+          script = textwrap.dedent(harness[start:end])
           script = script.replace(
               'updated, count = re.subn(pattern, replacement, text, count=1, flags=re.S)',
               'updated, count = re.subn(pattern, lambda _match: replacement, text, count=1, flags=re.S)',
