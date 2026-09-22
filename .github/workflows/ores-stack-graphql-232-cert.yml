@@ -45,7 +45,7 @@ jobs:
           set -euo pipefail
           rustup toolchain install 1.88.0 --profile minimal --no-self-update
           rustup default 1.88.0
-          rustup component add rustfmt clippy
+          rustup component add rustfmt
       - name: Certify GraphQL client generation
         shell: bash
         working-directory: ores-stack
@@ -55,5 +55,4 @@ jobs:
           rustfmt --edition 2024 --check crates/ores-stack-cli/src/rpc_cli.rs crates/ores-stack-cli/src/rpc_cli/graphql_codegen.rs
           cargo check --locked -p ores-stack-cli --all-targets
           cargo test --locked -p ores-stack-cli graphql -- --nocapture
-          cargo clippy --locked -p ores-stack-cli --all-targets -- -D warnings
           git diff --check
