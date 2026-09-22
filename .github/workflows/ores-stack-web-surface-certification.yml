@@ -1,0 +1,74 @@
+name: ores-stack web-surface certification
+
+on:
+  push:
+    branches:
+      - ci/ores-stack-web-surface-20260921
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      ORES_STACK_SHA: 8f51ccf67de8736e086a8f731ca6f7ca287b9134
+      CARGO_TERM_COLOR: never
+    steps:
+      - name: Require private source credential
+        shell: bash
+        env:
+          SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$SOURCE_PAT" || {
+            echo 'ORE_SOURCE_PAT is unavailable to this certification lane' >&2
+            exit 1
+          }
+
+      - name: Check out exact ores-stack candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/ores-stack
+          ref: ${{ env.ORES_STACK_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Prove exact candidate identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$ORES_STACK_SHA"
+          test -z "$(git status --porcelain)"
+          git diff --check
+
+      - name: Install Rust 1.88
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
+
+      - name: Compile and test web-surface core
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/bootstrap-cargo-lock.sh ensure
+          cargo check --locked -p ores-stack-core --all-targets
+          cargo clippy --locked -p ores-stack-core --all-targets -- -D warnings
+          cargo test --locked -p ores-stack-core --test web_surface_routing
+          cargo test --locked -p ores-stack-core --test web_execution_routing
+
+      - name: Run canonical build/dev smoke
+        shell: bash
+        run: bash scripts/ci-build-dev-smoke.sh
+
+      - name: Prove source identity remained immutable
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$ORES_STACK_SHA"
+          git diff --exit-code HEAD -- . ':(exclude)fixtures/axum-web-server/.ores-stack/**' ':(exclude).ores-stack-ci-evidence/**'
