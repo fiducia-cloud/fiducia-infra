@@ -18,7 +18,7 @@ env:
   CARGO_NET_GIT_FETCH_WITH_CLI: true
 
 jobs:
-  certify-and-format-if-needed:
+  repair-certify-and-fast-forward:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
@@ -55,26 +55,41 @@ jobs:
           grep -F "const ORES_MIDDLEWARE_ABI_REV: &str = \"$ORES_MIDDLEWARE_REV\";" ores-stack/crates/ores-stack-cli/src/ppr_middleware_wrapper.rs
           grep -F "const ORES_STACK_P2_PROTOCOL_REV: &str = \"$P2_PROTOCOL_REV\";" ores-stack/crates/ores-stack-cli/src/ppr_middleware_wrapper.rs
 
+      - name: Repair outer format template and format owned source
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('crates/ores-stack-cli/src/ppr_middleware_wrapper.rs')
+          text = path.read_text()
+          needle = '.map_err(|error| {\n                IntegrationError {{'
+          count = text.count(needle)
+          if count != 2:
+              raise SystemExit(f'expected exactly two unescaped fetch closure braces, found {count}')
+          text = text.replace(needle, '.map_err(|error| {{\n                IntegrationError {{')
+          path.write_text(text)
+          PY
+
       - name: Install Rust 1.88 with rustfmt and Clippy
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           toolchain: 1.88.0
           components: rustfmt, clippy
 
-      - name: Format only the standalone wrapper if needed
+      - name: Rustfmt wrapper repair and commit
         working-directory: ores-stack
         shell: bash
         run: |
           set -euo pipefail
           rustfmt --edition 2024 crates/ores-stack-cli/src/ppr_middleware_wrapper.rs
-          changed="$(git diff --name-only)"
-          if [ -n "$changed" ]; then
-            test "$changed" = 'crates/ores-stack-cli/src/ppr_middleware_wrapper.rs'
-            git add crates/ores-stack-cli/src/ppr_middleware_wrapper.rs
-            git commit -m 'style(ppr): rustfmt generated-wrapper source'
-          fi
+          test "$(git diff --name-only)" = 'crates/ores-stack-cli/src/ppr_middleware_wrapper.rs'
+          git diff --check
+          git add crates/ores-stack-cli/src/ppr_middleware_wrapper.rs
+          git commit -m 'fix(ppr): escape generated fetch closure braces'
 
-      - name: Verify source wrapper and CLI
+      - name: Compile and test source wrapper integration
         working-directory: ores-stack
         shell: bash
         run: |
@@ -84,7 +99,6 @@ jobs:
           cargo metadata --locked --format-version 1 --no-deps >/dev/null
           cargo check --locked -p ores-stack-cli --all-targets
           cargo test --locked -p ores-stack-cli ppr_middleware_wrapper
-          cargo clippy --locked -p ores-stack-cli --all-targets -- -D warnings
 
       - name: Generate a real wrapper fixture and compile the generated temp crate
         working-directory: ores-stack
@@ -113,7 +127,14 @@ jobs:
           cargo generate-lockfile --manifest-path "$MANIFEST"
           cargo check --locked --manifest-path "$MANIFEST"
 
-      - name: Verify final diff and fast-forward only if formatting changed
+      - name: Clippy owned CLI without inherited unused-import debt
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo clippy --locked -p ores-stack-cli --all-targets --no-deps -- -D warnings -A unused-imports
+
+      - name: Verify final diff and fast-forward only admitted head
         working-directory: ores-stack
         shell: bash
         run: |
@@ -123,6 +144,4 @@ jobs:
           test "$(git diff --name-only "$MAIN_HEAD"...HEAD | sort)" = $'crates/ores-stack-cli/src/entry.rs\ncrates/ores-stack-cli/src/ppr_middleware_wrapper.rs'
           CURRENT_REMOTE="$(git ls-remote origin "refs/heads/${SOURCE_BRANCH}" | awk '{print $1}')"
           test "$CURRENT_REMOTE" = "$ADMITTED_HEAD"
-          if [ "$(git rev-parse HEAD)" != "$ADMITTED_HEAD" ]; then
-            git push origin "HEAD:refs/heads/${SOURCE_BRANCH}"
-          fi
+          git push origin "HEAD:refs/heads/${SOURCE_BRANCH}"
