@@ -12,7 +12,7 @@ permissions:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-  ORES_STACK_SHA: 'df02c651ed0c82d674457d6eab4169be64f6a26c'
+  ORES_STACK_SHA: 'bc0f0927a8ea99f340161a6b7a8027b7274bc61f'
 
 jobs:
   rust:
@@ -33,7 +33,7 @@ jobs:
           test -n "$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
 
-      - name: Fetch exact ores-stack head
+      - name: Fetch exact ores-stack main commit
         shell: bash
         run: |
           set -euo pipefail
