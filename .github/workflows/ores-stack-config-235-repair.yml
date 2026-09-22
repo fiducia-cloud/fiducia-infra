@@ -96,7 +96,19 @@ jobs:
       - name: Repaired full core tests
         shell: bash
         working-directory: ores-stack
-        run: cargo test --locked -p ores-stack-core -- --nocapture
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          cargo test --locked -p ores-stack-core -- --nocapture 2>&1 | tee /tmp/ores-stack-core-tests.log
+
+      - name: Preserve core-test diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ores-stack-core-tests
+          path: /tmp/ores-stack-core-tests.log
+          if-no-files-found: ignore
+          retention-days: 1
 
       - name: Repaired core Clippy
         shell: bash
