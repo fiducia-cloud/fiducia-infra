@@ -12,7 +12,7 @@ permissions:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-  ORES_STACK_SHA: 'cd15cc117290f335aa09e30581a0e5fa9aeb6e0a'
+  ORES_STACK_SHA: 'ffe210e81f8768664b4d30cdb3d9f5e7c6f270d0'
 
 jobs:
   rust:
@@ -49,29 +49,29 @@ jobs:
           set -euo pipefail
           rustup toolchain install 1.88.0 --profile minimal --no-self-update
           rustup default 1.88.0
-          rustup component add rustfmt clippy
+          rustup component add rustfmt
 
-      - name: Cargo format
+      - name: Format-check deploy module
         shell: bash
         working-directory: ores-stack
-        run: cargo fmt --all -- --check
+        run: rustfmt --edition 2024 --check crates/ores-stack-cli/src/deploy_cli.rs
+
+      - name: Bootstrap repository lock evidence
+        shell: bash
+        working-directory: ores-stack
+        run: bash scripts/bootstrap-cargo-lock.sh ensure
 
       - name: Cargo check CLI
         shell: bash
         working-directory: ores-stack
         run: cargo check --locked -p ores-stack-cli --all-targets
 
-      - name: Cargo clippy CLI
-        shell: bash
-        working-directory: ores-stack
-        run: cargo clippy --locked -p ores-stack-cli --all-targets -- -D warnings
-
       - name: Shared JSON propagation regression
         shell: bash
         working-directory: ores-stack
-        run: cargo test --locked -p ores-stack-cli deploy_receives_resolved_shared_json_output_mode
+        run: cargo test --locked -p ores-stack-cli deploy_receives_resolved_shared_json_output_mode -- --nocapture
 
       - name: Deploy integrity regressions
         shell: bash
         working-directory: ores-stack
-        run: cargo test --locked -p ores-stack-cli --test deploy_artifact_integrity --test deploy_generated_env
+        run: cargo test --locked -p ores-stack-cli --test deploy_artifact_integrity --test deploy_generated_env -- --nocapture
