@@ -1,0 +1,112 @@
+name: patch ores-stack CLI once
+
+on:
+  push:
+    branches:
+      - ci/ores-stack-web-surface-20260921
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out ores-stack feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/ores-stack
+          ref: feat/web-surface-routing-20260921
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Apply asserted compile fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_exact(path: str, old: str, new: str, count: int = 1) -> None:
+              p = Path(path)
+              text = p.read_text()
+              actual = text.count(old)
+              if actual != count:
+                  raise SystemExit(f"{path}: expected {count} occurrences, found {actual}: {old!r}")
+              p.write_text(text.replace(old, new, count))
+
+          # The generated Rust CliConfig is not consumed anywhere; retaining it
+          # incorrectly rejects canonical env reuse across command aliases.
+          Path("crates/ores-stack-cli/build.rs").write_text('''use std::{env, fs, path::PathBuf};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let manifest_dir = PathBuf::from(
+        env::var_os("CARGO_MANIFEST_DIR").ok_or("Cargo did not set CARGO_MANIFEST_DIR")?,
+    );
+    let out_dir = PathBuf::from(env::var_os("OUT_DIR").ok_or("Cargo did not set OUT_DIR")?);
+    let contract = manifest_dir.join("../../.cli-flags.toml");
+    println!("cargo:rerun-if-changed={}", contract.display());
+    fs::copy(&contract, out_dir.join("cli-flags.toml"))?;
+    Ok(())
+}
+''')
+
+          replace_exact(
+              "crates/ores-stack-cli/src/main.rs",
+              '''#[allow(non_snake_case, dead_code)]
+mod generated_flag_contract {
+    include!(concat!(env!("OUT_DIR"), "/cli_config.rs"));
+}
+
+''',
+              "",
+          )
+          replace_exact(
+              "crates/ores-stack-cli/src/stack_dev_hardened.rs",
+              "use ores_compose::{ComposeSdk, ComposeUpOptions};",
+              "use ores_compose::sdk::{ComposeSdk, ComposeUpOptions};",
+          )
+          replace_exact(
+              "crates/ores-stack-cli/src/dev.rs",
+              "use crate::{\n    final_build_env, prepare_client_output, read_page_manifest, resolve, route_client_steps,",
+              "use super::{\n    final_build_env, prepare_client_output, read_page_manifest, resolve, route_client_steps,",
+          )
+          replace_exact(
+              "crates/ores-stack-cli/src/legacy/dev.rs",
+              "use crate::{\n    final_build_env, prepare_client_output, read_page_manifest, resolve, route_client_steps,",
+              "use super::{\n    final_build_env, prepare_client_output, read_page_manifest, resolve, route_client_steps,",
+          )
+          replace_exact(
+              "crates/ores-stack-cli/Cargo.toml",
+              '''[build-dependencies]
+flags2env-build = { package = "flags2env-build", git = "https://github.com/flags-2-env/flags-2-env.git", rev = "3414281ed8d7339d5bfabf951048bff31aa3349e" }
+
+''',
+              "",
+          )
+          PY
+
+          git diff --check
+          git diff -- crates/ores-stack-cli/build.rs crates/ores-stack-cli/Cargo.toml \
+            crates/ores-stack-cli/src/main.rs crates/ores-stack-cli/src/dev.rs \
+            crates/ores-stack-cli/src/legacy/dev.rs crates/ores-stack-cli/src/stack_dev_hardened.rs
+
+      - name: Commit and push exact patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            crates/ores-stack-cli/build.rs \
+            crates/ores-stack-cli/Cargo.toml \
+            crates/ores-stack-cli/src/main.rs \
+            crates/ores-stack-cli/src/dev.rs \
+            crates/ores-stack-cli/src/legacy/dev.rs \
+            crates/ores-stack-cli/src/stack_dev_hardened.rs
+          git diff --cached --quiet && { echo 'No patch required.'; exit 0; }
+          git commit -m 'fix(cli): restore canonical compile path'
+          git push origin HEAD:feat/web-surface-routing-20260921
