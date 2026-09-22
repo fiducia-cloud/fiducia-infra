@@ -11,6 +11,8 @@ permissions:
 env:
   STACK_HEAD: 3e22ace5653308aab54abf391d4265656998e950
   STACK_BASE: 253382da3634ce9fde62704e79e42160cee66838
+  HTTP_CLIENTS_HEAD: aee4483c8f51154f986a17ccdefdc2d6d7613d05
+  INTERFACES_HEAD: a071dbd727418b0483c3d514c862c0bb4f8633c0
 
 jobs:
   certify:
@@ -27,7 +29,7 @@ jobs:
           echo "::add-mask::$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
 
-      - name: Fetch exact source head
+      - name: Fetch exact source and merged contract/runtime authorities
         shell: bash
         run: |
           set -euo pipefail
@@ -40,6 +42,18 @@ jobs:
           test "$(git -C ores-stack diff --name-only "$STACK_BASE"..HEAD | sort | tr '\n' ' ')" = "crates/ores-stack-cli/src/legacy/mod.rs crates/ores-stack-core/src/lib.rs crates/ores-stack-core/src/rpc_http_client_lane.rs crates/ores-stack-core/src/rpc_http_client_lane_post.rs "
           test -z "$(git -C ores-stack status --porcelain)"
           git -C ores-stack diff --check "$STACK_BASE"..HEAD
+
+          git init ores-http-clients
+          git -C ores-http-clients remote add origin https://github.com/ORESoftware/ores-http-clients.git
+          git -C ores-http-clients fetch --depth=1 origin "$HTTP_CLIENTS_HEAD"
+          git -C ores-http-clients checkout --detach FETCH_HEAD
+          test "$(git -C ores-http-clients rev-parse HEAD)" = "$HTTP_CLIENTS_HEAD"
+
+          git init ores-interfaces
+          git -C ores-interfaces remote add origin https://github.com/ORESoftware/ores-interfaces.git
+          git -C ores-interfaces fetch --depth=1 origin "$INTERFACES_HEAD"
+          git -C ores-interfaces checkout --detach FETCH_HEAD
+          test "$(git -C ores-interfaces rev-parse HEAD)" = "$INTERFACES_HEAD"
 
       - name: Rust 1.88
         shell: bash
@@ -86,20 +100,43 @@ jobs:
         working-directory: ores-stack
         run: cargo test --locked -p ores-stack-core rpc_http_client_lane_post -- --nocapture
 
-      - name: Verify fluent terminals and exact-source hygiene
+      - name: Verify generated builder boundary binds merged fluent runtime
         shell: bash
-        working-directory: ores-stack
         run: |
           set -euo pipefail
-          grep -q 'makeCall()' crates/ores-stack-core/src/rpc_http_client_lane.rs
-          grep -q 'doStream()' crates/ores-stack-core/src/rpc_http_client_lane.rs
-          grep -q 'make_call' crates/ores-stack-core/src/rpc_http_client_lane.rs
-          grep -q 'do_stream' crates/ores-stack-core/src/rpc_http_client_lane.rs
-          grep -q 'generated_ores_http' crates/ores-stack-core/src/rpc_http_client_lane.rs
-          grep -q 'validate_existing_parallel_lane_state' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
-          grep -q 'outside owned generated_ores_http roots' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
-          grep -q 'is a symlink; refusing generated writes' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
-          test "$(git rev-parse HEAD)" = "$STACK_HEAD"
-          test -z "$(git status --porcelain)"
-          git diff --check "$STACK_BASE"..HEAD
+          lane=ores-stack/crates/ores-stack-core/src/rpc_http_client_lane.rs
+          post=ores-stack/crates/ores-stack-core/src/rpc_http_client_lane_post.rs
+
+          # ores-stack owns generated operation methods. Those methods must return
+          # the shared runtime builders; terminal I/O belongs to ores-http-clients.
+          grep -q 'RpcUnaryCallBuilder' "$lane"
+          grep -q 'RpcServerStreamCallBuilder' "$lane"
+          grep -q '@oresoftware/ores-http-clients/fluent' "$lane"
+          grep -q 'package:ores_http_clients/ores_http_clients.dart' "$lane"
+          grep -q '::ores_http_clients::' "$lane"
+          grep -q 'ores_http_clients/fluent' "$lane"
+          grep -q 'generated_ores_http' "$lane"
+
+          # The merged shared authority defines terminal intent independently.
+          test -f ores-interfaces/contracts/rpc-client-call/v1/main.tsp
+          test -f ores-interfaces/contracts/rpc-client-call/v1/authored.schema.json
+          grep -Rq 'make_call' ores-interfaces/contracts/rpc-client-call/v1
+          grep -Rq 'do_stream' ores-interfaces/contracts/rpc-client-call/v1
+
+          # The merged runtime provides the actual fluent execution terminals.
+          grep -Rq 'makeCall' ores-http-clients/src/ts/src ores-http-clients/src/dart/lib
+          grep -Rq 'doStream' ores-http-clients/src/ts/src ores-http-clients/src/dart/lib
+          grep -q 'pub fn make_call' ores-http-clients/src/rust/src/fluent.rs
+          grep -q 'pub fn do_stream' ores-http-clients/src/rust/src/fluent.rs
+          grep -q 'pub fn make_call' ores-http-clients/src/gleam/src/ores_http_clients/fluent.gleam
+          grep -q 'pub fn do_stream' ores-http-clients/src/gleam/src/ores_http_clients/fluent.gleam
+          ! grep -Eq '(^|[^A-Za-z])stream\(' ores-http-clients/src/ts/src/fluent.ts
+
+          grep -q 'validate_existing_parallel_lane_state' "$post"
+          grep -q 'outside owned generated_ores_http roots' "$post"
+          grep -q 'is a symlink; refusing generated writes' "$post"
+
+          test "$(git -C ores-stack rev-parse HEAD)" = "$STACK_HEAD"
+          test -z "$(git -C ores-stack status --porcelain)"
+          git -C ores-stack diff --check "$STACK_BASE"..HEAD
           echo ORES_STACK_275_FINAL_EXACT_HEAD_CERT_PASS
