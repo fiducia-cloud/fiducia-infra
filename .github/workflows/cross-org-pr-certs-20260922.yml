@@ -43,6 +43,7 @@ jobs:
           test "$(git -C source rev-parse origin/$SOURCE_BRANCH)" = "$SOURCE_HEAD"
           git -C source checkout --detach "$SOURCE_HEAD"
           test "$(git -C source merge-base HEAD "$SOURCE_BASE")" = "$SOURCE_BASE"
+          test "$(git -C source diff --name-only "$SOURCE_BASE"..HEAD | tr '\n' ' ')" = "tests/formal_dependency_graph_exhaustive.rs "
           test -z "$(git -C source status --porcelain)"
           git -C source diff --check "$SOURCE_BASE"..HEAD
       - name: Rust 1.98.1
@@ -51,9 +52,9 @@ jobs:
           rustup toolchain install 1.98.1 --profile minimal --component rustfmt,clippy --no-self-update
           rustup default 1.98.1
           rustc --version | grep -F 'rustc 1.98.1'
-      - name: Format
+      - name: PR-owned formatting
         working-directory: source
-        run: cargo fmt --all --check
+        run: rustfmt --edition 2021 --check tests/formal_dependency_graph_exhaustive.rs
       - name: Clippy
         working-directory: source
         run: cargo clippy --all-targets --all-features -- -D warnings
@@ -99,6 +100,7 @@ jobs:
           test "$(git -C source rev-parse origin/$SOURCE_BRANCH)" = "$SOURCE_HEAD"
           git -C source checkout --detach "$SOURCE_HEAD"
           test "$(git -C source merge-base HEAD "$SOURCE_BASE")" = "$SOURCE_BASE"
+          test "$(git -C source diff --name-only "$SOURCE_BASE"..HEAD | sort | tr '\n' ' ')" = ".github/workflows/ci.yml .github/workflows/source-audit-tjsv.yml tests/tjsv_ci_fixture.rs "
           git init tjsv
           git -C tjsv remote add origin https://github.com/ORESoftware/typespec-json-schema-validator.git
           git -C tjsv fetch --depth=1 origin "$TJSV_SHA"
@@ -117,14 +119,18 @@ jobs:
           set -euo pipefail
           rustup toolchain install 1.95.0 --profile minimal --component rustfmt,clippy --no-self-update
           rustup default 1.95.0
-      - name: Locked graph format clippy tests
+      - name: Locked dependency graph
         working-directory: source
-        run: |
-          set -euo pipefail
-          cargo metadata --locked --format-version 1 >/dev/null
-          cargo fmt --all --check
-          cargo clippy --all-targets --all-features --locked -- -D warnings
-          cargo test --all-targets --all-features --locked
+        run: cargo metadata --locked --format-version 1 >/dev/null
+      - name: PR-owned Rust formatting
+        working-directory: source
+        run: rustfmt --edition 2024 --check tests/tjsv_ci_fixture.rs
+      - name: Clippy
+        working-directory: source
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+      - name: Rust tests
+        working-directory: source
+        run: cargo test --all-targets --all-features --locked
       - name: Full TypeSpec and authored JSON Schema admission
         working-directory: source
         run: |
