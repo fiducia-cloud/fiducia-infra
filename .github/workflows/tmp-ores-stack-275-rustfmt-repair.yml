@@ -1,0 +1,76 @@
+name: tmp ores-stack 275 rustfmt repair
+
+on:
+  push:
+    branches:
+      - test/ores-stack-275-rustfmt-repair-20260922
+
+permissions:
+  contents: read
+
+env:
+  STACK_HEAD: e7495168f0bee4eb396d5c9a6922925ba57adf56
+  STACK_BRANCH: feat/parallel-rpc-runtime-client-lane
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Configure authenticated source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact source branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --no-checkout https://github.com/ORESoftware/ores-stack.git ores-stack
+          git -C ores-stack checkout "$STACK_BRANCH"
+          test "$(git -C ores-stack rev-parse HEAD)" = "$STACK_HEAD"
+          test -z "$(git -C ores-stack status --porcelain)"
+
+      - name: Install rustfmt
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt
+
+      - name: Isolate PR-owned formatter delta
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cp crates/ores-stack-core/src/lib.rs /tmp/lib.rs
+          cp crates/ores-stack-core/src/rpc_http_client_lane_post.rs /tmp/rpc_http_client_lane_post.rs
+          git reset --hard "$STACK_HEAD"
+          cp /tmp/lib.rs crates/ores-stack-core/src/lib.rs
+          cp /tmp/rpc_http_client_lane_post.rs crates/ores-stack-core/src/rpc_http_client_lane_post.rs
+          printf '%s\n' \
+            crates/ores-stack-core/src/lib.rs \
+            crates/ores-stack-core/src/rpc_http_client_lane_post.rs | sort > /tmp/expected.txt
+          git diff --name-only | sort > /tmp/actual.txt
+          diff -u /tmp/expected.txt /tmp/actual.txt
+          git diff --check
+          test -n "$(git status --porcelain)"
+
+      - name: Commit and push source repair
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          git config user.name 'ORESoftware CI'
+          git config user.email 'alex@oresoftware.com'
+          git add crates/ores-stack-core/src/lib.rs crates/ores-stack-core/src/rpc_http_client_lane_post.rs
+          git commit -m 'style: rustfmt parallel RPC lane'
+          git push origin "HEAD:$STACK_BRANCH"
+          echo "NEW_STACK_HEAD=$(git rev-parse HEAD)"
