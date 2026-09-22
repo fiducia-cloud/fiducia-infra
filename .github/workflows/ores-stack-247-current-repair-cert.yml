@@ -60,21 +60,26 @@ jobs:
           rustup toolchain install 1.88.0 --profile minimal --no-self-update
           rustup default 1.88.0
           rustup component add rustfmt clippy
-      - name: Apply adapter-only rustfmt
+      - name: Apply workspace-aware formatter then retain only PR-owned delta
         working-directory: ores-stack
         shell: bash
         run: |
           set -euo pipefail
           cargo fmt -p ores-fn-adapters
+          while IFS= read -r path; do
+            case "$path" in
+              crates/ores-fn-adapters/src/lib.rs|crates/ores-fn-adapters/src/rpc_http.rs) ;;
+              *) git checkout -- "$path" ;;
+            esac
+          done < <(git diff --name-only)
           changed="$(git diff --name-only)"
-          if test -n "$changed"; then
-            while IFS= read -r path; do
-              case "$path" in
-                crates/ores-fn-adapters/src/lib.rs|crates/ores-fn-adapters/src/rpc_http.rs) ;;
-                *) echo "refusing unrelated formatter delta: $path" >&2; exit 1 ;;
-              esac
-            done <<< "$changed"
-          fi
+          test -n "$changed"
+          while IFS= read -r path; do
+            case "$path" in
+              crates/ores-fn-adapters/src/lib.rs|crates/ores-fn-adapters/src/rpc_http.rs) ;;
+              *) echo "refusing unrelated formatter delta after restore: $path" >&2; exit 1 ;;
+            esac
+          done <<< "$changed"
           git diff --check
       - name: Bootstrap and verify current workspace lock
         working-directory: ores-stack
