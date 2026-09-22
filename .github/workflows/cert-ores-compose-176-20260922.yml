@@ -42,7 +42,7 @@ jobs:
           echo "SOURCE_HEAD=$source_head" >> "$GITHUB_ENV"
           git -C source checkout --detach "$source_head"
           test "$(git -C source merge-base HEAD "$SOURCE_BASE")" = "$SOURCE_BASE"
-          test "$(git -C source diff --name-only "$SOURCE_BASE"..HEAD | tr '\n' ' ')" = "tests/source_filter_regression.rs "
+          test "$(git -C source diff --name-only "$SOURCE_BASE"..HEAD | tr '\n' ' ')" = "tests/source_filter_execution_regressions.rs "
           git -C source diff --check "$SOURCE_BASE"..HEAD
           test -z "$(git -C source status --porcelain)"
       - name: Rust 1.98.1
@@ -51,13 +51,13 @@ jobs:
           rustup default 1.98.1
       - name: PR-owned formatting
         working-directory: source
-        run: rustfmt --edition 2021 --check tests/source_filter_regression.rs
+        run: rustfmt --edition 2021 --check tests/source_filter_execution_regressions.rs
       - name: Compile all targets and features
         working-directory: source
         run: cargo check --all-targets --all-features
       - name: Run source-filter regression
         working-directory: source
-        run: cargo test --test source_filter_regression -- --nocapture
+        run: cargo test --test source_filter_execution_regressions -- --nocapture
       - name: Run library tests
         working-directory: source
         run: cargo test --lib
