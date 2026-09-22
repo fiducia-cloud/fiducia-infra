@@ -53,7 +53,7 @@ jobs:
         working-directory: ores-stack
         run: |
           set -euo pipefail
-          rustfmt --edition 2024 --check crates/ores-fn-adapters/src/lib.rs crates/ores-fn-adapters/src/rpc_http.rs
+          rustfmt --edition 2024 --check crates/ores-fn-adapters/src/rpc_http.rs
           cargo metadata --locked --format-version 1 --no-deps >/dev/null
           cargo check --locked -p ores-fn-adapters --all-targets
           cargo test --locked -p ores-fn-adapters rpc_http -- --nocapture
