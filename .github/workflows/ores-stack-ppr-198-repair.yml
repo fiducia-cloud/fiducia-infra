@@ -1,0 +1,90 @@
+name: ores-stack-ppr-198-repair
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-stack-ppr-198-repair.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+  TARGET_SHA: '9f3b8b0c95c2c07d42b3e36cb732fbd27c14a7d7'
+  TARGET_BRANCH: 'feat/ppr-supervisor-framing-integration-20260922'
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Configure authenticated GitHub access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact live integration branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --depth=1 origin "$TARGET_BRANCH"
+          git -C ores-stack checkout -b repair FETCH_HEAD
+          actual="$(git -C ores-stack rev-parse HEAD)"
+          test "$actual" = "$TARGET_SHA" || { echo "branch moved: expected $TARGET_SHA got $actual"; exit 1; }
+
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt
+
+      - name: Let Cargo and rustfmt repair their own generated state
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          set +e
+          cargo check -p ores-stack-cli -p ores-stack-process-tree -p ores-stack-middleware-runner -p ores-stack-ppr-http --all-targets
+          check_status=$?
+          set -e
+          printf 'cargo_check_status=%s\n' "$check_status"
+          git diff --check
+          changed="$(git diff --name-only | sort)"
+          printf 'changed files:\n%s\n' "$changed"
+          allowed=$'Cargo.lock\ncrates/ores-stack-cli/src/ppr_supervisor_process.rs'
+          test "$changed" = "$allowed" || {
+            echo 'refusing guarded repair because the toolchain changed an unexpected tracked file'
+            git diff --stat
+            exit 1
+          }
+
+      - name: Commit and push guarded repair
+        shell: bash
+        working-directory: ores-stack
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          git config user.name 'ORESoftware CI repair'
+          git config user.email 'noreply@oresoftware.com'
+          git add Cargo.lock crates/ores-stack-cli/src/ppr_supervisor_process.rs
+          git commit -m 'fix(ppr): refresh formatting and lockfile'
+          remote_head="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)"
+          test "$remote_head" = "$TARGET_SHA" || { echo "source branch moved before push: $remote_head"; exit 1; }
+          git push origin HEAD:"$TARGET_BRANCH"
