@@ -55,15 +55,46 @@ jobs:
 
           rust_test = Path('src/rust/tests/client.rs')
           rust_text = rust_test.read_text()
-          rust_text, count = re.subn(
+          fn_start = rust_text.index('async fn chunked_response_limit_returns_before_body_finishes()')
+          rust_prefix = rust_text[:fn_start]
+          rust_tail = rust_text[fn_start:]
+
+          server_block = r'''let server = tokio::spawn(async move {
+                  let (mut socket, _) = listener.accept().await.unwrap();
+                  let mut request = [0_u8; 4096];
+                  let _ = socket.read(&mut request).await;
+                  socket
+                      .write_all(
+                          b"HTTP/1.1 200 OK\r\ncontent-type: application/octet-stream\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n",
+                      )
+                      .await
+                      .unwrap();
+                  for _ in 0..3 {
+                      socket.write_all(b"4\r\nabcd\r\n").await.unwrap();
+                      socket.flush().await.unwrap();
+                  }
+                  sleep(Duration::from_secs(2)).await;
+                  let _ = socket.write_all(b"0\r\n\r\n").await;
+              });'''
+          rust_tail, count = re.subn(
+              r'let server = tokio::spawn\(async move \{.*?\n\s*\}\);',
+              lambda _match: server_block,
+              rust_tail,
+              count=1,
+              flags=re.S,
+          )
+          if count != 1:
+              raise SystemExit(f'expected one Rust server replacement, got {count}')
+
+          rust_tail, count = re.subn(
               r'Err\(Error::ResponseTooLarge \{\s*limit: 8,\s*observed: Some\(12\)\s*\}\)',
               'Err(Error::ResponseTooLarge { limit: 8, observed: Some(observed) }) if observed > 8',
-              rust_text,
+              rust_tail,
               count=1,
           )
           if count != 1:
               raise SystemExit(f'expected one exact Rust overflow assertion replacement, got {count}')
-          rust_test.write_text(rust_text)
+          rust_test.write_text(rust_prefix + rust_tail)
           PY
 
       - name: Structural conformance
