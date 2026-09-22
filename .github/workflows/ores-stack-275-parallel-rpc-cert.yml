@@ -1,4 +1,4 @@
-name: ores-stack #275 parallel RPC guarded repair
+name: ores-stack #275 hardened parallel RPC certification
 
 on:
   pull_request:
@@ -11,18 +11,19 @@ permissions:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-  STACK_HEAD: '9977d2c3a775eff80bcd9a755a1b073eeaf3d595'
+  STACK_HEAD: 'e7495168f0bee4eb396d5c9a6922925ba57adf56'
   STACK_BASE: '253382da3634ce9fde62704e79e42160cee66838'
   STACK_BRANCH: 'feat/parallel-rpc-runtime-client-lane'
 
 jobs:
-  repair:
+  certify:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+
       - name: Configure authenticated source access
         shell: bash
         env:
@@ -32,7 +33,8 @@ jobs:
           test -n "$ORE_SOURCE_PAT"
           echo "::add-mask::$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
-      - name: Fetch exact PR head on current main
+
+      - name: Fetch exact hardened PR head
         shell: bash
         run: |
           set -euo pipefail
@@ -41,10 +43,12 @@ jobs:
           git -C ores-stack fetch --depth=20 origin main "$STACK_BRANCH"
           test "$(git -C ores-stack rev-parse origin/main)" = "$STACK_BASE"
           test "$(git -C ores-stack rev-parse origin/$STACK_BRANCH)" = "$STACK_HEAD"
-          git -C ores-stack checkout -b repair "$STACK_HEAD"
+          git -C ores-stack checkout --detach "$STACK_HEAD"
           test "$(git -C ores-stack merge-base HEAD "$STACK_BASE")" = "$STACK_BASE"
           test "$(git -C ores-stack diff --name-only "$STACK_BASE"..HEAD | sort | tr '\n' ' ')" = "crates/ores-stack-cli/src/legacy/mod.rs crates/ores-stack-core/src/lib.rs crates/ores-stack-core/src/rpc_http_client_lane.rs crates/ores-stack-core/src/rpc_http_client_lane_post.rs "
-          test "$(git -C ores-stack status --porcelain)" = ""
+          test -z "$(git -C ores-stack status --porcelain)"
+          git -C ores-stack diff --check "$STACK_BASE"..HEAD
+
       - name: Rust 1.88
         shell: bash
         run: |
@@ -52,34 +56,20 @@ jobs:
           rustup toolchain install 1.88.0 --profile minimal --no-self-update
           rustup default 1.88.0
           rustup component add rustfmt clippy
-      - name: Repair owned formatting and lint only
+
+      - name: Format compile and focused tests
         shell: bash
         working-directory: ores-stack
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path('crates/ores-stack-core/src/rpc_http_client_lane_post.rs')
-          text = path.read_text()
-          old = 'use std::{fs, path::Path};'
-          assert text.count(old) == 1, f'unexpected Path import count: {text.count(old)}'
-          path.write_text(text.replace(old, 'use std::fs;', 1))
-          PY
-          rustfmt --edition 2024 crates/ores-stack-core/src/rpc_http_client_lane.rs crates/ores-stack-core/src/rpc_http_client_lane_post.rs
-          rustfmt --edition 2024 --check crates/ores-stack-core/src/rpc_http_client_lane.rs crates/ores-stack-core/src/rpc_http_client_lane_post.rs
-          git diff --check
-          git diff --name-only | sort > /tmp/changed
-          printf '%s\n' crates/ores-stack-core/src/rpc_http_client_lane.rs crates/ores-stack-core/src/rpc_http_client_lane_post.rs | sort > /tmp/allowed
-          diff -u /tmp/allowed /tmp/changed
-      - name: Compile and focused-test affected crates
-        shell: bash
-        working-directory: ores-stack
-        run: |
-          set -euo pipefail
+          cargo fmt --all -- --check
           cargo metadata --locked --format-version 1 --no-deps >/dev/null
           cargo check --locked -p ores-stack-core -p ores-stack-cli --all-targets
           cargo test --locked -p ores-stack-core rpc_http_client_lane -- --nocapture
+          cargo test --locked -p ores-stack-core rpc_http_client_lane_post -- --nocapture
           git diff --check
+          test -z "$(git status --porcelain)"
+
       - name: Prove zero new Clippy diagnostics versus base
         shell: bash
         run: |
@@ -100,6 +90,8 @@ jobs:
           owned = {
               'crates/ores-stack-core/src/rpc_http_client_lane.rs',
               'crates/ores-stack-core/src/rpc_http_client_lane_post.rs',
+              'crates/ores-stack-core/src/lib.rs',
+              'crates/ores-stack-cli/src/legacy/mod.rs',
           }
 
           def normalize_file(value):
@@ -131,30 +123,26 @@ jobs:
 
           base = diagnostics('/tmp/base.jsonl')
           head = diagnostics('/tmp/head.jsonl')
-          head_rc = int(os.environ['HEAD_CLIPPY_RC'])
-          base_rc = int(os.environ['BASE_CLIPPY_RC'])
           owned_findings = sorted(d for d in head if d[2] in owned)
           new_findings = sorted(head - base)
-
-          print(f'Clippy exit codes: base={base_rc} head={head_rc}')
-          print(f'Clippy diagnostics: base={len(base)} head={len(head)}')
-          for label, items in (
-              ('owned-file Clippy findings', owned_findings),
-              ('new Clippy findings versus base', new_findings),
-          ):
-              if items:
-                  print(label + ':')
-                  for item in items:
-                      print(item)
-
-          if head_rc != 0 and base_rc == 0:
-              print('FAIL: head Clippy failed while base Clippy passed')
-              raise SystemExit(1)
+          print(f"Clippy exit codes: base={os.environ['BASE_CLIPPY_RC']} head={os.environ['HEAD_CLIPPY_RC']}")
+          print(f"Clippy diagnostics: base={len(base)} head={len(head)}")
+          if owned_findings:
+              print('owned-file Clippy findings:')
+              for item in owned_findings:
+                  print(item)
+          if new_findings:
+              print('new Clippy findings versus base:')
+              for item in new_findings:
+                  print(item)
           if owned_findings or new_findings:
               raise SystemExit(1)
-          print('PASS: head introduces zero Clippy diagnostics beyond current main')
+          if int(os.environ['HEAD_CLIPPY_RC']) != 0 and int(os.environ['BASE_CLIPPY_RC']) == 0:
+              raise SystemExit('head Clippy failed while base passed')
+          print('PASS: no new Clippy diagnostics')
           PY
-      - name: Verify fluent terminal contract
+
+      - name: Verify fluent and hardening contracts
         shell: bash
         working-directory: ores-stack
         run: |
@@ -165,19 +153,18 @@ jobs:
           grep -q 'do_stream' crates/ores-stack-core/src/rpc_http_client_lane.rs
           ! grep -Eq '\.stream\(' crates/ores-stack-core/src/rpc_http_client_lane.rs
           grep -q 'generated_ores_http' crates/ores-stack-core/src/rpc_http_client_lane.rs
-          grep -q 'ORESoftware/ores-interfaces/contracts/rpc-client-call/v1' crates/ores-stack-core/src/rpc_http_client_lane.rs
-      - name: Commit and fast-forward guarded repair
+          grep -q 'validate_existing_parallel_lane_state' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
+          grep -q 'outside owned generated_ores_http roots' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
+          grep -q 'is a symlink; refusing generated writes' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
+          grep -q 'contract_sha256' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
+          grep -q 'does not admit handlers audience' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
+
+      - name: Final immutable-source guard
+        if: ${{ always() }}
         shell: bash
-        working-directory: ores-stack
         run: |
           set -euo pipefail
-          remote_head="$(git ls-remote origin "refs/heads/$STACK_BRANCH" | cut -f1)"
-          test "$remote_head" = "$STACK_HEAD" || { echo "source branch moved: expected $STACK_HEAD got $remote_head"; exit 1; }
-          git diff --name-only | sort > /tmp/changed
-          printf '%s\n' crates/ores-stack-core/src/rpc_http_client_lane.rs crates/ores-stack-core/src/rpc_http_client_lane_post.rs | sort > /tmp/allowed
-          diff -u /tmp/allowed /tmp/changed
-          git config user.name 'ORESoftware funded certification'
-          git config user.email 'noreply@oresoftware.com'
-          git add crates/ores-stack-core/src/rpc_http_client_lane.rs crates/ores-stack-core/src/rpc_http_client_lane_post.rs
-          git commit -m 'style(rpc): format and lint parallel ores-http-clients lane'
-          git push origin HEAD:"$STACK_BRANCH"
+          test "$(git -C ores-stack rev-parse HEAD)" = "$STACK_HEAD"
+          test -z "$(git -C ores-stack status --porcelain)"
+          git -C ores-stack diff --check "$STACK_BASE"..HEAD
+          echo ORES_STACK_275_HARDENED_PARALLEL_RPC_CERT_PASS
