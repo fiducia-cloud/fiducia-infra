@@ -1,0 +1,117 @@
+name: proof ores-stack 247 947e8f3
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/proof-ores-stack-247-947e8f3.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TARGET_SHA: '947e8f3312fddb9e01aef2eaf3ab95ea80823086'
+  TARGET_BRANCH: 'salvage/rpc-http-adapter-main-20260922'
+  MAIN_SHA: 'c7f96e8ff67ccb6cbecd74f24ecdd48ba5695d4e'
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+
+jobs:
+  certify_merge_result:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Configure authenticated private Git reads
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: '${{ secrets.ORE_SOURCE_PAT }}'
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Fetch exact PR head and certified main with history
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone https://github.com/ORESoftware/ores-stack.git subject
+          git -C subject fetch origin "$TARGET_BRANCH"
+          git -C subject checkout -B proof FETCH_HEAD
+          test "$(git -C subject rev-parse HEAD)" = "$TARGET_SHA"
+          test "$(git -C subject ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$TARGET_SHA"
+          git -C subject fetch origin main
+          test "$(git -C subject rev-parse origin/main)" = "$MAIN_SHA"
+          test -n "$(git -C subject merge-base HEAD "$MAIN_SHA")"
+      - name: Build exact merge result
+        working-directory: subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'ORESoftware proof'
+          git config user.email 'noreply@oresoftware.com'
+          git merge --no-edit --no-ff "$MAIN_SHA"
+          test -z "$(git status --porcelain)"
+          changed="$(git diff --name-only "$MAIN_SHA"...HEAD)"
+          test -n "$changed"
+          while IFS= read -r path; do
+            case "$path" in
+              crates/ores-fn-adapters/src/http_call.rs|crates/ores-fn-adapters/src/lib.rs|crates/ores-fn-adapters/src/reply.rs|crates/ores-fn-adapters/src/rpc_http.rs) ;;
+              *) echo "unexpected post-merge feature path: $path" >&2; exit 1 ;;
+            esac
+          done <<< "$changed"
+      - name: Install Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+          rustc --version | grep -F 'rustc 1.88.0'
+      - name: Bootstrap workspace lock without hidden delta
+        working-directory: subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/bootstrap-cargo-lock.sh ensure
+          test -z "$(git status --porcelain)"
+      - name: Compute feature-file-only rustfmt candidate
+        working-directory: subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt -p ores-fn-adapters
+          while IFS= read -r path; do
+            case "$path" in
+              crates/ores-fn-adapters/src/http_call.rs|crates/ores-fn-adapters/src/lib.rs|crates/ores-fn-adapters/src/reply.rs|crates/ores-fn-adapters/src/rpc_http.rs) ;;
+              *) git checkout -- "$path" ;;
+            esac
+          done < <(git diff --name-only)
+          while IFS= read -r path; do
+            case "$path" in
+              crates/ores-fn-adapters/src/http_call.rs|crates/ores-fn-adapters/src/lib.rs|crates/ores-fn-adapters/src/reply.rs|crates/ores-fn-adapters/src/rpc_http.rs|'') ;;
+              *) echo "refusing unrelated formatter delta: $path" >&2; exit 1 ;;
+            esac
+          done < <(git diff --name-only)
+          git diff --check
+      - name: Check adapter crate
+        working-directory: subject
+        run: cargo check --locked -p ores-fn-adapters --all-targets
+      - name: Test adapter crate
+        working-directory: subject
+        run: cargo test --locked -p ores-fn-adapters --all-targets
+      - name: Strict Clippy adapter crate
+        working-directory: subject
+        run: cargo clippy --locked -p ores-fn-adapters --all-targets -- -D warnings
+      - name: Report source formatting delta
+        shell: bash
+        working-directory: subject
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo 'POST_MERGE_FORMAT_REPAIR_REQUIRED=false' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'POST_MERGE_FORMAT_REPAIR_REQUIRED=true' >> "$GITHUB_STEP_SUMMARY"
+            git diff --stat >> "$GITHUB_STEP_SUMMARY"
+          fi
