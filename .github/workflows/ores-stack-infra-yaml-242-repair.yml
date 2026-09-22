@@ -86,13 +86,14 @@ jobs:
         working-directory: ores-stack
         run: |
           set -euo pipefail
-          rustfmt --edition 2024 --check crates/ores-stack-cli/src/scaffold_cli.rs crates/ores-stack-cli/tests/infra_cross_check_yaml.rs
+          rustfmt --edition 2024 crates/ores-stack-cli/tests/infra_cross_check_yaml.rs
+          rustfmt --edition 2024 --check crates/ores-stack-cli/tests/infra_cross_check_yaml.rs
           bash scripts/bootstrap-cargo-lock.sh ensure
           cargo check --locked -p ores-stack-cli --all-targets
           cargo test --locked -p ores-stack-cli --test infra_cross_check_yaml -- --nocapture
           git diff --check
           git diff --name-only | sort > /tmp/changed
-          printf '%s\n' .cli-flags.toml crates/ores-stack-cli/src/scaffold_cli.rs | sort > /tmp/allowed
+          printf '%s\n' .cli-flags.toml crates/ores-stack-cli/src/scaffold_cli.rs crates/ores-stack-cli/tests/infra_cross_check_yaml.rs | sort > /tmp/allowed
           diff -u /tmp/allowed /tmp/changed
 
       - name: Commit and fast-forward guarded repair
@@ -104,6 +105,6 @@ jobs:
           test "$remote_head" = "$TARGET_SHA" || { echo "source branch moved: $remote_head"; exit 1; }
           git config user.name 'ores-stack certification'
           git config user.email 'actions@users.noreply.github.com'
-          git add .cli-flags.toml crates/ores-stack-cli/src/scaffold_cli.rs
+          git add .cli-flags.toml crates/ores-stack-cli/src/scaffold_cli.rs crates/ores-stack-cli/tests/infra_cross_check_yaml.rs
           git commit -m 'fix(infra): require canonical root yaml in cross-check'
           git push origin HEAD:"$TARGET_BRANCH"
