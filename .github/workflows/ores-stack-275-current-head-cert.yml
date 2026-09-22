@@ -14,7 +14,6 @@ env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
   STACK_BASE: '253382da3634ce9fde62704e79e42160cee66838'
   STACK_HEAD: '3e22ace5653308aab54abf391d4265656998e950'
-  STACK_BRANCH: 'feat/parallel-rpc-runtime-client-lane'
 
 jobs:
   certify:
@@ -39,18 +38,26 @@ jobs:
           echo "::add-mask::$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
 
-      - name: Fetch exact merged source payload
+      - name: Fetch immutable merged PR payload
         shell: bash
         run: |
           set -euo pipefail
           git init ores-stack
           git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
-          git -C ores-stack fetch --depth=100 origin main "$STACK_BRANCH"
-          test "$(git -C ores-stack rev-parse origin/$STACK_BRANCH)" = "$STACK_HEAD"
-          git -C ores-stack checkout --detach "$STACK_HEAD"
+          git -C ores-stack fetch --no-tags origin \
+            '+refs/pull/275/head:refs/remotes/origin/pr-275-head'
+          actual_head="$(git -C ores-stack rev-parse refs/remotes/origin/pr-275-head)"
+          printf 'expected PR head: %s\nactual PR head:   %s\n' "$STACK_HEAD" "$actual_head"
+          test "$actual_head" = "$STACK_HEAD"
+          git -C ores-stack checkout --detach refs/remotes/origin/pr-275-head
           git -C ores-stack cat-file -e "$STACK_BASE^{commit}"
-          test "$(git -C ores-stack merge-base HEAD "$STACK_BASE")" = "$STACK_BASE"
-          test "$(git -C ores-stack diff --name-only "$STACK_BASE"..HEAD | sort | tr '\n' ' ')" = "crates/ores-stack-cli/src/legacy/mod.rs crates/ores-stack-core/src/lib.rs crates/ores-stack-core/src/rpc_http_client_lane.rs crates/ores-stack-core/src/rpc_http_client_lane_post.rs "
+          actual_base="$(git -C ores-stack merge-base HEAD "$STACK_BASE")"
+          printf 'expected merge base: %s\nactual merge base:   %s\n' "$STACK_BASE" "$actual_base"
+          test "$actual_base" = "$STACK_BASE"
+          changed="$(git -C ores-stack diff --name-only "$STACK_BASE"..HEAD | sort | tr '\n' ' ')"
+          expected='crates/ores-stack-cli/src/legacy/mod.rs crates/ores-stack-core/src/lib.rs crates/ores-stack-core/src/rpc_http_client_lane.rs crates/ores-stack-core/src/rpc_http_client_lane_post.rs '
+          printf 'changed files: %s\n' "$changed"
+          test "$changed" = "$expected"
           git -C ores-stack diff --check "$STACK_BASE"..HEAD
           test -z "$(git -C ores-stack status --porcelain)"
 
