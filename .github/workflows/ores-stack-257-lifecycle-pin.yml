@@ -1,0 +1,107 @@
+name: ores-stack-257-lifecycle-pin
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-stack-257-lifecycle-pin.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_HEAD: '62b1bd6ed4a66beebf05951de635532be81f6b4e'
+  EXPECTED_MAIN: '5c3aec0e8b96afabe95e7213d0d33c056886dff9'
+  SOURCE_BRANCH: 'fix/p2-pin-terminal-lifecycle-20260922'
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+
+jobs:
+  repair_and_certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Configure authenticated GitHub access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: '${{ secrets.ORE_SOURCE_PAT }}'
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Fetch immutable source and current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch origin "$SOURCE_BRANCH"
+          git -C ores-stack checkout -b repair FETCH_HEAD
+          test "$(git -C ores-stack rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git -C ores-stack ls-remote origin "refs/heads/$SOURCE_BRANCH" | cut -f1)" = "$EXPECTED_HEAD"
+          git -C ores-stack fetch origin "$EXPECTED_MAIN"
+          test "$(git -C ores-stack rev-parse FETCH_HEAD)" = "$EXPECTED_MAIN"
+          test "$(git -C ores-stack ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_MAIN"
+      - name: Restack on current main
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'ORESoftware CI repair'
+          git config user.email 'noreply@oresoftware.com'
+          git merge --no-edit --no-ff "$EXPECTED_MAIN"
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+      - name: Reconcile only Cargo lock evidence
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain)"
+          bash scripts/bootstrap-cargo-lock.sh ensure
+          changed="$(git status --porcelain)"
+          if test -n "$changed"; then
+            test "$(git diff --name-only)" = 'Cargo.lock'
+            git add Cargo.lock
+            git commit -m 'fix(p2): reconcile lifecycle middleware lock pin'
+          fi
+          test -z "$(git status --porcelain)"
+          git diff --check HEAD~1..HEAD || true
+          echo "CERTIFIED_HEAD=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Format P2 crate
+        working-directory: ores-stack
+        run: cargo fmt -p ores-stack-p2-edge-minimal -- --check
+      - name: Locked metadata and compile
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo metadata --locked --format-version 1 >/dev/null
+          cargo check --locked -p ores-stack-p2-edge-minimal --all-targets
+      - name: Test P2 lifecycle pin
+        working-directory: ores-stack
+        run: cargo test --locked -p ores-stack-p2-edge-minimal --all-targets
+      - name: Strict Clippy P2 crate
+        working-directory: ores-stack
+        run: cargo clippy --locked -p ores-stack-p2-edge-minimal --all-targets -- -D warnings
+      - name: Workspace integration check
+        working-directory: ores-stack
+        run: cargo check --locked --workspace --all-targets
+      - name: Guard and publish exact certified head
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CERTIFIED_HEAD"
+          test -z "$(git status --porcelain)"
+          test "$(git ls-remote origin "refs/heads/$SOURCE_BRANCH" | cut -f1)" = "$EXPECTED_HEAD"
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_MAIN"
+          git push origin HEAD:"refs/heads/$SOURCE_BRANCH"
