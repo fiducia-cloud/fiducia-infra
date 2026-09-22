@@ -1,0 +1,129 @@
+name: pmap-api-flags2env-port
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/pmap-api-flags2env-port.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  port:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+      PMAP_MAIN_SHA: f32ab9072da6299149f41e2003aac2add6a61905
+      PR_BASE_SHA: 51fe70dc84b4c16059f13666bc8462f9a2f52d14
+      PR_HEAD_SHA: c8bef6da976bdac7e111ff6b11cc795219347fdf
+      PMAP_LIB_CORE_SHA: e4228ff170530b032e6781e04ee967ef54ba5df4
+      ORES_API_DOCS_SHA: 2dbd222872a93a6fac02521f8b8d982dc406f146
+      PMAP_PACKAGE: pmap-api-server
+    steps:
+      - name: Require cross-org source authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+
+      - name: Check out exact current PMAP API main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: premarital-asset-protection/pmap-api-server.rs
+          ref: ${{ env.PMAP_MAIN_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: pmap-api
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Apply focused PR 21 diff semantically
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C pmap-api rev-parse HEAD)" = "$PMAP_MAIN_SHA"
+          auth="url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf=https://github.com/"
+          git -C pmap-api -c "$auth" fetch origin "$PR_BASE_SHA" "$PR_HEAD_SHA"
+          git -C pmap-api switch -c direct-main-flags-port
+          (
+            cd pmap-api
+            git diff "$PR_BASE_SHA" "$PR_HEAD_SHA" -- \
+              .cli-flags.toml \
+              .github/workflows/flags-contract.yml \
+              Cargo.toml \
+              src/flags.rs \
+              src/main.rs \
+              tools/flags-contract-check/Cargo.lock \
+              tools/flags-contract-check/Cargo.toml \
+              tools/flags-contract-check/src/lib.rs \
+              | git apply --3way --index
+
+            sed -i "s#ores-api-docs = { git = \"https://github.com/ORESoftware/api-docs\", features = \[\"axum\"\] }#ores-api-docs = { git = \"https://github.com/ORESoftware/api-docs\", rev = \"${ORES_API_DOCS_SHA}\", features = [\"axum\"] }#" Cargo.toml
+            sed -i "s#pmap-lib-core = { git = \"https://github.com/premarital-asset-protection/pmap-lib-core.git\", rev = \"[^"]*\", version = \"0.1.0\", features = \[\"http\"\] }#pmap-lib-core = { git = \"https://github.com/premarital-asset-protection/pmap-lib-core.git\", rev = \"${PMAP_LIB_CORE_SHA}\", version = \"0.1.0\", features = [\"http\"] }#" Cargo.toml
+            sed -i "s#pmap-crossborder = { git = \"https://github.com/premarital-asset-protection/pmap-lib-core.git\", rev = \"[^"]*\", features = \[\"serde\"\] }#pmap-crossborder = { git = \"https://github.com/premarital-asset-protection/pmap-lib-core.git\", rev = \"${PMAP_LIB_CORE_SHA}\", features = [\"serde\"] }#" Cargo.toml
+            grep -Fq "ores-api-docs = { git = \"https://github.com/ORESoftware/api-docs\", rev = \"${ORES_API_DOCS_SHA}\"" Cargo.toml
+            test "$(grep -c "rev = \"${PMAP_LIB_CORE_SHA}\"" Cargo.toml)" = "2"
+            git add Cargo.toml
+          )
+
+      - name: Regenerate lock, format candidate, and constrain paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CARGO_NET_GIT_FETCH_WITH_CLI=true
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0="url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf"
+          export GIT_CONFIG_VALUE_0="https://github.com/"
+          cd pmap-api
+          cargo generate-lockfile
+          cargo fmt --package "$PMAP_PACKAGE"
+          git add Cargo.lock src/flags.rs src/main.rs
+          changed="$(git diff --cached --name-only | sort)"
+          printf '%s\n' "$changed"
+          while IFS= read -r path; do
+            case "$path" in
+              .cli-flags.toml|.github/workflows/flags-contract.yml|Cargo.toml|Cargo.lock|src/flags.rs|src/main.rs|tools/flags-contract-check/Cargo.lock|tools/flags-contract-check/Cargo.toml|tools/flags-contract-check/src/lib.rs) ;;
+              *) echo "unexpected path in semantic port: $path" >&2; exit 1 ;;
+            esac
+          done <<< "$changed"
+
+      - name: Full API tests, warning-free Clippy, and flags contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CARGO_NET_GIT_FETCH_WITH_CLI=true
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0="url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf"
+          export GIT_CONFIG_VALUE_0="https://github.com/"
+          cd pmap-api
+          cargo fmt --package "$PMAP_PACKAGE" -- --check
+          cargo test --package "$PMAP_PACKAGE" --locked
+          cargo clippy --package "$PMAP_PACKAGE" --all-targets --locked -- -D warnings
+          cargo metadata --manifest-path tools/flags-contract-check/Cargo.toml --locked --no-deps --format-version 1 >/dev/null
+          cargo test --manifest-path tools/flags-contract-check/Cargo.toml --locked
+
+      - name: Build real API image from candidate
+        shell: bash
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: |
+          set -euo pipefail
+          docker build \
+            --secret id=github_token,env=ORE_SOURCE_PAT \
+            --build-arg TARGETARCH=amd64 \
+            --tag pmap-api-flags-cert:latest \
+            --file pmap-api/Dockerfile \
+            pmap-api
+
+      - name: Commit and fast-forward PMAP API main only if unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth="url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf=https://github.com/"
+          remote_main="$(git -C pmap-api -c "$auth" ls-remote origin refs/heads/main | awk '{print $1}')"
+          test "$remote_main" = "$PMAP_MAIN_SHA"
+          git -C pmap-api config user.name "ORESoftware"
+          git -C pmap-api config user.email "alex@oresoftware.com"
+          git -C pmap-api commit -m "feat(config): port API startup to current flags2env" -m "Semantic port of focused PR #21 onto current main. Pin flags2env, api-docs, and the repaired shared lib-core authority; regenerate the root lock and retain fail-closed startup parsing."
+          git -C pmap-api -c "$auth" push origin HEAD:main
