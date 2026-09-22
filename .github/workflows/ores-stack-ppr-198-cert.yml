@@ -1,0 +1,123 @@
+name: ores-stack-ppr-198-cert
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-stack-ppr-198-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+  ORES_STACK_SHA: '38339982528d5a172ca8105d01a91d572a067952'
+
+jobs:
+  compile:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Configure authenticated GitHub source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact ores-stack integration head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --depth=1 origin "$ORES_STACK_SHA"
+          git -C ores-stack checkout --detach FETCH_HEAD
+          test "$(git -C ores-stack rev-parse HEAD)" = "$ORES_STACK_SHA"
+
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+
+      - name: Cargo format
+        shell: bash
+        working-directory: ores-stack
+        run: cargo fmt --all -- --check
+
+      - name: Cargo check integrated PPR stack
+        shell: bash
+        working-directory: ores-stack
+        run: cargo check --locked -p ores-stack-cli -p ores-stack-process-tree -p ores-stack-middleware-runner -p ores-stack-ppr-http --all-targets
+
+      - name: Cargo clippy integrated PPR stack
+        shell: bash
+        working-directory: ores-stack
+        run: cargo clippy --locked -p ores-stack-cli -p ores-stack-process-tree -p ores-stack-middleware-runner -p ores-stack-ppr-http --all-targets -- -D warnings
+
+      - name: PPR primitive tests
+        shell: bash
+        working-directory: ores-stack
+        run: cargo test --locked -p ores-stack-process-tree -p ores-stack-middleware-runner -p ores-stack-ppr-http
+
+  stream-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Configure authenticated GitHub source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact ores-stack integration head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --depth=1 origin "$ORES_STACK_SHA"
+          git -C ores-stack checkout --detach FETCH_HEAD
+          test "$(git -C ores-stack rev-parse HEAD)" = "$ORES_STACK_SHA"
+
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+
+      - name: Build real ores-stack CLI
+        shell: bash
+        working-directory: ores-stack
+        run: cargo build --locked -p ores-stack-cli
+
+      - name: Delayed multi-chunk PPR E2E
+        shell: bash
+        working-directory: ores-stack
+        env:
+          ORES_STACK_BIN: ${{ github.workspace }}/ores-stack/target/debug/ores-stack
+        run: bash scripts/ppr-server-stream-e2e.sh
