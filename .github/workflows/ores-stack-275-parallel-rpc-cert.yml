@@ -53,7 +53,7 @@ jobs:
       - name: PR-owned formatting
         working-directory: ores-stack
         run: |
-          rustfmt --edition 2024 --check \
+          rustfmt --edition 2024 --config skip_children=true --check \
             crates/ores-stack-cli/src/legacy/mod.rs \
             crates/ores-stack-core/src/lib.rs \
             crates/ores-stack-core/src/rpc_http_client_lane.rs \
@@ -107,10 +107,8 @@ jobs:
           new_findings=sorted(head-base)
           print(f"Clippy exit codes: base={os.environ['BASE_CLIPPY_RC']} head={os.environ['HEAD_CLIPPY_RC']}")
           print(f"Clippy diagnostics: base={len(base)} head={len(head)}")
-          if owned_findings:
-              print('owned-file Clippy findings:', *owned_findings, sep='\n')
-          if new_findings:
-              print('new Clippy findings versus base:', *new_findings, sep='\n')
+          if owned_findings: print('owned-file Clippy findings:', *owned_findings, sep='\n')
+          if new_findings: print('new Clippy findings versus base:', *new_findings, sep='\n')
           if owned_findings or new_findings: raise SystemExit(1)
           if int(os.environ['HEAD_CLIPPY_RC']) != 0 and int(os.environ['BASE_CLIPPY_RC']) == 0: raise SystemExit(1)
           PY
