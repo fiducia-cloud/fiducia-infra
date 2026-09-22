@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
-      ORES_STACK_SHA: b1813a387dd3fd8e52341a5f696526df738e220f
+      ORES_STACK_SHA: 1b5c46967982cf5020a7478042f1621546df7546
       CARGO_TERM_COLOR: never
     steps:
       - name: Require private source credential
