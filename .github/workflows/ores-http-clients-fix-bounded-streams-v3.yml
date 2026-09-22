@@ -35,6 +35,7 @@ jobs:
         run: |
           python3 <<'PY'
           from pathlib import Path
+          import re
           import textwrap
 
           harness = Path('../harness/.github/workflows/ores-http-clients-fix-bounded-streams-v2.yml').read_text()
@@ -50,23 +51,19 @@ jobs:
               'assert.ok(pulls <= 3, `response limit was enforced only after ${pulls} pulls`);',
               'assert.ok(pulls <= 4, `response limit was enforced only after ${pulls} pulls`);',
           )
-          script = script.replace(
-              '''              assert!(matches!(
-                  result,
-                  Err(Error::ResponseTooLarge {
-                      limit: 8,
-                      observed: Some(12)
-                  })
-              ));''',
-              '''              assert!(matches!(
-                  result,
-                  Err(Error::ResponseTooLarge {
-                      limit: 8,
-                      observed: Some(observed)
-                  }) if observed > 8
-              ));''',
-          )
           exec(compile(script, 'bounded-stream-remediation.py', 'exec'), {})
+
+          rust_test = Path('src/rust/tests/client.rs')
+          rust_text = rust_test.read_text()
+          rust_text, count = re.subn(
+              r'Err\(Error::ResponseTooLarge \{\s*limit: 8,\s*observed: Some\(12\)\s*\}\)',
+              'Err(Error::ResponseTooLarge { limit: 8, observed: Some(observed) }) if observed > 8',
+              rust_text,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit(f'expected one exact Rust overflow assertion replacement, got {count}')
+          rust_test.write_text(rust_text)
           PY
 
       - name: Structural conformance
