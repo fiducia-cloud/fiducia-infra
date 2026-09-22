@@ -1,0 +1,80 @@
+name: tmp ores-compose 175 exact-head cert
+
+on:
+  push:
+    branches:
+      - test/ores-compose-175-exhaustive-cert-20260922
+
+permissions:
+  contents: read
+
+env:
+  COMPOSE_HEAD: 11d753448edae184642e52a4f1f5ef0b2dfd316d
+  COMPOSE_BASE: 2e0d1488ca32371e4f410f95cf6886674b86876c
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Configure authenticated source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact ores-compose head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-compose
+          git -C ores-compose remote add origin https://github.com/ORESoftware/ores-compose.git
+          git -C ores-compose fetch --depth=20 origin main "$COMPOSE_HEAD"
+          git -C ores-compose checkout --detach "$COMPOSE_HEAD"
+          test "$(git -C ores-compose rev-parse HEAD)" = "$COMPOSE_HEAD"
+          test "$(git -C ores-compose merge-base HEAD "$COMPOSE_BASE")" = "$COMPOSE_BASE"
+          test "$(git -C ores-compose diff --name-only "$COMPOSE_BASE"..HEAD)" = "tests/formal_dependency_graph_exhaustive.rs"
+          test -z "$(git -C ores-compose status --porcelain)"
+          git -C ores-compose diff --check "$COMPOSE_BASE"..HEAD
+
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt
+
+      - name: Frozen dependency metadata
+        shell: bash
+        working-directory: ores-compose
+        run: cargo metadata --locked --format-version 1 --no-deps >/dev/null
+
+      - name: Rustfmt
+        shell: bash
+        working-directory: ores-compose
+        run: cargo fmt --all -- --check
+
+      - name: Compile all targets
+        shell: bash
+        working-directory: ores-compose
+        run: cargo check --locked --all-targets
+
+      - name: Run exhaustive dependency graph proof
+        shell: bash
+        working-directory: ores-compose
+        run: cargo test --locked --test formal_dependency_graph_exhaustive -- --nocapture
+
+      - name: Exact-source hygiene
+        shell: bash
+        working-directory: ores-compose
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$COMPOSE_HEAD"
+          test -z "$(git status --porcelain)"
+          git diff --check "$COMPOSE_BASE"..HEAD
+          echo ORES_COMPOSE_175_EXACT_HEAD_CERT_PASS
