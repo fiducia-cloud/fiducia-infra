@@ -1,4 +1,4 @@
-name: ores-stack graphql #232 exact-head certification
+name: ores-stack graphql current exact-head certification
 
 on:
   pull_request:
@@ -12,7 +12,7 @@ permissions:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-  ORES_STACK_SHA: 'af875fb012d1ff2d8e5b4268f5150c0b12682df2'
+  ORES_STACK_SHA: 'efc44375bf3c8c336b6b34c78248ef1fa0c9308f'
 
 jobs:
   certify:
