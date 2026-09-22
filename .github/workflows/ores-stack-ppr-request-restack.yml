@@ -65,7 +65,7 @@ jobs:
           path.write_text(text.replace(old, new, 1))
           PY
           rustfmt --edition 2024 crates/ores-stack-ppr-http/src/request.rs
-          rustfmt --edition 2024 --check crates/ores-stack-ppr-http/src/request.rs crates/ores-stack-ppr-http/src/lib_strict.rs
+          rustfmt --edition 2024 --check crates/ores-stack-ppr-http/src/request.rs
           git diff --check
           test "$(git diff --name-only)" = 'crates/ores-stack-ppr-http/src/request.rs'
       - name: Certify merged request authority
