@@ -1,4 +1,4 @@
-name: ores-stack PPR request HRTB repair
+name: ores-stack PPR merged-main repair
 
 on:
   pull_request:
@@ -50,25 +50,45 @@ jobs:
           rustup toolchain install 1.88.0 --profile minimal --no-self-update
           rustup default 1.88.0
           rustup component add rustfmt clippy
-      - name: Apply only Rust-1.88 deadline lifetime repair
+      - name: Repair duplicate response writer and request deadline lifetime
         shell: bash
         working-directory: ores-stack
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          path = Path('crates/ores-stack-ppr-http/src/request.rs')
-          text = path.read_text()
+
+          request = Path('crates/ores-stack-ppr-http/src/request.rs')
+          text = request.read_text()
           old = '    with_tcp_deadline(stream, deadline, read_request_head)'
           new = '    with_tcp_deadline(stream, deadline, |reader| read_request_head(reader))'
-          assert text.count(old) == 1, f'unexpected source count: {text.count(old)}'
-          path.write_text(text.replace(old, new, 1))
+          assert text.count(old) == 1, f'unexpected request deadline call count: {text.count(old)}'
+          request.write_text(text.replace(old, new, 1))
+
+          strict = Path('crates/ores-stack-ppr-http/src/lib_strict.rs')
+          text = strict.read_text()
+          start_marker = '/// Write one already-validated P3 response head through the canonical P1\n'
+          relay_marker = '/// Relay one complete P3 response body and reject bytes after its declared\n'
+          starts = []
+          offset = 0
+          while True:
+              index = text.find(start_marker, offset)
+              if index < 0:
+                  break
+              starts.append(index)
+              offset = index + len(start_marker)
+          assert len(starts) == 2, f'expected exactly two write_response_head blocks, found {len(starts)}'
+          relay = text.find(relay_marker, starts[1])
+          assert relay > starts[1], 'could not find relay marker after duplicate response writer'
+          strict.write_text(text[:starts[1]] + text[relay:])
           PY
-          rustfmt --edition 2024 crates/ores-stack-ppr-http/src/request.rs
-          rustfmt --edition 2024 --check crates/ores-stack-ppr-http/src/request.rs
+          rustfmt --edition 2024 crates/ores-stack-ppr-http/src/request.rs crates/ores-stack-ppr-http/src/lib_strict.rs
+          rustfmt --edition 2024 --check crates/ores-stack-ppr-http/src/request.rs crates/ores-stack-ppr-http/src/lib_strict.rs
           git diff --check
-          test "$(git diff --name-only)" = 'crates/ores-stack-ppr-http/src/request.rs'
-      - name: Certify merged request authority
+          git diff --name-only | sort > /tmp/changed
+          printf '%s\n' crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs | sort > /tmp/allowed
+          diff -u /tmp/allowed /tmp/changed
+      - name: Certify merged PPR HTTP authority
         shell: bash
         working-directory: ores-stack
         run: |
@@ -78,7 +98,9 @@ jobs:
           cargo test --locked -p ores-stack-ppr-http -- --nocapture
           cargo clippy --locked -p ores-stack-ppr-http --all-targets -- -D warnings
           git diff --check
-          test "$(git diff --name-only)" = 'crates/ores-stack-ppr-http/src/request.rs'
+          git diff --name-only | sort > /tmp/changed
+          printf '%s\n' crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs | sort > /tmp/allowed
+          diff -u /tmp/allowed /tmp/changed
       - name: Commit and fast-forward guarded repair
         shell: bash
         working-directory: ores-stack
@@ -86,9 +108,11 @@ jobs:
           set -euo pipefail
           remote_head="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)"
           test "$remote_head" = "$TARGET_SHA" || { echo "target branch moved: expected $TARGET_SHA got $remote_head"; exit 1; }
-          test "$(git diff --name-only)" = 'crates/ores-stack-ppr-http/src/request.rs'
+          git diff --name-only | sort > /tmp/changed
+          printf '%s\n' crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs | sort > /tmp/allowed
+          diff -u /tmp/allowed /tmp/changed
           git config user.name 'ores-stack certification'
           git config user.email 'actions@users.noreply.github.com'
-          git add crates/ores-stack-ppr-http/src/request.rs
-          git commit -m 'fix(ppr): satisfy request deadline reader lifetime'
+          git add crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs
+          git commit -m 'fix(ppr): dedupe response writer and satisfy deadline lifetime'
           git push origin HEAD:"$TARGET_BRANCH"
