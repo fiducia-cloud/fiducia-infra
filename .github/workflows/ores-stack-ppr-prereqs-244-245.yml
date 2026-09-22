@@ -1,0 +1,94 @@
+name: ores-stack PPR prereqs #244 #245 exact-head certification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-stack-ppr-prereqs-244-245.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: p2-wrapper-244
+            sha: '43c6b7dd4fbc73c688598d0a2e7f2ef002488e9e'
+            mode: wrapper
+          - name: response-head-245
+            sha: 'b6f0b1e218c4494b395b4fbdfd20cb0d834bdb51'
+            mode: http
+    name: ${{ matrix.name }}
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Configure authenticated GitHub source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact ores-stack head
+        shell: bash
+        env:
+          ORES_STACK_SHA: ${{ matrix.sha }}
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --depth=1 origin "$ORES_STACK_SHA"
+          git -C ores-stack checkout --detach FETCH_HEAD
+          test "$(git -C ores-stack rev-parse HEAD)" = "$ORES_STACK_SHA"
+          test "$(git -C ores-stack status --porcelain)" = ""
+
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+
+      - name: Bootstrap lock evidence
+        shell: bash
+        working-directory: ores-stack
+        run: bash scripts/bootstrap-cargo-lock.sh ensure
+
+      - name: Certify generated edge-minimal wrapper
+        if: matrix.mode == 'wrapper'
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2024 --check crates/ores-stack-cli/src/entry.rs crates/ores-stack-cli/src/ppr_middleware_wrapper.rs
+          cargo check --locked -p ores-stack-cli --all-targets
+          cargo test --locked -p ores-stack-cli ppr_middleware_wrapper -- --nocapture
+          git diff --check
+
+      - name: Certify canonical response-head writer
+        if: matrix.mode == 'http'
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2024 --check crates/ores-stack-ppr-http/src/lib_strict.rs
+          cargo check --locked -p ores-stack-ppr-http --all-targets
+          cargo test --locked -p ores-stack-ppr-http -- --nocapture
+          cargo clippy --locked -p ores-stack-ppr-http --all-targets -- -D warnings
+          git diff --check
