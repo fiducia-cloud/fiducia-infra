@@ -46,19 +46,21 @@ jobs:
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           components: rustfmt,clippy
-      - name: Apply rustfmt only to PR-owned Rust files
+      - name: Apply workspace-aware formatter then retain only PR-owned delta
         working-directory: subject
         shell: bash
         run: |
           set -euo pipefail
-          rustfmt --edition 2021 \
-            src/import.rs src/lib.rs src/main.rs src/model.rs src/render.rs src/strict.rs tests/basic.rs
-          changed="$(git diff --name-only)"
-          test -n "$changed"
+          cargo fmt --all
           allowed='^(src/(import|lib|main|model|render|strict)\.rs|tests/basic\.rs)$'
           while IFS= read -r path; do
+            printf '%s\n' "$path" | grep -Eq "$allowed" || git checkout -- "$path"
+          done < <(git diff --name-only)
+          changed="$(git diff --name-only)"
+          test -n "$changed"
+          while IFS= read -r path; do
             printf '%s\n' "$path" | grep -Eq "$allowed" || {
-              echo "refusing unrelated formatter delta: $path" >&2
+              echo "refusing unrelated formatter delta after restore: $path" >&2
               exit 1
             }
           done <<< "$changed"
