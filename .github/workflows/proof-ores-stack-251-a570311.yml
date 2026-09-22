@@ -11,9 +11,9 @@ permissions:
   contents: read
 
 env:
-  TARGET_SHA: '5c7d964d72d20b6550c8fb72e10051d3eec16330'
+  TARGET_SHA: 'c0660ea596989b47bf9318472ef9a5740828a509'
   TARGET_BRANCH: 'feat/ppr-edge-minimal-wrapper-main4-20260922'
-  MAIN_SHA: '9114d3db54dc140fbc09f1f7672ba86dc1736c64'
+  MAIN_SHA: '8fb6fe6cd0b144feddcd047c3e8631a8efc63802'
   MIDDLEWARE_SHA: '0c29bf0c038b3df8aaaa1a5d3a13bba66b6df52f'
   P2_STACK_SHA: 'ebec1752123b77358342dfb3ca54c16986390501'
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
@@ -80,9 +80,6 @@ jobs:
           grep -F "const ORES_MIDDLEWARE_ABI_REV: &str = \"$MIDDLEWARE_SHA\";" "$wrapper"
           grep -F "const ORES_STACK_P2_PROTOCOL_REV: &str = \"$P2_STACK_SHA\";" "$wrapper"
 
-          # These are generated-Rust closure openers inside the outer format!(r#"..."#)
-          # template. They must be doubled for the outer formatter while still
-          # rendering as single braces in generated main.rs.
           sed -i 's/reqwest::Method::from_bytes(request.method.as_bytes()).map_err(|error| {/reqwest::Method::from_bytes(request.method.as_bytes()).map_err(|error| {{/' "$wrapper"
           sed -i 's/builder.body(request.body).send().await.map_err(|error| {/builder.body(request.body).send().await.map_err(|error| {{/' "$wrapper"
           grep -F 'reqwest::Method::from_bytes(request.method.as_bytes()).map_err(|error| {{' "$wrapper" >/dev/null
