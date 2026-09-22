@@ -12,7 +12,7 @@ permissions:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-  TARGET_SHA: '493ca0312c7a9a90f60a10228002908ca417a749'
+  TARGET_SHA: '1b2eda561882a38bc30f434810520d9c970810d2'
   TARGET_BRANCH: 'fix/ppr-request-deadline-hrtb-20260922'
 
 jobs:
