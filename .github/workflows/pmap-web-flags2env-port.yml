@@ -1,0 +1,126 @@
+name: pmap-web-flags2env-port
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/pmap-web-flags2env-port.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  port:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+      PMAP_MAIN_SHA: 9cb5721ff80f5d6a57bc5a9d7f9d44e0f13df611
+      PR_BASE_SHA: 49ecbc670dcacb50a8211d7250554947d9b565ad
+      PR_HEAD_SHA: fe66eafadba7ba4a64582d24b6004d052bc73767
+      PMAP_LIB_CORE_SHA: e374195182745e39f6b58b56c3d02d7beb081f1d
+      ORES_API_DOCS_SHA: 2dbd222872a93a6fac02521f8b8d982dc406f146
+    steps:
+      - name: Require cross-org source authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+
+      - name: Check out exact current PMAP web main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: premarital-asset-protection/pmap-web-server.rs
+          ref: ${{ env.PMAP_MAIN_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: pmap-web
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Apply only focused flags runtime diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C pmap-web rev-parse HEAD)" = "$PMAP_MAIN_SHA"
+          auth="url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf=https://github.com/"
+          git -C pmap-web -c "$auth" fetch origin "$PR_BASE_SHA" "$PR_HEAD_SHA"
+          git -C pmap-web switch -c direct-main-flags-port
+          (
+            cd pmap-web
+            git diff "$PR_BASE_SHA" "$PR_HEAD_SHA" -- \
+              .cli-flags.toml \
+              .github/workflows/flags-contract.yml \
+              Cargo.toml \
+              src/flags.rs \
+              src/intake.rs \
+              src/main.rs \
+              tools/flags-contract-check/Cargo.lock \
+              tools/flags-contract-check/Cargo.toml \
+              tools/flags-contract-check/src/lib.rs \
+              | git apply --3way --index
+            sed -i "s#ores-api-docs = { git = \"https://github.com/ORESoftware/api-docs\" }#ores-api-docs = { git = \"https://github.com/ORESoftware/api-docs\", rev = \"${ORES_API_DOCS_SHA}\" }#" Cargo.toml
+            grep -Fq "rev = \"${ORES_API_DOCS_SHA}\"" Cargo.toml
+            git add Cargo.toml
+          )
+
+      - name: Materialize exact private sibling
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth="url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf=https://github.com/"
+          git init pmap-lib-core
+          git -C pmap-lib-core remote add origin https://github.com/premarital-asset-protection/pmap-lib-core.git
+          git -C pmap-lib-core -c "$auth" fetch --depth=1 origin "$PMAP_LIB_CORE_SHA"
+          git -C pmap-lib-core checkout --detach FETCH_HEAD
+          test "$(git -C pmap-lib-core rev-parse HEAD)" = "$PMAP_LIB_CORE_SHA"
+
+      - name: Regenerate lock and validate focused source set
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd pmap-web
+          cargo generate-lockfile
+          git add Cargo.lock
+          changed="$(git diff --cached --name-only | sort)"
+          printf '%s\n' "$changed"
+          while IFS= read -r path; do
+            case "$path" in
+              .cli-flags.toml|.github/workflows/flags-contract.yml|Cargo.toml|Cargo.lock|src/flags.rs|src/intake.rs|src/main.rs|tools/flags-contract-check/Cargo.lock|tools/flags-contract-check/Cargo.toml|tools/flags-contract-check/src/lib.rs) ;;
+              *) echo "unexpected path in semantic port: $path" >&2; exit 1 ;;
+            esac
+          done <<< "$changed"
+
+      - name: Rust formatting, tests, and warning-free Clippy
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd pmap-web
+          cargo fmt --all -- --check
+          cargo test --locked
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --manifest-path tools/flags-contract-check/Cargo.toml --locked
+
+      - name: Build real standalone image from candidate
+        shell: bash
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: |
+          set -euo pipefail
+          docker build \
+            --secret id=github_token,env=ORE_SOURCE_PAT \
+            --build-arg TARGETARCH=amd64 \
+            --tag pmap-web-flags-cert:latest \
+            --file pmap-web/Dockerfile \
+            pmap-web
+
+      - name: Commit and fast-forward PMAP main only if unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth="url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf=https://github.com/"
+          remote_main="$(git -C pmap-web -c "$auth" ls-remote origin refs/heads/main | awk '{print $1}')"
+          test "$remote_main" = "$PMAP_MAIN_SHA"
+          git -C pmap-web config user.name "ORESoftware"
+          git -C pmap-web config user.email "alex@oresoftware.com"
+          git -C pmap-web commit -m "feat(config): mount intake behind current flags2env runtime contract" -m "Semantic port of focused PR #20 onto the post-image-certification mainline; pins ores-api-docs to the revision proven by the preceding locked image build."
+          git -C pmap-web -c "$auth" push origin HEAD:main
