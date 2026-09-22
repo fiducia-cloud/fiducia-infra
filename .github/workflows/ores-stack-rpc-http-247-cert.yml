@@ -1,4 +1,4 @@
-name: ores-stack RPC HTTP #247 exact-head certification
+name: ores-stack RPC HTTP #247 guarded repair
 
 on:
   pull_request:
@@ -13,9 +13,11 @@ permissions:
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
   TARGET_SHA: '80173862ecffc4fee18fd2dd8b261418e7628048'
+  TARGET_BRANCH: 'feat/rpc-v1-http-adapter-current-main-20260922'
+  OWNED_FILE: 'crates/ores-fn-adapters/src/rpc_http.rs'
 
 jobs:
-  certify:
+  repair:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
@@ -38,9 +40,10 @@ jobs:
           git init ores-stack
           git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
           git -C ores-stack fetch --depth=1 origin "$TARGET_SHA"
-          git -C ores-stack checkout --detach FETCH_HEAD
+          git -C ores-stack checkout -b repair FETCH_HEAD
           test "$(git -C ores-stack rev-parse HEAD)" = "$TARGET_SHA"
-          test "$(git -C ores-stack status --porcelain)" = ""
+          remote_head="$(git -C ores-stack ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)"
+          test "$remote_head" = "$TARGET_SHA" || { echo "source branch moved: expected $TARGET_SHA got $remote_head"; exit 1; }
       - name: Rust 1.88
         shell: bash
         run: |
@@ -48,14 +51,36 @@ jobs:
           rustup toolchain install 1.88.0 --profile minimal --no-self-update
           rustup default 1.88.0
           rustup component add rustfmt clippy
+      - name: Format only RPC HTTP adapter
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2024 "$OWNED_FILE"
+          rustfmt --edition 2024 --check "$OWNED_FILE"
+          git diff --check
+          test "$(git diff --name-only)" = "$OWNED_FILE"
       - name: Certify RPC HTTP adapter
         shell: bash
         working-directory: ores-stack
         run: |
           set -euo pipefail
-          rustfmt --edition 2024 --check crates/ores-fn-adapters/src/rpc_http.rs
           cargo metadata --locked --format-version 1 --no-deps >/dev/null
           cargo check --locked -p ores-fn-adapters --all-targets
           cargo test --locked -p ores-fn-adapters rpc_http -- --nocapture
           cargo clippy --locked -p ores-fn-adapters --all-targets -- -D warnings
           git diff --check
+          test "$(git diff --name-only)" = "$OWNED_FILE"
+      - name: Commit and fast-forward formatting-only repair
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)"
+          test "$remote_head" = "$TARGET_SHA" || { echo "source branch moved: expected $TARGET_SHA got $remote_head"; exit 1; }
+          test "$(git diff --name-only)" = "$OWNED_FILE"
+          git config user.name 'ores-stack certification'
+          git config user.email 'actions@users.noreply.github.com'
+          git add "$OWNED_FILE"
+          git commit -m 'style(lambda): format canonical RPC HTTP adapter'
+          git push origin HEAD:"$TARGET_BRANCH"
