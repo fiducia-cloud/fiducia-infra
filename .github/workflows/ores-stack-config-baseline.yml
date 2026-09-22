@@ -1,0 +1,66 @@
+name: ores-stack-config-baseline
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-stack-config-baseline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+  BASELINE_SHA: '029d499318707e5ac7b84c0784a8513b49c795a0'
+
+jobs:
+  core-baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Configure source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Fetch exact pre-YAML baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init source
+          git -C source remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C source fetch --depth=1 origin "$BASELINE_SHA"
+          git -C source checkout --detach FETCH_HEAD
+          test "$(git -C source rev-parse HEAD)" = "$BASELINE_SHA"
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+      - name: Bootstrap lock evidence
+        shell: bash
+        working-directory: source
+        run: bash scripts/bootstrap-cargo-lock.sh ensure
+      - name: Full core baseline tests
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          cargo test --locked -p ores-stack-core -- --nocapture 2>&1 | tee /tmp/ores-stack-core-baseline.log
+      - name: Preserve baseline diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ores-stack-core-baseline
+          path: /tmp/ores-stack-core-baseline.log
+          if-no-files-found: ignore
+          retention-days: 1
