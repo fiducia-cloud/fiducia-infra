@@ -12,8 +12,7 @@ permissions:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-  ORES_STACK_SHA: '2d6a26b8542d9d0273aea8c8599ececd9a3f4efd'
-  ORES_STACK_BRANCH: 'fix/ppr-process-tree-rustfmt-main-20260922'
+  ORES_STACK_SHA: '029d499318707e5ac7b84c0784a8513b49c795a0'
 
 jobs:
   rust:
@@ -35,13 +34,13 @@ jobs:
           echo "::add-mask::$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
 
-      - name: Fetch exact ores-stack formatting branch parent
+      - name: Fetch exact ores-stack main commit
         shell: bash
         run: |
           set -euo pipefail
           git init ores-stack
           git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
-          git -C ores-stack fetch --depth=1 origin "refs/heads/$ORES_STACK_BRANCH"
+          git -C ores-stack fetch --depth=1 origin "$ORES_STACK_SHA"
           git -C ores-stack checkout --detach FETCH_HEAD
           test "$(git -C ores-stack rev-parse HEAD)" = "$ORES_STACK_SHA"
 
@@ -53,18 +52,16 @@ jobs:
           rustup default 1.88.0
           rustup component add rustfmt clippy
 
-      - name: Verify framing fmt and apply process-tree rustfmt
+      - name: Format-check exact PPR safety crates
         shell: bash
         working-directory: ores-stack
         run: |
           set -euo pipefail
           rustfmt --edition 2024 --check \
             crates/ores-stack-ppr-http/src/lib.rs \
-            crates/ores-stack-ppr-http/src/lib_strict.rs
-          rustfmt --edition 2024 crates/ores-stack-process-tree/src/lib.rs
-          git diff --check
-          test "$(git diff --name-only)" = "crates/ores-stack-process-tree/src/lib.rs"
-          rustfmt --edition 2024 --check crates/ores-stack-process-tree/src/lib.rs
+            crates/ores-stack-ppr-http/src/lib_strict.rs \
+            crates/ores-stack-process-tree/src/lib.rs
+          git diff --exit-code
 
       - name: Bootstrap repository lock evidence
         shell: bash
@@ -95,20 +92,4 @@ jobs:
           set -euo pipefail
           cargo test --locked -p ores-stack-ppr-http -- --nocapture
           cargo test --locked -p ores-stack-process-tree -- --nocapture
-
-      - name: Push certified process-tree rustfmt repair
-        shell: bash
-        working-directory: ores-stack
-        env:
-          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
-        run: |
-          set -euo pipefail
-          git fetch origin "refs/heads/$ORES_STACK_BRANCH:refs/remotes/origin/$ORES_STACK_BRANCH"
-          test "$(git rev-parse origin/$ORES_STACK_BRANCH)" = "$ORES_STACK_SHA"
-          test "$(git diff --name-only)" = "crates/ores-stack-process-tree/src/lib.rs"
-          git config user.name 'ORESoftware CI proof'
-          git config user.email 'ci@oresoftware.dev'
-          git add crates/ores-stack-process-tree/src/lib.rs
-          git commit -m 'style(ppr): rustfmt process-tree primitive'
-          git remote set-url origin "https://x-access-token:${ORE_SOURCE_PAT}@github.com/ORESoftware/ores-stack.git"
-          git push origin "HEAD:refs/heads/$ORES_STACK_BRANCH"
+          git diff --exit-code
