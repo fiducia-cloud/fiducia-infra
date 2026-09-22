@@ -59,9 +59,9 @@ jobs:
               tools/flags-contract-check/src/lib.rs \
               | git apply --3way --index
 
-            sed -i "s#ores-api-docs = { git = \"https://github.com/ORESoftware/api-docs\", features = \[\"axum\"\] }#ores-api-docs = { git = \"https://github.com/ORESoftware/api-docs\", rev = \"${ORES_API_DOCS_SHA}\", features = [\"axum\"] }#" Cargo.toml
-            sed -i "s#pmap-lib-core = { git = \"https://github.com/premarital-asset-protection/pmap-lib-core.git\", rev = \"[^"]*\", version = \"0.1.0\", features = \[\"http\"\] }#pmap-lib-core = { git = \"https://github.com/premarital-asset-protection/pmap-lib-core.git\", rev = \"${PMAP_LIB_CORE_SHA}\", version = \"0.1.0\", features = [\"http\"] }#" Cargo.toml
-            sed -i "s#pmap-crossborder = { git = \"https://github.com/premarital-asset-protection/pmap-lib-core.git\", rev = \"[^"]*\", features = \[\"serde\"\] }#pmap-crossborder = { git = \"https://github.com/premarital-asset-protection/pmap-lib-core.git\", rev = \"${PMAP_LIB_CORE_SHA}\", features = [\"serde\"] }#" Cargo.toml
+            sed -i "/^ores-api-docs = /c\\ores-api-docs = { git = \"https://github.com/ORESoftware/api-docs\", rev = \"${ORES_API_DOCS_SHA}\", features = [\"axum\"] }" Cargo.toml
+            sed -i "/^pmap-lib-core = /c\\pmap-lib-core = { git = \"https://github.com/premarital-asset-protection/pmap-lib-core.git\", rev = \"${PMAP_LIB_CORE_SHA}\", version = \"0.1.0\", features = [\"http\"] }" Cargo.toml
+            sed -i "/^pmap-crossborder = /c\\pmap-crossborder = { git = \"https://github.com/premarital-asset-protection/pmap-lib-core.git\", rev = \"${PMAP_LIB_CORE_SHA}\", features = [\"serde\"] }" Cargo.toml
             grep -Fq "ores-api-docs = { git = \"https://github.com/ORESoftware/api-docs\", rev = \"${ORES_API_DOCS_SHA}\"" Cargo.toml
             test "$(grep -c "rev = \"${PMAP_LIB_CORE_SHA}\"" Cargo.toml)" = "2"
             git add Cargo.toml
