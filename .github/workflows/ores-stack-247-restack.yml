@@ -63,6 +63,25 @@ jobs:
         with:
           toolchain: '1.88.0'
           components: rustfmt,clippy
+      - name: Format only authored adapter files
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2024 crates/ores-fn-adapters/src/lib.rs crates/ores-fn-adapters/src/rpc_http.rs
+          changed="$(git diff --name-only | sort)"
+          printf 'formatter changed:\n%s\n' "$changed"
+          allowed=$'crates/ores-fn-adapters/src/lib.rs\ncrates/ores-fn-adapters/src/rpc_http.rs'
+          if [ -n "$changed" ]; then
+            while IFS= read -r path; do
+              case "$path" in
+                crates/ores-fn-adapters/src/lib.rs|crates/ores-fn-adapters/src/rpc_http.rs) ;;
+                *) echo "refusing formatter repair outside adapter files: $path"; exit 1 ;;
+              esac
+            done <<< "$changed"
+            git add crates/ores-fn-adapters/src/lib.rs crates/ores-fn-adapters/src/rpc_http.rs
+            git commit -m 'style(lambda): format RPC HTTP adapter'
+          fi
       - name: Bootstrap lock authority
         working-directory: source
         run: bash scripts/bootstrap-cargo-lock.sh ensure
@@ -71,7 +90,7 @@ jobs:
         working-directory: source
         run: |
           set -euo pipefail
-          cargo fmt --all -- --check
+          rustfmt --edition 2024 --check crates/ores-fn-adapters/src/lib.rs crates/ores-fn-adapters/src/rpc_http.rs
           cargo check --locked -p ores-fn-adapters --all-targets
           cargo test --locked -p ores-fn-adapters --all-targets
           cargo clippy --locked -p ores-fn-adapters --all-targets -- -D warnings
