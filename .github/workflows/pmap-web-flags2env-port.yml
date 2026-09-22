@@ -86,13 +86,14 @@ jobs:
           git -C pmap-lib-core checkout --detach FETCH_HEAD
           test "$(git -C pmap-lib-core rev-parse HEAD)" = "$PMAP_LIB_CORE_SHA"
 
-      - name: Regenerate lock and constrain candidate paths
+      - name: Regenerate lock, format candidate, and constrain paths
         shell: bash
         run: |
           set -euo pipefail
           cd pmap-web
           cargo generate-lockfile
-          git add Cargo.lock
+          cargo fmt --package "$PMAP_PACKAGE"
+          git add Cargo.lock src/docs.rs src/flags.rs src/intake.rs src/main.rs
           changed="$(git diff --cached --name-only | sort)"
           printf '%s\n' "$changed"
           while IFS= read -r path; do
@@ -102,7 +103,7 @@ jobs:
             esac
           done <<< "$changed"
 
-      - name: Rust formatting, tests, warning-free Clippy, and flags contract
+      - name: Rust tests, warning-free Clippy, and flags contract
         shell: bash
         run: |
           set -euo pipefail
