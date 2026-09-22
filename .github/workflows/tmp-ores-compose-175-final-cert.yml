@@ -41,18 +41,13 @@ jobs:
           test -z "$(git -C ores-compose status --porcelain)"
           git -C ores-compose diff --check "$COMPOSE_BASE"..HEAD
 
-      - name: Rust 1.88
-        shell: bash
-        run: |
-          set -euo pipefail
-          rustup toolchain install 1.88.0 --profile minimal --no-self-update
-          rustup default 1.88.0
-          rustup component add rustfmt
-
-      - name: Frozen metadata
+      - name: Install repository Rust toolchain
         shell: bash
         working-directory: ores-compose
-        run: cargo metadata --locked --format-version 1 --no-deps >/dev/null
+        run: |
+          set -euo pipefail
+          rustup show active-toolchain
+          rustup component add rustfmt
 
       - name: PR-file rustfmt gate against dirty baseline
         shell: bash
@@ -64,7 +59,25 @@ jobs:
           git reset --hard "$COMPOSE_HEAD"
           test -z "$(git status --porcelain)"
 
-      - name: Compile all targets
+      - name: Prove lock refresh is identical on base and head
+        shell: bash
+        working-directory: ores-compose
+        run: |
+          set -euo pipefail
+          git checkout --detach "$COMPOSE_BASE"
+          cargo generate-lockfile
+          cp Cargo.lock /tmp/compose-base.generated.lock
+          git reset --hard "$COMPOSE_BASE"
+
+          git checkout --detach "$COMPOSE_HEAD"
+          cargo generate-lockfile
+          cp Cargo.lock /tmp/compose-head.generated.lock
+          cmp /tmp/compose-base.generated.lock /tmp/compose-head.generated.lock
+          test "$(git diff --name-only)" = "Cargo.lock"
+          test "$(git rev-parse HEAD)" = "$COMPOSE_HEAD"
+          echo ORES_COMPOSE_175_BASE_HEAD_LOCK_REFRESH_IDENTICAL
+
+      - name: Compile all targets with baseline-equivalent generated lock
         shell: bash
         working-directory: ores-compose
         run: cargo check --locked --all-targets
@@ -74,12 +87,13 @@ jobs:
         working-directory: ores-compose
         run: cargo test --locked --all-targets -- --nocapture
 
-      - name: Exact-source hygiene
+      - name: Verify exhaustive proof ran and source remained exact
         shell: bash
         working-directory: ores-compose
         run: |
           set -euo pipefail
+          cargo test --locked --test formal_dependency_graph_exhaustive -- --exact exhaustively_checks_every_directed_dependency_graph_through_four_services --nocapture
           test "$(git rev-parse HEAD)" = "$COMPOSE_HEAD"
-          test -z "$(git status --porcelain)"
+          test "$(git diff --name-only)" = "Cargo.lock"
           git diff --check "$COMPOSE_BASE"..HEAD
           echo ORES_COMPOSE_175_FINAL_EXACT_HEAD_CERT_PASS
