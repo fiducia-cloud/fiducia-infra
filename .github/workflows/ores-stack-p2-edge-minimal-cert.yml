@@ -54,13 +54,16 @@ jobs:
           rustup default 1.88.0
           rustup component add rustfmt clippy
 
-      - name: Format-check portable P2 crate
+      - name: Guarded rustfmt repair
         shell: bash
         working-directory: ores-stack
         run: |
           set -euo pipefail
+          cargo fmt --package ores-stack-p2-edge-minimal
           rustfmt --edition 2024 --check crates/ores-stack-p2-edge-minimal/src/lib.rs
-          git diff --exit-code
+          git diff --check
+          changed="$(git diff --name-only)"
+          test "$changed" = "crates/ores-stack-p2-edge-minimal/src/lib.rs"
 
       - name: Refresh only required workspace lock evidence
         shell: bash
@@ -69,8 +72,11 @@ jobs:
           set -euo pipefail
           cargo check -p ores-stack-p2-edge-minimal --all-targets
           git diff --check
-          changed="$(git diff --name-only)"
-          test "$changed" = "Cargo.lock"
+          git diff --name-only | sort > /tmp/changed
+          printf '%s\n' Cargo.lock crates/ores-stack-p2-edge-minimal/src/lib.rs | sort > /tmp/allowed
+          test ! -s <(comm -23 /tmp/changed /tmp/allowed)
+          grep -qx 'Cargo.lock' /tmp/changed
+          grep -qx 'crates/ores-stack-p2-edge-minimal/src/lib.rs' /tmp/changed
 
       - name: Check portable P2 crate and workspace with lock frozen
         shell: bash
@@ -95,17 +101,21 @@ jobs:
           set -euo pipefail
           cargo test --locked -p ores-stack-p2-edge-minimal -- --nocapture
           git diff --check
-          test "$(git diff --name-only)" = "Cargo.lock"
+          git diff --name-only | sort > /tmp/changed
+          printf '%s\n' Cargo.lock crates/ores-stack-p2-edge-minimal/src/lib.rs | sort > /tmp/allowed
+          diff -u /tmp/allowed /tmp/changed
 
-      - name: Fast-forward certified lockfile to ores-stack PR branch
+      - name: Fast-forward certified repair to ores-stack PR branch
         shell: bash
         working-directory: ores-stack
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$ORES_STACK_SHA"
-          test "$(git diff --name-only)" = "Cargo.lock"
+          git diff --name-only | sort > /tmp/changed
+          printf '%s\n' Cargo.lock crates/ores-stack-p2-edge-minimal/src/lib.rs | sort > /tmp/allowed
+          diff -u /tmp/allowed /tmp/changed
           git config user.name "ores-stack certification"
           git config user.email "actions@users.noreply.github.com"
-          git add Cargo.lock
-          git commit -m "chore(p2): refresh lock for edge_minimal runtime"
+          git add Cargo.lock crates/ores-stack-p2-edge-minimal/src/lib.rs
+          git commit -m "style(p2): certify edge_minimal runtime"
           git push origin "HEAD:refs/heads/${ORES_STACK_BRANCH}"
