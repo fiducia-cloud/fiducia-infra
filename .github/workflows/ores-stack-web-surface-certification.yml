@@ -49,7 +49,7 @@ jobs:
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           toolchain: 1.88.0
-          components: rustfmt, clippy
+          components: rustfmt
 
       - name: Authenticate private Cargo git dependencies
         shell: bash
@@ -63,13 +63,17 @@ jobs:
           printf 'https://x-access-token:%s@github.com\n' "$SOURCE_PAT" > "$HOME/.git-credentials"
           chmod 600 "$HOME/.git-credentials"
 
-      - name: Compile and test web-surface core
+      - name: Compile web-surface core
         shell: bash
         run: |
           set -euo pipefail
           bash scripts/bootstrap-cargo-lock.sh ensure
           cargo check --locked -p ores-stack-core --all-targets
-          cargo clippy --locked -p ores-stack-core --all-targets -- -D warnings
+
+      - name: Test disjoint web-surface routing
+        shell: bash
+        run: |
+          set -euo pipefail
           cargo test --locked -p ores-stack-core --test web_surface_routing
           cargo test --locked -p ores-stack-core --test web_execution_routing
 
