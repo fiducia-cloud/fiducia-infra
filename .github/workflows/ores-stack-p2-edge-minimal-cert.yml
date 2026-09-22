@@ -12,7 +12,7 @@ permissions:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-  ORES_STACK_SHA: '6e1d435d5fd5f1e8cea4eead0ccec5884b74c92f'
+  ORES_STACK_SHA: 'a0fa9d96ec30d79b129d28c267d6103d6f365ff9'
   ORES_STACK_BRANCH: 'feat/p2-edge-minimal-protocol-current-main-20260922'
 
 jobs:
@@ -67,8 +67,6 @@ jobs:
         working-directory: ores-stack
         run: |
           set -euo pipefail
-          # Let Cargo preserve the existing lock as far as possible while adding
-          # the new workspace member and exact ores-middleware git revision.
           cargo check -p ores-stack-p2-edge-minimal --all-targets
           git diff --check
           changed="$(git diff --name-only)"
