@@ -1,4 +1,4 @@
-name: ores-stack #275 parallel RPC exact-head cert
+name: ores-stack #275 parallel RPC guarded repair
 
 on:
   pull_request:
@@ -17,7 +17,7 @@ env:
   STACK_BRANCH: 'feat/parallel-rpc-runtime-client-lane'
 
 jobs:
-  certify:
+  repair:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -42,7 +42,7 @@ jobs:
           git -C ores-stack fetch --depth=20 origin main "$STACK_BRANCH"
           test "$(git -C ores-stack rev-parse origin/main)" = "$STACK_BASE"
           test "$(git -C ores-stack rev-parse origin/$STACK_BRANCH)" = "$STACK_HEAD"
-          git -C ores-stack checkout --detach "$STACK_HEAD"
+          git -C ores-stack checkout -b repair "$STACK_HEAD"
           test "$(git -C ores-stack rev-parse HEAD^)" = "$STACK_BASE"
           test "$(git -C ores-stack diff --name-only "$STACK_BASE"..HEAD | sort | tr '\n' ' ')" = "crates/ores-stack-cli/src/legacy/mod.rs crates/ores-stack-core/src/lib.rs crates/ores-stack-core/src/rpc_http_client_lane.rs crates/ores-stack-core/src/rpc_http_client_lane_post.rs "
           test "$(git -C ores-stack status --porcelain)" = ""
@@ -53,15 +53,23 @@ jobs:
           rustup toolchain install 1.88.0 --profile minimal --no-self-update
           rustup default 1.88.0
           rustup component add rustfmt clippy
-      - name: Format owned lane sources
+      - name: Format only owned lane sources
         shell: bash
         working-directory: ores-stack
         run: |
           set -euo pipefail
+          rustfmt --edition 2024 \
+            crates/ores-stack-core/src/rpc_http_client_lane.rs \
+            crates/ores-stack-core/src/rpc_http_client_lane_post.rs
           rustfmt --edition 2024 --check \
             crates/ores-stack-core/src/rpc_http_client_lane.rs \
             crates/ores-stack-core/src/rpc_http_client_lane_post.rs
           git diff --check
+          git diff --name-only | sort > /tmp/changed
+          printf '%s\n' \
+            crates/ores-stack-core/src/rpc_http_client_lane.rs \
+            crates/ores-stack-core/src/rpc_http_client_lane_post.rs | sort > /tmp/allowed
+          diff -u /tmp/allowed /tmp/changed
       - name: Compile and test affected crates
         shell: bash
         working-directory: ores-stack
@@ -72,7 +80,11 @@ jobs:
           cargo test --locked -p ores-stack-core rpc_http_client_lane -- --nocapture
           cargo clippy --locked -p ores-stack-core -p ores-stack-cli --all-targets -- -D warnings
           git diff --check
-          test "$(git status --porcelain)" = ""
+          git diff --name-only | sort > /tmp/changed
+          printf '%s\n' \
+            crates/ores-stack-core/src/rpc_http_client_lane.rs \
+            crates/ores-stack-core/src/rpc_http_client_lane_post.rs | sort > /tmp/allowed
+          diff -u /tmp/allowed /tmp/changed
       - name: Verify fluent terminal contract
         shell: bash
         working-directory: ores-stack
@@ -85,3 +97,20 @@ jobs:
           ! grep -Eq '\.stream\(' crates/ores-stack-core/src/rpc_http_client_lane.rs
           grep -q 'generated_ores_http' crates/ores-stack-core/src/rpc_http_client_lane.rs
           grep -q 'ORESoftware/ores-interfaces/contracts/rpc-client-call/v1' crates/ores-stack-core/src/rpc_http_client_lane.rs
+      - name: Commit and fast-forward formatting-only repair
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote origin "refs/heads/$STACK_BRANCH" | cut -f1)"
+          test "$remote_head" = "$STACK_HEAD" || { echo "source branch moved: expected $STACK_HEAD got $remote_head"; exit 1; }
+          git diff --name-only | sort > /tmp/changed
+          printf '%s\n' \
+            crates/ores-stack-core/src/rpc_http_client_lane.rs \
+            crates/ores-stack-core/src/rpc_http_client_lane_post.rs | sort > /tmp/allowed
+          diff -u /tmp/allowed /tmp/changed
+          git config user.name 'ORESoftware funded certification'
+          git config user.email 'noreply@oresoftware.com'
+          git add crates/ores-stack-core/src/rpc_http_client_lane.rs crates/ores-stack-core/src/rpc_http_client_lane_post.rs
+          git commit -m 'style(rpc): format parallel ores-http-clients lane'
+          git push origin HEAD:"$STACK_BRANCH"
