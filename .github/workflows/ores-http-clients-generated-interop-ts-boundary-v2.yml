@@ -1,0 +1,104 @@
+name: ores-http-clients generated interop TS boundary v2
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/ores-http-clients-generated-interop-ts-boundary-v2.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact interop branch head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ORESoftware/ores-http-clients
+          ref: 994cedd8db1fb4a9ac76504c2b2c996fba57af4a
+          path: source
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Make RPC stream mode a true discriminant
+        working-directory: source
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('src/ts/src/generated.ts')
+          text = p.read_text()
+          pattern = re.compile(
+              r'(?P<indent>\s*)\| \{\n'
+              r'(?P=indent)    readonly operationKey: string;\n'
+              r'(?P=indent)    readonly transport: "rpc";\n'
+              r'(?P=indent)    readonly streamMode: GeneratedStreamMode;\n'
+              r'(?P=indent)    readonly graphqlKind\?: never;\n'
+              r'(?P=indent)  \}',
+          )
+          match = pattern.search(text)
+          if not match:
+              raise SystemExit('could not locate RPC GeneratedOperationMetadata member')
+          indent = match.group('indent')
+          replacement = (
+              f'{indent}| {{\n'
+              f'{indent}    readonly operationKey: string;\n'
+              f'{indent}    readonly transport: "rpc";\n'
+              f'{indent}    readonly streamMode: "unary";\n'
+              f'{indent}    readonly graphqlKind?: never;\n'
+              f'{indent}  }}\n'
+              f'{indent}| {{\n'
+              f'{indent}    readonly operationKey: string;\n'
+              f'{indent}    readonly transport: "rpc";\n'
+              f'{indent}    readonly streamMode: "server_stream";\n'
+              f'{indent}    readonly graphqlKind?: never;\n'
+              f'{indent}  }}'
+          )
+          text, count = pattern.subn(lambda _m: replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'expected exactly one RPC metadata rewrite, got {count}')
+          p.write_text(text)
+          PY
+
+      - name: Structural conformance
+        working-directory: source
+        run: sh scripts/check.sh
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22.22.1"
+      - name: TypeScript tests
+        working-directory: source/src/ts
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          npm test
+
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: stable
+      - name: Dart checks
+        working-directory: source/src/dart
+        run: |
+          dart pub get
+          dart format --output=none --set-exit-if-changed lib test
+          dart analyze --fatal-infos
+          dart test
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.96.0
+          targets: wasm32-unknown-unknown
+          components: rustfmt,clippy
+      - name: Rust checks
+        working-directory: source/src/rust
+        run: |
+          cargo fmt --all -- --check
+          cargo test --all-targets
+          cargo test --all-targets --features rxrust-support
+          cargo clippy --all-targets --features rxrust-support -- -D warnings
+          cargo check --target wasm32-unknown-unknown
