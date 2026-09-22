@@ -1,0 +1,165 @@
+name: ores-stack-247-249-repair
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-stack-247-249-repair.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+
+jobs:
+  repair_247:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      TARGET_SHA: '80173862ecffc4fee18fd2dd8b261418e7628048'
+      TARGET_BRANCH: 'salvage/rpc-http-adapter-main-20260922'
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Configure authenticated GitHub access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Fetch exact #247 branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --depth=1 origin "$TARGET_BRANCH"
+          git -C ores-stack checkout -b repair FETCH_HEAD
+          test "$(git -C ores-stack rev-parse HEAD)" = "$TARGET_SHA"
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+      - name: Canonical format and path guard
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2024 crates/ores-fn-adapters/src/lib.rs crates/ores-fn-adapters/src/rpc_http.rs
+          rustfmt --edition 2024 --check crates/ores-fn-adapters/src/lib.rs crates/ores-fn-adapters/src/rpc_http.rs
+          git diff --check
+          mapfile -t changed < <(git diff --name-only | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" -gt 0
+          for path in "${changed[@]}"; do
+            case "$path" in
+              crates/ores-fn-adapters/src/lib.rs|crates/ores-fn-adapters/src/rpc_http.rs) ;;
+              *) echo "unexpected rustfmt path: $path" >&2; exit 1 ;;
+            esac
+          done
+      - name: Verify repaired adapter
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          cargo check --manifest-path crates/ores-fn-adapters/Cargo.toml --all-targets
+          cargo test --manifest-path crates/ores-fn-adapters/Cargo.toml
+          cargo clippy --manifest-path crates/ores-fn-adapters/Cargo.toml --all-targets -- -D warnings
+      - name: Push guarded repair
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          git config user.name 'ORESoftware CI repair'
+          git config user.email 'noreply@oresoftware.com'
+          git add crates/ores-fn-adapters/src/lib.rs crates/ores-fn-adapters/src/rpc_http.rs
+          git commit -m 'style(lambda): apply canonical rustfmt to RPC HTTP adapter'
+          remote_head="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)"
+          test "$remote_head" = "$TARGET_SHA"
+          git push origin HEAD:"$TARGET_BRANCH"
+
+  repair_249:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      TARGET_SHA: 'e2d9d2403c74ce54ece823f6d552af13315fb8e9'
+      TARGET_BRANCH: 'feat/ppr-request-ingress-20260922'
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Configure authenticated GitHub access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Fetch exact #249 branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --depth=1 origin "$TARGET_BRANCH"
+          git -C ores-stack checkout -b repair FETCH_HEAD
+          test "$(git -C ores-stack rev-parse HEAD)" = "$TARGET_SHA"
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+      - name: Bootstrap workspace lock
+        shell: bash
+        working-directory: ores-stack
+        run: bash scripts/bootstrap-cargo-lock.sh ensure
+      - name: Canonical format and path guard
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2024 crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs
+          rustfmt --edition 2024 --check crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs
+          git diff --check
+          mapfile -t changed < <(git diff --name-only | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" -gt 0
+          for path in "${changed[@]}"; do
+            case "$path" in
+              crates/ores-stack-ppr-http/src/lib_strict.rs|crates/ores-stack-ppr-http/src/request.rs) ;;
+              *) echo "unexpected rustfmt path: $path" >&2; exit 1 ;;
+            esac
+          done
+      - name: Verify repaired request ingress
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          cargo check --locked -p ores-stack-ppr-http --all-targets
+          cargo test --locked -p ores-stack-ppr-http
+          cargo clippy --locked -p ores-stack-ppr-http --all-targets -- -D warnings
+      - name: Push guarded repair
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          git config user.name 'ORESoftware CI repair'
+          git config user.email 'noreply@oresoftware.com'
+          git add crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs
+          git commit -m 'style(ppr): apply canonical rustfmt to request ingress'
+          remote_head="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)"
+          test "$remote_head" = "$TARGET_SHA"
+          git push origin HEAD:"$TARGET_BRANCH"
