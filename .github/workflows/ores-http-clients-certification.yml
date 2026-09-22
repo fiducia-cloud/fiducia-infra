@@ -10,7 +10,7 @@ permissions:
 
 env:
   SOURCE_REPO: ORESoftware/ores-http-clients
-  SOURCE_REF: ci/harden-polyglot-gates
+  SOURCE_REF: fix/scheduler-cancellation-accounting
 
 jobs:
   conformance:
