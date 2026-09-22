@@ -34,7 +34,7 @@ jobs:
           echo "::add-mask::$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
 
-      - name: Fetch exact hardened PR head
+      - name: Fetch exact PR head
         shell: bash
         run: |
           set -euo pipefail
@@ -57,36 +57,42 @@ jobs:
           rustup default 1.88.0
           rustup component add rustfmt clippy
 
-      - name: Apply rustfmt diagnostically
+      - name: Repair rustfmt only on PR-owned files
         shell: bash
         working-directory: ores-stack
         run: |
           set -euo pipefail
-          if cargo fmt --all -- --check; then
-            printf 'clean\n' > /tmp/rustfmt-status.txt
-            : > /tmp/ores-stack-rustfmt.patch
-          else
-            cargo fmt --all
-            git diff --binary -- crates/ores-stack-cli/src/legacy/mod.rs crates/ores-stack-core/src/lib.rs crates/ores-stack-core/src/rpc_http_client_lane.rs crates/ores-stack-core/src/rpc_http_client_lane_post.rs > /tmp/ores-stack-rustfmt.patch
-            test -s /tmp/ores-stack-rustfmt.patch
-            git diff --name-only | sort > /tmp/rustfmt-changed.txt
-            printf '%s\n' \
-              crates/ores-stack-cli/src/legacy/mod.rs \
-              crates/ores-stack-core/src/lib.rs \
-              crates/ores-stack-core/src/rpc_http_client_lane.rs \
-              crates/ores-stack-core/src/rpc_http_client_lane_post.rs | sort > /tmp/rustfmt-allowed.txt
-            test -z "$(comm -23 /tmp/rustfmt-changed.txt /tmp/rustfmt-allowed.txt)"
-            printf 'needs-format\n' > /tmp/rustfmt-status.txt
+          owned=(
+            crates/ores-stack-cli/src/legacy/mod.rs
+            crates/ores-stack-core/src/lib.rs
+            crates/ores-stack-core/src/rpc_http_client_lane.rs
+            crates/ores-stack-core/src/rpc_http_client_lane_post.rs
+          )
+          rustfmt --edition 2024 "${owned[@]}"
+          git diff --check
+          git diff --name-only | sort > /tmp/changed.txt
+          printf '%s\n' "${owned[@]}" | sort > /tmp/allowed.txt
+          test -z "$(comm -23 /tmp/changed.txt /tmp/allowed.txt)"
+          if test -s /tmp/changed.txt; then
+            remote_head="$(git ls-remote origin "refs/heads/$STACK_BRANCH" | cut -f1)"
+            test "$remote_head" = "$STACK_HEAD"
+            git config user.name 'ORESoftware'
+            git config user.email 'alex@oresoftware.com'
+            git add -- "${owned[@]}"
+            git commit -m 'style: rustfmt parallel RPC client lane'
+            git push origin "HEAD:refs/heads/$STACK_BRANCH"
           fi
-          cat /tmp/rustfmt-status.txt
-          cat /tmp/rustfmt-changed.txt 2>/dev/null || true
+          new_head="$(git rev-parse HEAD)"
+          echo "NEW_STACK_HEAD=$new_head" >> "$GITHUB_ENV"
+          rustfmt --edition 2024 --check "${owned[@]}"
+          test -z "$(git status --porcelain)"
 
       - name: Locked metadata
         shell: bash
         working-directory: ores-stack
         run: cargo metadata --locked --format-version 1 --no-deps >/dev/null
 
-      - name: Compile formatted tree
+      - name: Compile exact repaired head
         shell: bash
         working-directory: ores-stack
         run: cargo check --locked -p ores-stack-core -p ores-stack-cli --all-targets
@@ -100,21 +106,6 @@ jobs:
         shell: bash
         working-directory: ores-stack
         run: cargo test --locked -p ores-stack-core rpc_http_client_lane_post -- --nocapture
-
-      - name: Formatted-tree source hygiene
-        shell: bash
-        working-directory: ores-stack
-        run: |
-          set -euo pipefail
-          git diff --check
-          test "$(git rev-parse HEAD)" = "$STACK_HEAD"
-          git diff --name-only | sort > /tmp/post-check-changed.txt
-          printf '%s\n' \
-            crates/ores-stack-cli/src/legacy/mod.rs \
-            crates/ores-stack-core/src/lib.rs \
-            crates/ores-stack-core/src/rpc_http_client_lane.rs \
-            crates/ores-stack-core/src/rpc_http_client_lane_post.rs | sort > /tmp/post-check-allowed.txt
-          test -z "$(comm -23 /tmp/post-check-changed.txt /tmp/post-check-allowed.txt)"
 
       - name: Prove zero new Clippy diagnostics versus base
         shell: bash
@@ -139,14 +130,12 @@ jobs:
               'crates/ores-stack-core/src/lib.rs',
               'crates/ores-stack-cli/src/legacy/mod.rs',
           }
-
           def normalize_file(value):
               value = str(value or '').replace('\\', '/')
               for marker in ('/ores-stack-base/', '/ores-stack/'):
                   if marker in value:
                       return value.split(marker, 1)[1]
               return value
-
           def diagnostics(path):
               out = set()
               for raw in Path(path).read_text().splitlines():
@@ -166,7 +155,6 @@ jobs:
                   rendered = (msg.get('message') or '').strip()
                   out.add((msg.get('level') or '', code, filename, rendered))
               return out
-
           base = diagnostics('/tmp/base.jsonl')
           head = diagnostics('/tmp/head.jsonl')
           owned_findings = sorted(d for d in head if d[2] in owned)
@@ -175,14 +163,11 @@ jobs:
           print(f"Clippy diagnostics: base={len(base)} head={len(head)}")
           if owned_findings:
               print('owned-file Clippy findings:')
-              for item in owned_findings:
-                  print(item)
+              for item in owned_findings: print(item)
           if new_findings:
               print('new Clippy findings versus base:')
-              for item in new_findings:
-                  print(item)
+              for item in new_findings: print(item)
           if owned_findings or new_findings:
-              print('FAIL: Clippy regression')
               raise SystemExit(1)
           if int(os.environ['HEAD_CLIPPY_RC']) != 0 and int(os.environ['BASE_CLIPPY_RC']) == 0:
               raise SystemExit('head Clippy failed while base passed')
@@ -206,28 +191,14 @@ jobs:
           grep -q 'contract_sha256' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
           grep -q 'does not admit handlers audience' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
 
-      - name: Upload rustfmt patch
-        if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: ores-stack-275-rustfmt-diagnostic
-          path: |
-            /tmp/ores-stack-rustfmt.patch
-            /tmp/rustfmt-status.txt
-            /tmp/rustfmt-changed.txt
-          if-no-files-found: warn
-
-      - name: Final exact-source decision
-        if: ${{ always() }}
+      - name: Final exact-head guard
         shell: bash
+        working-directory: ores-stack
         run: |
           set -euo pipefail
-          test "$(git -C ores-stack rev-parse HEAD)" = "$STACK_HEAD"
-          git -C ores-stack diff --check "$STACK_BASE"..HEAD
-          status="$(cat /tmp/rustfmt-status.txt 2>/dev/null || echo missing)"
-          test "$status" = clean || {
-            echo "exact source requires rustfmt patch; refusing green certification" >&2
-            exit 1
-          }
-          test -z "$(git -C ores-stack status --porcelain)"
+          test "$(git rev-parse HEAD)" = "$NEW_STACK_HEAD"
+          test "$(git ls-remote origin "refs/heads/$STACK_BRANCH" | cut -f1)" = "$NEW_STACK_HEAD"
+          test -z "$(git status --porcelain)"
+          test "$(git diff --name-only "$STACK_BASE"..HEAD | sort | tr '\n' ' ')" = "crates/ores-stack-cli/src/legacy/mod.rs crates/ores-stack-core/src/lib.rs crates/ores-stack-core/src/rpc_http_client_lane.rs crates/ores-stack-core/src/rpc_http_client_lane_post.rs "
+          git diff --check "$STACK_BASE"..HEAD
           echo ORES_STACK_275_HARDENED_PARALLEL_RPC_CERT_PASS
