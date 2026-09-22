@@ -47,16 +47,15 @@ jobs:
 
           test = Path('src/rust/tests/client.rs')
           text = test.read_text()
-          needle = '''              .await
-              .expect("client should reject before the server finishes the response");
-              assert!(matches!('''
-          replacement = '''              .await
-              .expect("client should reject before the server finishes the response");
-              eprintln!("bounded-stream result: {result:?}");
-              assert!(matches!('''
-          if text.count(needle) != 1:
-              raise SystemExit(f'expected one debug insertion point, got {text.count(needle)}')
-          test.write_text(text.replace(needle, replacement, 1))
+          text, count = re.subn(
+              r'(\.expect\("client should reject before the server finishes the response"\);\n)',
+              r'\1              eprintln!("bounded-stream result: {result:?}");\n',
+              text,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit(f'expected one debug insertion point, got {count}')
+          test.write_text(text)
           PY
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
