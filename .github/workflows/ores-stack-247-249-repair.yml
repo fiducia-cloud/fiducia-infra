@@ -21,14 +21,11 @@ jobs:
       TARGET_SHA: '80173862ecffc4fee18fd2dd8b261418e7628048'
       TARGET_BRANCH: 'salvage/rpc-http-adapter-main-20260922'
     steps:
-      - name: Checkout harness
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: { persist-credentials: false }
       - name: Configure authenticated GitHub access
         shell: bash
-        env:
-          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        env: { ORE_SOURCE_PAT: '${{ secrets.ORE_SOURCE_PAT }}' }
         run: |
           set -euo pipefail
           test -n "$ORE_SOURCE_PAT"
@@ -49,42 +46,66 @@ jobs:
           rustup toolchain install 1.88.0 --profile minimal --no-self-update
           rustup default 1.88.0
           rustup component add rustfmt clippy
-      - name: Canonical format and path guard
+      - name: Run repaired #247 source checks and retain evidence
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -u
+          OUT="$RUNNER_TEMP/repair-247"
+          mkdir -p "$OUT"
+          set +e
+          rustfmt --edition 2024 crates/ores-fn-adapters/src/lib.rs crates/ores-fn-adapters/src/rpc_http.rs >"$OUT/rustfmt.log" 2>&1
+          fmt_rc=$?
+          git diff --name-only | sort >"$OUT/changed-files.txt"
+          git diff --binary >"$OUT/rustfmt.patch"
+          if [ "$fmt_rc" -eq 0 ]; then
+            cargo check --manifest-path crates/ores-fn-adapters/Cargo.toml --all-targets >"$OUT/check.log" 2>&1
+            check_rc=$?
+          else check_rc=99; fi
+          if [ "$check_rc" -eq 0 ]; then
+            cargo test --manifest-path crates/ores-fn-adapters/Cargo.toml >"$OUT/test.log" 2>&1
+            test_rc=$?
+          else test_rc=99; fi
+          if [ "$test_rc" -eq 0 ]; then
+            cargo clippy --manifest-path crates/ores-fn-adapters/Cargo.toml --all-targets -- -D warnings >"$OUT/clippy.log" 2>&1
+            clippy_rc=$?
+          else clippy_rc=99; fi
+          printf 'fmt=%s\ncheck=%s\ntest=%s\nclippy=%s\n' "$fmt_rc" "$check_rc" "$test_rc" "$clippy_rc" >"$OUT/result.txt"
+          git status --short >"$OUT/status.txt"
+          exit 0
+      - name: Upload #247 repair evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ores-stack-247-repair-evidence
+          path: ${{ runner.temp }}/repair-247
+          if-no-files-found: error
+          retention-days: 7
+      - name: Gate and push #247 repair
         shell: bash
         working-directory: ores-stack
         run: |
           set -euo pipefail
-          rustfmt --edition 2024 crates/ores-fn-adapters/src/lib.rs crates/ores-fn-adapters/src/rpc_http.rs
-          rustfmt --edition 2024 --check crates/ores-fn-adapters/src/lib.rs crates/ores-fn-adapters/src/rpc_http.rs
+          OUT="$RUNNER_TEMP/repair-247"
+          cat "$OUT/result.txt"
+          grep -qx 'fmt=0' "$OUT/result.txt"
+          grep -qx 'check=0' "$OUT/result.txt"
+          grep -qx 'test=0' "$OUT/result.txt"
+          grep -qx 'clippy=0' "$OUT/result.txt"
           git diff --check
-          mapfile -t changed < <(git diff --name-only | sort)
-          printf '%s\n' "${changed[@]}"
+          mapfile -t changed < "$OUT/changed-files.txt"
           test "${#changed[@]}" -gt 0
           for path in "${changed[@]}"; do
             case "$path" in
               crates/ores-fn-adapters/src/lib.rs|crates/ores-fn-adapters/src/rpc_http.rs) ;;
-              *) echo "unexpected rustfmt path: $path" >&2; exit 1 ;;
+              *) echo "unexpected repair path: $path" >&2; exit 1 ;;
             esac
           done
-      - name: Verify repaired adapter
-        shell: bash
-        working-directory: ores-stack
-        run: |
-          set -euo pipefail
-          cargo check --manifest-path crates/ores-fn-adapters/Cargo.toml --all-targets
-          cargo test --manifest-path crates/ores-fn-adapters/Cargo.toml
-          cargo clippy --manifest-path crates/ores-fn-adapters/Cargo.toml --all-targets -- -D warnings
-      - name: Push guarded repair
-        shell: bash
-        working-directory: ores-stack
-        run: |
-          set -euo pipefail
           git config user.name 'ORESoftware CI repair'
           git config user.email 'noreply@oresoftware.com'
           git add crates/ores-fn-adapters/src/lib.rs crates/ores-fn-adapters/src/rpc_http.rs
           git commit -m 'style(lambda): apply canonical rustfmt to RPC HTTP adapter'
-          remote_head="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)"
-          test "$remote_head" = "$TARGET_SHA"
+          test "$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$TARGET_SHA"
           git push origin HEAD:"$TARGET_BRANCH"
 
   repair_249:
@@ -94,14 +115,11 @@ jobs:
       TARGET_SHA: 'e2d9d2403c74ce54ece823f6d552af13315fb8e9'
       TARGET_BRANCH: 'feat/ppr-request-ingress-20260922'
     steps:
-      - name: Checkout harness
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: { persist-credentials: false }
       - name: Configure authenticated GitHub access
         shell: bash
-        env:
-          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        env: { ORE_SOURCE_PAT: '${{ secrets.ORE_SOURCE_PAT }}' }
         run: |
           set -euo pipefail
           test -n "$ORE_SOURCE_PAT"
@@ -126,40 +144,64 @@ jobs:
         shell: bash
         working-directory: ores-stack
         run: bash scripts/bootstrap-cargo-lock.sh ensure
-      - name: Canonical format and path guard
+      - name: Run repaired #249 source checks and retain evidence
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -u
+          OUT="$RUNNER_TEMP/repair-249"
+          mkdir -p "$OUT"
+          set +e
+          rustfmt --edition 2024 crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs >"$OUT/rustfmt.log" 2>&1
+          fmt_rc=$?
+          git diff --name-only | sort >"$OUT/changed-files.txt"
+          git diff --binary >"$OUT/rustfmt.patch"
+          if [ "$fmt_rc" -eq 0 ]; then
+            cargo check --locked -p ores-stack-ppr-http --all-targets >"$OUT/check.log" 2>&1
+            check_rc=$?
+          else check_rc=99; fi
+          if [ "$check_rc" -eq 0 ]; then
+            cargo test --locked -p ores-stack-ppr-http >"$OUT/test.log" 2>&1
+            test_rc=$?
+          else test_rc=99; fi
+          if [ "$test_rc" -eq 0 ]; then
+            cargo clippy --locked -p ores-stack-ppr-http --all-targets -- -D warnings >"$OUT/clippy.log" 2>&1
+            clippy_rc=$?
+          else clippy_rc=99; fi
+          printf 'fmt=%s\ncheck=%s\ntest=%s\nclippy=%s\n' "$fmt_rc" "$check_rc" "$test_rc" "$clippy_rc" >"$OUT/result.txt"
+          git status --short >"$OUT/status.txt"
+          exit 0
+      - name: Upload #249 repair evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ores-stack-249-repair-evidence
+          path: ${{ runner.temp }}/repair-249
+          if-no-files-found: error
+          retention-days: 7
+      - name: Gate and push #249 repair
         shell: bash
         working-directory: ores-stack
         run: |
           set -euo pipefail
-          rustfmt --edition 2024 crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs
-          rustfmt --edition 2024 --check crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs
+          OUT="$RUNNER_TEMP/repair-249"
+          cat "$OUT/result.txt"
+          grep -qx 'fmt=0' "$OUT/result.txt"
+          grep -qx 'check=0' "$OUT/result.txt"
+          grep -qx 'test=0' "$OUT/result.txt"
+          grep -qx 'clippy=0' "$OUT/result.txt"
           git diff --check
-          mapfile -t changed < <(git diff --name-only | sort)
-          printf '%s\n' "${changed[@]}"
+          mapfile -t changed < "$OUT/changed-files.txt"
           test "${#changed[@]}" -gt 0
           for path in "${changed[@]}"; do
             case "$path" in
               crates/ores-stack-ppr-http/src/lib_strict.rs|crates/ores-stack-ppr-http/src/request.rs) ;;
-              *) echo "unexpected rustfmt path: $path" >&2; exit 1 ;;
+              *) echo "unexpected repair path: $path" >&2; exit 1 ;;
             esac
           done
-      - name: Verify repaired request ingress
-        shell: bash
-        working-directory: ores-stack
-        run: |
-          set -euo pipefail
-          cargo check --locked -p ores-stack-ppr-http --all-targets
-          cargo test --locked -p ores-stack-ppr-http
-          cargo clippy --locked -p ores-stack-ppr-http --all-targets -- -D warnings
-      - name: Push guarded repair
-        shell: bash
-        working-directory: ores-stack
-        run: |
-          set -euo pipefail
           git config user.name 'ORESoftware CI repair'
           git config user.email 'noreply@oresoftware.com'
           git add crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs
           git commit -m 'style(ppr): apply canonical rustfmt to request ingress'
-          remote_head="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)"
-          test "$remote_head" = "$TARGET_SHA"
+          test "$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$TARGET_SHA"
           git push origin HEAD:"$TARGET_BRANCH"
