@@ -1,0 +1,75 @@
+name: tmp ores-compose 176 exact-head cert
+
+on:
+  push:
+    branches:
+      - test/ores-compose-176-baseline-cert-20260922
+
+permissions:
+  contents: read
+
+env:
+  COMPOSE_HEAD: f9af2f2a152e5229134b113c3ae3dae91d370da0
+  COMPOSE_BASE: 2e0d1488ca32371e4f410f95cf6886674b86876c
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Configure authenticated source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-compose
+          git -C ores-compose remote add origin https://github.com/ORESoftware/ores-compose.git
+          git -C ores-compose fetch --depth=20 origin main "$COMPOSE_HEAD"
+          git -C ores-compose checkout --detach "$COMPOSE_HEAD"
+          test "$(git -C ores-compose rev-parse HEAD)" = "$COMPOSE_HEAD"
+          test "$(git -C ores-compose merge-base HEAD "$COMPOSE_BASE")" = "$COMPOSE_BASE"
+          test "$(git -C ores-compose diff --name-only "$COMPOSE_BASE"..HEAD)" = "tests/source_filter_execution_regressions.rs"
+          test -z "$(git -C ores-compose status --porcelain)"
+          git -C ores-compose diff --check "$COMPOSE_BASE"..HEAD
+
+      - name: Install repository Rust toolchain
+        shell: bash
+        working-directory: ores-compose
+        run: |
+          set -euo pipefail
+          rustup show active-toolchain
+          rustup component add rustfmt clippy
+
+      - name: Native rustfmt gate
+        shell: bash
+        working-directory: ores-compose
+        run: cargo fmt --all --check
+
+      - name: Native clippy gate
+        shell: bash
+        working-directory: ores-compose
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Native test gate
+        shell: bash
+        working-directory: ores-compose
+        run: cargo test --all-targets --all-features
+
+      - name: Exact source hygiene
+        shell: bash
+        working-directory: ores-compose
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$COMPOSE_HEAD"
+          test -z "$(git status --porcelain)"
+          git diff --check "$COMPOSE_BASE"..HEAD
+          echo ORES_COMPOSE_176_EXACT_HEAD_CERT_PASS
