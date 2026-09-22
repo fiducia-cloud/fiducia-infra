@@ -68,26 +68,27 @@ jobs:
         run: |
           set -euo pipefail
           test -z "$(git status --porcelain)"
-      - name: Apply rustfmt only to PR-owned Rust files
+      - name: Apply workspace-aware formatter then retain only PR-owned delta
         working-directory: ores-stack
         shell: bash
         run: |
           set -euo pipefail
-          rustfmt --edition 2021 \
-            crates/ores-stack-cli/src/entry.rs \
-            crates/ores-stack-cli/src/ppr_middleware_wrapper.rs
+          cargo fmt -p ores-stack-cli
+          while IFS= read -r path; do
+            case "$path" in
+              crates/ores-stack-cli/src/entry.rs|crates/ores-stack-cli/src/ppr_middleware_wrapper.rs) ;;
+              *) git checkout -- "$path" ;;
+            esac
+          done < <(git diff --name-only)
           changed="$(git diff --name-only)"
           test -n "$changed"
           while IFS= read -r path; do
             case "$path" in
               crates/ores-stack-cli/src/entry.rs|crates/ores-stack-cli/src/ppr_middleware_wrapper.rs) ;;
-              *) echo "refusing unrelated formatter delta: $path" >&2; exit 1 ;;
+              *) echo "refusing unrelated formatter delta after restore: $path" >&2; exit 1 ;;
             esac
           done <<< "$changed"
           git diff --check
-          rustfmt --edition 2021 --check \
-            crates/ores-stack-cli/src/entry.rs \
-            crates/ores-stack-cli/src/ppr_middleware_wrapper.rs
       - name: Check CLI crate
         working-directory: ores-stack
         run: cargo check --locked -p ores-stack-cli --all-targets
