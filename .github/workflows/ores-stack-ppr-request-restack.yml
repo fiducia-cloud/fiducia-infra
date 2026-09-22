@@ -43,6 +43,13 @@ jobs:
           test "$(git -C ores-stack rev-parse HEAD)" = "$TARGET_SHA"
           remote_head="$(git -C ores-stack ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)"
           test "$remote_head" = "$TARGET_SHA" || { echo "target branch moved: expected $TARGET_SHA got $remote_head"; exit 1; }
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
       - name: Apply only Rust-1.88 deadline lifetime repair
         shell: bash
         working-directory: ores-stack
@@ -61,13 +68,6 @@ jobs:
           rustfmt --edition 2024 --check crates/ores-stack-ppr-http/src/request.rs crates/ores-stack-ppr-http/src/lib_strict.rs
           git diff --check
           test "$(git diff --name-only)" = 'crates/ores-stack-ppr-http/src/request.rs'
-      - name: Rust 1.88
-        shell: bash
-        run: |
-          set -euo pipefail
-          rustup toolchain install 1.88.0 --profile minimal --no-self-update
-          rustup default 1.88.0
-          rustup component add rustfmt clippy
       - name: Certify merged request authority
         shell: bash
         working-directory: ores-stack
