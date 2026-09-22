@@ -57,16 +57,30 @@ jobs:
         working-directory: ores-stack
         run: bash scripts/bootstrap-cargo-lock.sh ensure
 
-      - name: Certify strict framing primitive
+      - name: Framing rustfmt
         shell: bash
         working-directory: ores-stack
-        run: |
-          set -euo pipefail
-          cargo fmt --all -- --check
-          git diff --check
-          cargo check --locked -p ores-stack-ppr-http --all-targets
-          cargo test --locked -p ores-stack-ppr-http -- --nocapture
-          cargo clippy --locked -p ores-stack-ppr-http --all-targets -- -D warnings
+        run: cargo fmt --all -- --check
+
+      - name: Framing diff check
+        shell: bash
+        working-directory: ores-stack
+        run: git diff --check
+
+      - name: Framing cargo check
+        shell: bash
+        working-directory: ores-stack
+        run: cargo check --locked -p ores-stack-ppr-http --all-targets
+
+      - name: Framing tests
+        shell: bash
+        working-directory: ores-stack
+        run: cargo test --locked -p ores-stack-ppr-http -- --nocapture
+
+      - name: Framing clippy
+        shell: bash
+        working-directory: ores-stack
+        run: cargo clippy --locked -p ores-stack-ppr-http --all-targets -- -D warnings
 
   process-tree-218:
     strategy:
@@ -113,13 +127,27 @@ jobs:
         working-directory: ores-stack
         run: bash scripts/bootstrap-cargo-lock.sh ensure
 
-      - name: Certify process-tree ownership primitive
+      - name: Process-tree rustfmt
         shell: bash
         working-directory: ores-stack
-        run: |
-          set -euo pipefail
-          cargo fmt --all -- --check
-          git diff --check
-          cargo check --locked -p ores-stack-process-tree --all-targets
-          cargo test --locked -p ores-stack-process-tree -- --nocapture
-          cargo clippy --locked -p ores-stack-process-tree --all-targets -- -D warnings
+        run: cargo fmt --all -- --check
+
+      - name: Process-tree diff check
+        shell: bash
+        working-directory: ores-stack
+        run: git diff --check
+
+      - name: Process-tree cargo check
+        shell: bash
+        working-directory: ores-stack
+        run: cargo check --locked -p ores-stack-process-tree --all-targets
+
+      - name: Process-tree tests
+        shell: bash
+        working-directory: ores-stack
+        run: cargo test --locked -p ores-stack-process-tree -- --nocapture
+
+      - name: Process-tree clippy
+        shell: bash
+        working-directory: ores-stack
+        run: cargo clippy --locked -p ores-stack-process-tree --all-targets -- -D warnings
