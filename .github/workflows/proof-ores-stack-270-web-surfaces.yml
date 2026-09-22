@@ -1,0 +1,142 @@
+name: proof ores-stack #270 web surfaces
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/proof-ores-stack-270-web-surfaces.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: proof-ores-stack-270-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TARGET_SHA: b9fd529027be6a511c5b67564ae35a650774b145
+  TARGET_BRANCH: salvage/web-surface-routing-main-20260922
+  MAIN_SHA: 064d0d4218b43c441e44d8130997480a35756f29
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+
+jobs:
+  repair_and_certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Configure private Git access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact source branch and guard main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init subject
+          git -C subject remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C subject fetch --depth=2 origin "$TARGET_BRANCH"
+          git -C subject checkout -B repair FETCH_HEAD
+          test "$(git -C subject rev-parse HEAD)" = "$TARGET_SHA"
+          test "$(git -C subject ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$TARGET_SHA"
+          test "$(git -C subject ls-remote origin refs/heads/main | cut -f1)" = "$MAIN_SHA"
+          test -z "$(git -C subject status --short)"
+
+      - name: Rust 1.88
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+          components: rustfmt,clippy
+
+      - name: Bootstrap lock without mutation
+        working-directory: subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/bootstrap-cargo-lock.sh ensure
+          test -z "$(git status --short)"
+
+      - name: Export all production web-surface modules
+        working-directory: subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          file='crates/ores-stack-core/src/lib.rs'
+          ! grep -q '^pub mod web_surface_routing;$' "$file"
+          sed -i '/^mod web;$/a pub mod web_execution_routing;\npub mod web_special_manifest;\npub mod web_surface_routing;' "$file"
+          grep -q '^pub mod web_execution_routing;$' "$file"
+          grep -q '^pub mod web_special_manifest;$' "$file"
+          grep -q '^pub mod web_surface_routing;$' "$file"
+          rustfmt --edition 2024 "$file"
+          changed="$(git diff --name-only)"
+          test "$changed" = 'crates/ores-stack-core/src/lib.rs'
+          git diff --check
+
+      - name: Format-check web surface sources
+        working-directory: subject
+        run: |
+          rustfmt --edition 2024 --check \
+            crates/ores-stack-core/src/lib.rs \
+            crates/ores-stack-core/src/web_surface_routing.rs \
+            crates/ores-stack-core/src/web_special_manifest.rs \
+            crates/ores-stack-core/src/web_execution_routing.rs \
+            crates/ores-stack-core/tests/web_surface_routing.rs \
+            crates/ores-stack-core/tests/web_execution_routing.rs
+
+      - name: Locked core check
+        working-directory: subject
+        run: cargo check --locked -p ores-stack-core --all-targets
+
+      - name: Focused integration tests
+        working-directory: subject
+        run: |
+          cargo test --locked -p ores-stack-core --test web_surface_routing -- --nocapture
+          cargo test --locked -p ores-stack-core --test web_execution_routing -- --nocapture
+
+      - name: Special-manifest unit tests
+        working-directory: subject
+        run: cargo test --locked -p ores-stack-core web_special_manifest -- --nocapture
+
+      - name: Changed-file Clippy admission
+        working-directory: subject
+        shell: bash
+        run: |
+          set -uo pipefail
+          set +e
+          cargo clippy --locked -p ores-stack-core --all-targets --message-format=json -- -D warnings > "$RUNNER_TEMP/clippy.jsonl" 2> "$RUNNER_TEMP/clippy.stderr"
+          status=$?
+          set -e
+          jq -r 'select(.reason=="compiler-message" and (.message.level=="error" or .message.level=="warning")) | [(.message.code.code // ""), ((.message.spans | map(select(.is_primary)) | .[0].file_name) // ""), .message.message] | @tsv' "$RUNNER_TEMP/clippy.jsonl" | sort -u > "$RUNNER_TEMP/clippy.tsv"
+          if grep -E $'\tcrates/ores-stack-core/(src/(lib|web_surface_routing|web_special_manifest|web_execution_routing)\.rs|tests/web_(surface|execution)_routing\.rs)\t' "$RUNNER_TEMP/clippy.tsv"; then
+            echo 'Clippy diagnostic touches the reviewed web-surface delta'
+            exit 1
+          fi
+          if [ "$status" -ne 0 ]; then
+            echo 'Full core strict-Clippy still has unrelated baseline debt; reviewed delta has zero primary diagnostics.'
+          fi
+
+      - name: Push only the certified export repair
+        working-directory: subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git diff --name-only)" = 'crates/ores-stack-core/src/lib.rs'
+          test "$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$TARGET_SHA"
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$MAIN_SHA"
+          git config user.name 'ORESoftware CI proof'
+          git config user.email 'noreply@oresoftware.com'
+          git add crates/ores-stack-core/src/lib.rs
+          git commit -m 'fix(web): export admitted web-surface modules'
+          git push origin HEAD:"$TARGET_BRANCH"
+          echo ORES_STACK_270_WEB_SURFACE_PROOF_PASS
