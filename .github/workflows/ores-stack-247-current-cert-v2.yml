@@ -14,6 +14,8 @@ env:
   EXPECTED_HEAD: 'ce6b14759eea92211c774f1727e8a56acf57051b'
   EXPECTED_MAIN: '5c3aec0e8b96afabe95e7213d0d33c056886dff9'
   SOURCE_BRANCH: 'salvage/rpc-http-adapter-main-20260922'
+  ADAPTER_MANIFEST: 'crates/ores-fn-adapters/Cargo.toml'
+  ADAPTER_LOCK: 'crates/ores-fn-adapters/Cargo.lock'
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
 
 jobs:
@@ -67,7 +69,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo fmt -p ores-fn-adapters
+          cargo fmt --manifest-path "$ADAPTER_MANIFEST"
           changed="$(git diff --name-only)"
           if test -n "$changed"; then
             while IFS= read -r path; do
@@ -81,33 +83,40 @@ jobs:
             git commit -m 'style(lambda): rustfmt RPC HTTP adapter'
           fi
           test -z "$(git status --porcelain)"
-      - name: Prove lock stability
+          echo "CERTIFIED_HEAD=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Generate standalone lock evidence
         working-directory: ores-stack
         shell: bash
         run: |
           set -euo pipefail
-          before="$(git hash-object Cargo.lock)"
-          bash scripts/bootstrap-cargo-lock.sh ensure
-          after="$(git hash-object Cargo.lock)"
-          test "$before" = "$after"
-          test -z "$(git status --porcelain)"
-          cargo metadata --locked --format-version 1 >/dev/null
-          echo "CERTIFIED_HEAD=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
-      - name: Format exact adapter package
+          test ! -e "$ADAPTER_LOCK"
+          cargo generate-lockfile --manifest-path "$ADAPTER_MANIFEST"
+          test -f "$ADAPTER_LOCK"
+          test -z "$(git diff --name-only)"
+          test "$(git status --porcelain --untracked-files=all)" = "?? $ADAPTER_LOCK"
+      - name: Format exact adapter crate
         working-directory: ores-stack
-        run: cargo fmt -p ores-fn-adapters -- --check
-      - name: Check adapter package
+        run: cargo fmt --manifest-path "$ADAPTER_MANIFEST" -- --check
+      - name: Check adapter crate
         working-directory: ores-stack
-        run: cargo check --locked -p ores-fn-adapters --all-targets
-      - name: Test adapter package
+        run: cargo check --locked --manifest-path "$ADAPTER_MANIFEST" --all-targets
+      - name: Test adapter crate
         working-directory: ores-stack
-        run: cargo test --locked -p ores-fn-adapters --all-targets
-      - name: Strict Clippy adapter package
+        run: cargo test --locked --manifest-path "$ADAPTER_MANIFEST" --all-targets
+      - name: Strict Clippy adapter crate
         working-directory: ores-stack
-        run: cargo clippy --locked -p ores-fn-adapters --all-targets -- -D warnings
-      - name: Workspace integration check
+        run: cargo clippy --locked --manifest-path "$ADAPTER_MANIFEST" --all-targets -- -D warnings
+      - name: Root workspace integration check
         working-directory: ores-stack
         run: cargo check --locked --workspace --all-targets
+      - name: Remove ephemeral adapter lock and prove clean source
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm "$ADAPTER_LOCK"
+          test -z "$(git status --porcelain)"
+          git diff --check
       - name: Guard and publish exact certified head
         working-directory: ores-stack
         shell: bash
@@ -115,7 +124,6 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$CERTIFIED_HEAD"
           test -z "$(git status --porcelain)"
-          git diff --check
           test "$(git ls-remote origin "refs/heads/$SOURCE_BRANCH" | cut -f1)" = "$EXPECTED_HEAD"
           test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_MAIN"
           git push origin HEAD:"refs/heads/$SOURCE_BRANCH"
