@@ -1,0 +1,124 @@
+name: ores-stack-p2-edge-minimal-cert
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-stack-p2-edge-minimal-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+  ORES_STACK_SHA: 'aa76b161adf79ff1d344d809fe50f53a53b1e144'
+  ORES_MIDDLEWARE_REV: '619e6faf2e28eee68b6839781099b82d942e94fd'
+
+jobs:
+  rust:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Configure authenticated GitHub source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact ores-stack wrapper head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --depth=1 origin "$ORES_STACK_SHA"
+          git -C ores-stack checkout --detach FETCH_HEAD
+          test "$(git -C ores-stack rev-parse HEAD)" = "$ORES_STACK_SHA"
+          test "$(git -C ores-stack status --porcelain)" = ""
+
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+
+      - name: Format-check changed Rust
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2024 --check crates/ores-stack-cli/src/entry.rs crates/ores-stack-cli/src/ppr_middleware_wrapper.rs
+          git diff --exit-code
+
+      - name: Check and test wrapper generator
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          cargo check --locked -p ores-stack-cli --all-targets
+          cargo clippy --locked -p ores-stack-cli --all-targets -- -D warnings
+          cargo test --locked -p ores-stack-cli ppr_middleware_wrapper -- --nocapture
+          git diff --exit-code
+
+      - name: Generate isolated app wrapper fixture
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          fixture="$RUNNER_TEMP/p2-wrapper-app"
+          mkdir -p "$fixture/src/middleware"
+          printf 'pub mod mw;\n' > "$fixture/src/middleware/mod.rs"
+          cat > "$fixture/src/middleware/mw.rs" <<'RS'
+          pub async fn middleware(
+              mut args: ores_middleware::EdgeMinimalCallbackArgs,
+          ) -> Result<ores_middleware::EdgeMinimalDecision, ores_middleware::IntegrationError> {
+              args.set_request_header("x-wrapper-e2e", "ok");
+              Ok(ores_middleware::EdgeMinimalDecision::Continue(args.request))
+          }
+          RS
+          cargo run --locked -p ores-stack-cli -- \
+            __ppr-generate-middleware-wrapper \
+            "--root=$fixture" \
+            "--ores-middleware-rev=$ORES_MIDDLEWARE_REV"
+          test -f "$fixture/tmp/ores-stack-ppr-middleware/Cargo.toml"
+          test -f "$fixture/tmp/ores-stack-ppr-middleware/main.rs"
+          ! grep -q 'struct InputFrame' "$fixture/tmp/ores-stack-ppr-middleware/main.rs"
+          grep -q 'run_stdio_once' "$fixture/tmp/ores-stack-ppr-middleware/main.rs"
+
+      - name: Compile generated isolated wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$RUNNER_TEMP/p2-wrapper-app"
+          cargo check --manifest-path "$fixture/tmp/ores-stack-ppr-middleware/Cargo.toml"
+
+      - name: Smoke canonical one-shot control protocol
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$RUNNER_TEMP/p2-wrapper-app"
+          request='{"schema":"ores.stack.p2.edge_minimal/v1","request":{"schema":"ores.middleware.host/v1","method":"GET","path":"/health","headers":{},"trustedRemoteIp":null,"contentLength":null,"trustedTransportSecure":true},"context":{"requestId":"req-e2e","traceId":"trace-e2e","spanId":null,"tenantId":null,"userId":null,"locale":null,"startedAtUnixMs":0,"deadlineUnixMs":null,"baggage":{}}}'
+          printf '%s\n' "$request" | cargo run --quiet --manifest-path "$fixture/tmp/ores-stack-ppr-middleware/Cargo.toml" > "$RUNNER_TEMP/p2-output.jsonl"
+          grep -q '"kind":"continue"' "$RUNNER_TEMP/p2-output.jsonl"
+          grep -q '"x-wrapper-e2e":"ok"' "$RUNNER_TEMP/p2-output.jsonl"
+          test "$(wc -l < "$RUNNER_TEMP/p2-output.jsonl")" -eq 1
+
+      - name: Prove source worktree stayed clean
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          git diff --exit-code
+          test "$(git status --porcelain)" = ""
