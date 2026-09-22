@@ -39,3 +39,5 @@ jobs:
       - name: Tests
         working-directory: ores-stack
         run: cargo test --workspace --all-targets --locked
+
+# Trigger after workflow creation so this push must be evaluated by Actions.
