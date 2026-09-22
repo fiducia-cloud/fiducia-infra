@@ -1,0 +1,100 @@
+name: ores-middleware-edge-minimal-268-cert
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-middleware-edge-minimal-268-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+  ORES_MIDDLEWARE_SHA: '7a6b10216c084fd7e4ff774bb33544b1f9677191'
+
+jobs:
+  rust:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Configure authenticated GitHub source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact ores-middleware PR head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-middleware
+          git -C ores-middleware remote add origin https://github.com/ORESoftware/ores-middleware.git
+          git -C ores-middleware fetch --depth=1 origin "$ORES_MIDDLEWARE_SHA"
+          git -C ores-middleware checkout --detach FETCH_HEAD
+          test "$(git -C ores-middleware rev-parse HEAD)" = "$ORES_MIDDLEWARE_SHA"
+          test -z "$(git -C ores-middleware status --porcelain)"
+
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+
+      - name: Format-check edge_minimal authority
+        shell: bash
+        working-directory: ores-middleware
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2024 --check \
+            src/rust/src/host_abi.rs \
+            src/rust/src/hosts/edge_minimal_local.rs \
+            src/rust/src/provider_api.rs \
+            src/rust/src/lib.rs \
+            src/rust/tests/host_abi_contract.rs
+          git diff --exit-code
+
+      - name: Frozen dependency admission
+        shell: bash
+        working-directory: ores-middleware
+        run: |
+          set -euo pipefail
+          cargo metadata --locked --manifest-path src/rust/Cargo.toml --format-version 1 --no-deps >/dev/null
+          cargo check --locked --manifest-path src/rust/Cargo.toml --no-default-features --all-targets
+
+      - name: Clippy portable middleware surface
+        shell: bash
+        working-directory: ores-middleware
+        run: |
+          set -euo pipefail
+          cargo clippy --locked --manifest-path src/rust/Cargo.toml --no-default-features --all-targets -- -D warnings
+
+      - name: Test provider API and local edge_minimal host
+        shell: bash
+        working-directory: ores-middleware
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path src/rust/Cargo.toml --no-default-features --lib provider_api -- --nocapture
+          cargo test --locked --manifest-path src/rust/Cargo.toml --no-default-features --lib edge_minimal_local -- --nocapture
+          cargo test --locked --manifest-path src/rust/Cargo.toml --no-default-features --test host_abi_contract -- --nocapture
+
+      - name: Prove source immutability
+        shell: bash
+        working-directory: ores-middleware
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$ORES_MIDDLEWARE_SHA"
+          git diff --exit-code
+          test -z "$(git status --porcelain)"
