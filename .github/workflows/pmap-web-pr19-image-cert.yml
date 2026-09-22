@@ -49,13 +49,14 @@ jobs:
           git -C pmap-lib-core fetch --depth=1 origin "$PMAP_LIB_CORE_SHA"
           git -C pmap-lib-core checkout --detach FETCH_HEAD
           test "$(git -C pmap-lib-core rev-parse HEAD)" = "$PMAP_LIB_CORE_SHA"
-          (
-            cd pmap-web
-            cargo generate-lockfile
-            echo '--- BEGIN CARGO LOCK DIFF ---'
-            git diff -- Cargo.lock
-            echo '--- END CARGO LOCK DIFF ---'
-          )
+          (cd pmap-web && cargo generate-lockfile)
+      - name: Export regenerated Cargo.lock
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pmap-web-pr19-cargo-lock
+          path: pmap-web/Cargo.lock
+          if-no-files-found: error
+          retention-days: 1
       - name: Build standalone image with regenerated lockfile
         shell: bash
         env:
