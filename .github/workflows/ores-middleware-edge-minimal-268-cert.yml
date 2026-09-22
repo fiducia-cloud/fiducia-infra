@@ -1,4 +1,4 @@
-name: ores-middleware-edge-minimal-268-cert
+name: ores-middleware-edge-minimal-273-cert
 
 on:
   pull_request:
@@ -12,7 +12,7 @@ permissions:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-  ORES_MIDDLEWARE_SHA: '7a6b10216c084fd7e4ff774bb33544b1f9677191'
+  ORES_MIDDLEWARE_SHA: '4a5d3a5f72fb9973c07ce40471cd754e348c05d3'
 
 jobs:
   rust:
