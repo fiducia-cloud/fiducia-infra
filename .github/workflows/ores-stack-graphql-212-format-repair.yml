@@ -1,0 +1,65 @@
+name: ores-stack-graphql-212-format-repair
+
+on:
+  push:
+    branches:
+      - test/ores-stack-graphql-212-format-repair-20260922
+
+permissions:
+  contents: read
+
+env:
+  TARGET_SHA: '88daef5fe650653e4172f5d0dd4b98c2f79b0903'
+  SOURCE_BRANCH: 'salvage/graphql-client-generation-current-main-20260922'
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Configure authenticated GitHub access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact ores-stack head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --depth=1 origin "$TARGET_SHA"
+          git -C ores-stack checkout --detach FETCH_HEAD
+          test "$(git -C ores-stack rev-parse HEAD)" = "$TARGET_SHA"
+
+      - name: Install Rust 1.88 rustfmt
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt
+
+      - name: Apply rustfmt only
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          git diff --check
+          git status --short
+          test -n "$(git status --short)"
+
+      - name: Commit formatter result to source branch
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'ORESoftware CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -u
+          git commit -m 'style: rustfmt GraphQL client generation salvage'
+          git push origin HEAD:refs/heads/$SOURCE_BRANCH
