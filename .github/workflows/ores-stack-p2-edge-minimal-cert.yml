@@ -12,7 +12,8 @@ permissions:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-  ORES_STACK_SHA: '9aa20df6323a3749d4ac184903a69b3d72b11675'
+  ORES_STACK_SHA: '6e1d435d5fd5f1e8cea4eead0ccec5884b74c92f'
+  ORES_STACK_BRANCH: 'feat/p2-edge-minimal-protocol-current-main-20260922'
 
 jobs:
   rust:
@@ -43,6 +44,7 @@ jobs:
           git -C ores-stack fetch --depth=1 origin "$ORES_STACK_SHA"
           git -C ores-stack checkout --detach FETCH_HEAD
           test "$(git -C ores-stack rev-parse HEAD)" = "$ORES_STACK_SHA"
+          test "$(git -C ores-stack status --porcelain)" = ""
 
       - name: Rust 1.88
         shell: bash
@@ -60,16 +62,24 @@ jobs:
           rustfmt --edition 2024 --check crates/ores-stack-p2-edge-minimal/src/lib.rs
           git diff --exit-code
 
-      - name: Bootstrap repository lock evidence
-        shell: bash
-        working-directory: ores-stack
-        run: bash scripts/bootstrap-cargo-lock.sh ensure
-
-      - name: Check portable P2 crate and workspace
+      - name: Refresh only required workspace lock evidence
         shell: bash
         working-directory: ores-stack
         run: |
           set -euo pipefail
+          # Let Cargo preserve the existing lock as far as possible while adding
+          # the new workspace member and exact ores-middleware git revision.
+          cargo check -p ores-stack-p2-edge-minimal --all-targets
+          git diff --check
+          changed="$(git diff --name-only)"
+          test "$changed" = "Cargo.lock"
+
+      - name: Check portable P2 crate and workspace with lock frozen
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          cargo metadata --locked --format-version 1 --no-deps >/dev/null
           cargo check --locked -p ores-stack-p2-edge-minimal --all-targets
           cargo check --locked --workspace --all-targets
 
@@ -86,4 +96,18 @@ jobs:
         run: |
           set -euo pipefail
           cargo test --locked -p ores-stack-p2-edge-minimal -- --nocapture
-          git diff --exit-code
+          git diff --check
+          test "$(git diff --name-only)" = "Cargo.lock"
+
+      - name: Fast-forward certified lockfile to ores-stack PR branch
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$ORES_STACK_SHA"
+          test "$(git diff --name-only)" = "Cargo.lock"
+          git config user.name "ores-stack certification"
+          git config user.email "actions@users.noreply.github.com"
+          git add Cargo.lock
+          git commit -m "chore(p2): refresh lock for edge_minimal runtime"
+          git push origin "HEAD:refs/heads/${ORES_STACK_BRANCH}"
