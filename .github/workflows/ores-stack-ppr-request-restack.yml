@@ -50,7 +50,7 @@ jobs:
           rustup toolchain install 1.88.0 --profile minimal --no-self-update
           rustup default 1.88.0
           rustup component add rustfmt clippy
-      - name: Repair duplicate response writer and request deadline lifetime
+      - name: Repair merged PPR HTTP defects
         shell: bash
         working-directory: ores-stack
         run: |
@@ -63,7 +63,11 @@ jobs:
           old = '    with_tcp_deadline(stream, deadline, read_request_head)'
           new = '    with_tcp_deadline(stream, deadline, |reader| read_request_head(reader))'
           assert text.count(old) == 1, f'unexpected request deadline call count: {text.count(old)}'
-          request.write_text(text.replace(old, new, 1))
+          text = text.replace(old, new, 1)
+          redundant = '    let mut headers = headers;\n    strip_hop_by_hop_headers(&mut headers, &connection_tokens);'
+          replacement = '    strip_hop_by_hop_headers(&mut headers, &connection_tokens);'
+          assert text.count(redundant) == 1, f'unexpected redundant headers binding count: {text.count(redundant)}'
+          request.write_text(text.replace(redundant, replacement, 1))
 
           strict = Path('crates/ores-stack-ppr-http/src/lib_strict.rs')
           text = strict.read_text()
@@ -114,5 +118,5 @@ jobs:
           git config user.name 'ores-stack certification'
           git config user.email 'actions@users.noreply.github.com'
           git add crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs
-          git commit -m 'fix(ppr): dedupe response writer and satisfy deadline lifetime'
+          git commit -m 'fix(ppr): repair merged request and response framing authority'
           git push origin HEAD:"$TARGET_BRANCH"
