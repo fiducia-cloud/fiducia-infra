@@ -57,16 +57,36 @@ jobs:
           rustup default 1.88.0
           rustup component add rustfmt clippy
 
-      - name: Format compile and focused tests
+      - name: Format
+        shell: bash
+        working-directory: ores-stack
+        run: cargo fmt --all -- --check
+
+      - name: Locked metadata
+        shell: bash
+        working-directory: ores-stack
+        run: cargo metadata --locked --format-version 1 --no-deps >/dev/null
+
+      - name: Compile exact head
+        shell: bash
+        working-directory: ores-stack
+        run: cargo check --locked -p ores-stack-core -p ores-stack-cli --all-targets
+
+      - name: Focused parallel lane tests
+        shell: bash
+        working-directory: ores-stack
+        run: cargo test --locked -p ores-stack-core rpc_http_client_lane -- --nocapture
+
+      - name: Focused post-sync lane tests
+        shell: bash
+        working-directory: ores-stack
+        run: cargo test --locked -p ores-stack-core rpc_http_client_lane_post -- --nocapture
+
+      - name: Source hygiene after executable checks
         shell: bash
         working-directory: ores-stack
         run: |
           set -euo pipefail
-          cargo fmt --all -- --check
-          cargo metadata --locked --format-version 1 --no-deps >/dev/null
-          cargo check --locked -p ores-stack-core -p ores-stack-cli --all-targets
-          cargo test --locked -p ores-stack-core rpc_http_client_lane -- --nocapture
-          cargo test --locked -p ores-stack-core rpc_http_client_lane_post -- --nocapture
           git diff --check
           test -z "$(git status --porcelain)"
 
