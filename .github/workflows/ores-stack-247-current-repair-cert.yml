@@ -32,18 +32,19 @@ jobs:
           set -euo pipefail
           test -n "$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
-      - name: Fetch exact candidate and current main
+      - name: Fetch exact candidate and current main with merge-base history
         shell: bash
         run: |
           set -euo pipefail
           git init ores-stack
           git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
-          git -C ores-stack fetch --depth=1 origin "$SOURCE_BRANCH"
+          git -C ores-stack fetch origin "$SOURCE_BRANCH"
           git -C ores-stack checkout -b repair FETCH_HEAD
           test "$(git -C ores-stack rev-parse HEAD)" = "$EXPECTED_HEAD"
           test "$(git -C ores-stack ls-remote origin "refs/heads/$SOURCE_BRANCH" | cut -f1)" = "$EXPECTED_HEAD"
-          git -C ores-stack fetch --depth=1 origin "$EXPECTED_MAIN"
+          git -C ores-stack fetch origin "$EXPECTED_MAIN"
           test "$(git -C ores-stack rev-parse FETCH_HEAD)" = "$EXPECTED_MAIN"
+          test -n "$(git -C ores-stack merge-base HEAD "$EXPECTED_MAIN")"
       - name: Restack on reviewed current main without conflict guessing
         working-directory: ores-stack
         shell: bash
