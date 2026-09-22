@@ -12,8 +12,8 @@ permissions:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-  ORES_STACK_SHA: '4af528f8bcca463669367e36935e2151f2870d48'
-  ORES_STACK_BRANCH: 'fix/workspace-lock-certified-current-main-20260922'
+  ORES_STACK_SHA: 'aa76b161adf79ff1d344d809fe50f53a53b1e144'
+  ORES_MIDDLEWARE_REV: '619e6faf2e28eee68b6839781099b82d942e94fd'
 
 jobs:
   rust:
@@ -35,7 +35,7 @@ jobs:
           echo "::add-mask::$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
 
-      - name: Fetch exact ores-stack current main
+      - name: Fetch exact ores-stack wrapper head
         shell: bash
         run: |
           set -euo pipefail
@@ -54,67 +54,71 @@ jobs:
           rustup default 1.88.0
           rustup component add rustfmt clippy
 
-      - name: Prove P2 source already formatted
+      - name: Format-check changed Rust
         shell: bash
         working-directory: ores-stack
         run: |
           set -euo pipefail
-          cargo fmt --package ores-stack-p2-edge-minimal -- --check
-          rustfmt --edition 2024 --check crates/ores-stack-p2-edge-minimal/src/lib.rs
+          rustfmt --edition 2024 --check crates/ores-stack-cli/src/entry.rs crates/ores-stack-cli/src/ppr_middleware_wrapper.rs
+          git diff --exit-code
+
+      - name: Check and test wrapper generator
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          cargo check --locked -p ores-stack-cli --all-targets
+          cargo clippy --locked -p ores-stack-cli --all-targets -- -D warnings
+          cargo test --locked -p ores-stack-cli ppr_middleware_wrapper -- --nocapture
+          git diff --exit-code
+
+      - name: Generate isolated app wrapper fixture
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          fixture="$RUNNER_TEMP/p2-wrapper-app"
+          mkdir -p "$fixture/src/middleware"
+          printf 'pub mod mw;\n' > "$fixture/src/middleware/mod.rs"
+          cat > "$fixture/src/middleware/mw.rs" <<'RS'
+          pub async fn middleware(
+              mut args: ores_middleware::EdgeMinimalCallbackArgs,
+          ) -> Result<ores_middleware::EdgeMinimalDecision, ores_middleware::IntegrationError> {
+              args.set_request_header("x-wrapper-e2e", "ok");
+              Ok(ores_middleware::EdgeMinimalDecision::Continue(args.request))
+          }
+          RS
+          cargo run --locked -p ores-stack-cli -- \
+            __ppr-generate-middleware-wrapper \
+            "--root=$fixture" \
+            "--ores-middleware-rev=$ORES_MIDDLEWARE_REV"
+          test -f "$fixture/tmp/ores-stack-ppr-middleware/Cargo.toml"
+          test -f "$fixture/tmp/ores-stack-ppr-middleware/main.rs"
+          ! grep -q 'struct InputFrame' "$fixture/tmp/ores-stack-ppr-middleware/main.rs"
+          grep -q 'run_stdio_once' "$fixture/tmp/ores-stack-ppr-middleware/main.rs"
+
+      - name: Compile generated isolated wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$RUNNER_TEMP/p2-wrapper-app"
+          cargo check --manifest-path "$fixture/tmp/ores-stack-ppr-middleware/Cargo.toml"
+
+      - name: Smoke canonical one-shot control protocol
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$RUNNER_TEMP/p2-wrapper-app"
+          request='{"schema":"ores.stack.p2.edge_minimal/v1","request":{"schema":"ores.middleware.host/v1","method":"GET","path":"/health","headers":{},"trustedRemoteIp":null,"contentLength":null,"trustedTransportSecure":true},"context":{"requestId":"req-e2e","traceId":"trace-e2e","spanId":null,"tenantId":null,"userId":null,"locale":null,"startedAtUnixMs":0,"deadlineUnixMs":null,"baggage":{}}}'
+          printf '%s\n' "$request" | cargo run --quiet --manifest-path "$fixture/tmp/ores-stack-ppr-middleware/Cargo.toml" > "$RUNNER_TEMP/p2-output.jsonl"
+          grep -q '"kind":"continue"' "$RUNNER_TEMP/p2-output.jsonl"
+          grep -q '"x-wrapper-e2e":"ok"' "$RUNNER_TEMP/p2-output.jsonl"
+          test "$(wc -l < "$RUNNER_TEMP/p2-output.jsonl")" -eq 1
+
+      - name: Prove source worktree stayed clean
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          git diff --exit-code
           test "$(git status --porcelain)" = ""
-
-      - name: Generate current-main workspace lock
-        shell: bash
-        working-directory: ores-stack
-        run: |
-          set -euo pipefail
-          cargo check -p ores-stack-p2-edge-minimal --all-targets
-          test -f Cargo.lock
-          git diff --check
-          git status --porcelain=v1 | cut -c4- | sort -u > /tmp/changed
-          printf '%s\n' Cargo.lock > /tmp/allowed
-          diff -u /tmp/allowed /tmp/changed
-
-      - name: Check current workspace with lock frozen
-        shell: bash
-        working-directory: ores-stack
-        run: |
-          set -euo pipefail
-          cargo metadata --locked --format-version 1 --no-deps >/dev/null
-          cargo check --locked -p ores-stack-p2-edge-minimal --all-targets
-          cargo check --locked --workspace --all-targets
-
-      - name: Clippy portable P2 crate
-        shell: bash
-        working-directory: ores-stack
-        run: |
-          set -euo pipefail
-          cargo clippy --locked -p ores-stack-p2-edge-minimal --all-targets -- -D warnings
-
-      - name: Test portable P2 protocol
-        shell: bash
-        working-directory: ores-stack
-        run: |
-          set -euo pipefail
-          cargo test --locked -p ores-stack-p2-edge-minimal -- --nocapture
-          git diff --check
-          git status --porcelain=v1 | cut -c4- | sort -u > /tmp/changed
-          printf '%s\n' Cargo.lock > /tmp/allowed
-          diff -u /tmp/allowed /tmp/changed
-
-      - name: Fast-forward certified lock to clean ores-stack branch
-        shell: bash
-        working-directory: ores-stack
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$ORES_STACK_SHA"
-          remote_head="$(git ls-remote origin "refs/heads/${ORES_STACK_BRANCH}" | cut -f1)"
-          test "$remote_head" = "$ORES_STACK_SHA" || { echo "target branch moved: $remote_head"; exit 1; }
-          git status --porcelain=v1 | cut -c4- | sort -u > /tmp/changed
-          printf '%s\n' Cargo.lock > /tmp/allowed
-          diff -u /tmp/allowed /tmp/changed
-          git config user.name "ores-stack certification"
-          git config user.email "actions@users.noreply.github.com"
-          git add Cargo.lock
-          git commit -m "chore: freeze certified workspace lock"
-          git push origin "HEAD:refs/heads/${ORES_STACK_BRANCH}"
