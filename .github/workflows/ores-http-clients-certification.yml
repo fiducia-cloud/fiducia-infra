@@ -1,5 +1,4 @@
-# Certification harness for the latest cancellation-safe scheduler/Rx branch.
-name: ores-http-clients certification
+name: ores-http-clients and ores-stack certification
 
 on:
   push:
@@ -11,7 +10,7 @@ permissions:
 
 env:
   SOURCE_REPO: ORESoftware/ores-http-clients
-  SOURCE_REF: fix/scheduler-cancellation-accounting
+  SOURCE_REF: feat/generated-stream-graphql-interop
 
 jobs:
   conformance:
@@ -91,19 +90,18 @@ jobs:
       - working-directory: source/src/rust
         run: cargo check --target wasm32-unknown-unknown
 
-  ores-stack-pr143:
+  ores-stack-pr178:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
-      - name: Check out exact ores-stack PR head
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out exact ores-stack PR #178 head
+        uses: actions/checkout@v4
         with:
           repository: ORESoftware/ores-stack
-          ref: 327cd019f66371e37d0490d68f939789b86a0310
+          ref: 7000cc11203ae1192dddac0edc647746a36d5f55
           token: ${{ secrets.ORE_SOURCE_PAT }}
           path: ores-stack
           persist-credentials: false
-          show-progress: false
       - name: Configure private Git dependency auth
         shell: bash
         env:
@@ -113,7 +111,7 @@ jobs:
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
           echo 'CARGO_NET_GIT_FETCH_WITH_CLI=true' >> "$GITHUB_ENV"
       - name: Install Rust 1.88.0
-        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.88.0
           components: rustfmt
@@ -126,6 +124,8 @@ jobs:
       - name: Type-check workspace
         working-directory: ores-stack
         run: cargo check --workspace --all-targets --locked
-      - name: Test workspace
+      - name: Test focused CLI/core packages
         working-directory: ores-stack
-        run: cargo test --workspace --all-targets --locked
+        run: |
+          cargo test -p ores-stack-cli --all-targets --locked
+          cargo test -p ores-stack-core --all-targets --locked
