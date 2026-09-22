@@ -1,0 +1,87 @@
+name: ores-stack #275 parallel RPC exact-head cert
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-stack-275-parallel-rpc-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+  STACK_HEAD: '6840f05d4062b91f447b8a2865733692ab936c34'
+  STACK_BASE: '253382da3634ce9fde62704e79e42160cee66838'
+  STACK_BRANCH: 'feat/parallel-rpc-runtime-client-lane'
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Configure authenticated source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Merge exact PR head onto current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --depth=20 origin main "$STACK_BRANCH"
+          test "$(git -C ores-stack rev-parse origin/main)" = "$STACK_BASE"
+          test "$(git -C ores-stack rev-parse origin/$STACK_BRANCH)" = "$STACK_HEAD"
+          git -C ores-stack checkout -b proof "$STACK_BASE"
+          git -C ores-stack config user.name 'funded exact-head certification'
+          git -C ores-stack config user.email 'noreply@oresoftware.com'
+          git -C ores-stack merge --no-ff --no-edit "$STACK_HEAD"
+          test "$(git -C ores-stack diff --name-only "$STACK_BASE"...HEAD | sort | tr '\n' ' ')" = "crates/ores-stack-cli/src/legacy/mod.rs crates/ores-stack-core/src/lib.rs crates/ores-stack-core/src/rpc_http_client_lane.rs crates/ores-stack-core/src/rpc_http_client_lane_post.rs "
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+      - name: Format owned lane sources
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2024 --check \
+            crates/ores-stack-core/src/rpc_http_client_lane.rs \
+            crates/ores-stack-core/src/rpc_http_client_lane_post.rs
+          git diff --check
+      - name: Compile and test affected crates
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          cargo metadata --locked --format-version 1 --no-deps >/dev/null
+          cargo check --locked -p ores-stack-core -p ores-stack-cli --all-targets
+          cargo test --locked -p ores-stack-core rpc_http_client_lane -- --nocapture
+          cargo clippy --locked -p ores-stack-core -p ores-stack-cli --all-targets -- -D warnings
+          git diff --check
+      - name: Verify fluent terminal contract
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          grep -q 'makeCall()' crates/ores-stack-core/src/rpc_http_client_lane.rs
+          grep -q 'doStream()' crates/ores-stack-core/src/rpc_http_client_lane.rs
+          grep -q 'make_call' crates/ores-stack-core/src/rpc_http_client_lane.rs
+          grep -q 'do_stream' crates/ores-stack-core/src/rpc_http_client_lane.rs
+          ! grep -Eq '\.stream\(' crates/ores-stack-core/src/rpc_http_client_lane.rs
+          grep -q 'generated_ores_http' crates/ores-stack-core/src/rpc_http_client_lane.rs
+          grep -q 'ORESoftware/ores-interfaces/contracts/rpc-client-call/v1' crates/ores-stack-core/src/rpc_http_client_lane.rs
