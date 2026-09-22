@@ -1,0 +1,184 @@
+name: ores-stack-ppr-format-repair
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-stack-ppr-format-repair.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+
+jobs:
+  repair-process-tree-218:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      TARGET_BRANCH: 'feat/process-tree-current-main-20260922'
+      TARGET_SHA: 'cfbad0c0583db82d2796b04badfff86db6cf8fb0'
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Configure authenticated GitHub access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact process-tree head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --depth=1 origin "$TARGET_BRANCH"
+          git -C ores-stack checkout -b repair FETCH_HEAD
+          test "$(git -C ores-stack rev-parse HEAD)" = "$TARGET_SHA"
+
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+
+      - name: Format only process-tree crate
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          cargo fmt --package ores-stack-process-tree
+          git diff --check
+          changed="$(git diff --name-only | sort)"
+          printf 'changed files:\n%s\n' "$changed"
+          test "$changed" = 'crates/ores-stack-process-tree/src/lib.rs'
+
+      - name: Bootstrap lock evidence
+        shell: bash
+        working-directory: ores-stack
+        run: bash scripts/bootstrap-cargo-lock.sh ensure
+
+      - name: Verify formatted process-tree crate
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          cargo fmt --package ores-stack-process-tree -- --check
+          cargo check --locked -p ores-stack-process-tree --all-targets
+          cargo test --locked -p ores-stack-process-tree -- --nocapture
+          cargo clippy --locked -p ores-stack-process-tree --all-targets -- -D warnings
+          git diff --check
+          test "$(git diff --name-only | sort)" = 'crates/ores-stack-process-tree/src/lib.rs'
+
+      - name: Commit and push guarded process-tree repair
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          git config user.name 'ORESoftware CI repair'
+          git config user.email 'noreply@oresoftware.com'
+          git add crates/ores-stack-process-tree/src/lib.rs
+          git commit -m 'style(dev): rustfmt process-tree primitive'
+          remote_head="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)"
+          test "$remote_head" = "$TARGET_SHA" || { echo "source branch moved: expected $TARGET_SHA got $remote_head"; exit 1; }
+          git push origin HEAD:"$TARGET_BRANCH"
+
+  repair-framing-main:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      REPAIR_BRANCH: 'fix/ppr-http-rustfmt-certified-20260922'
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Configure authenticated GitHub access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch current ores-stack main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --depth=1 origin main
+          git -C ores-stack checkout -b "$REPAIR_BRANCH" FETCH_HEAD
+          test -z "$(git -C ores-stack ls-remote origin "refs/heads/$REPAIR_BRANCH")" || {
+            echo "repair branch already exists; refusing to overwrite"
+            exit 1
+          }
+
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+
+      - name: Format only strict framing crate
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          cargo fmt --package ores-stack-ppr-http
+          git diff --check
+          changed="$(git diff --name-only | sort)"
+          printf 'changed files:\n%s\n' "$changed"
+          test -n "$changed"
+          while IFS= read -r path; do
+            case "$path" in
+              crates/ores-stack-ppr-http/src/lib.rs|crates/ores-stack-ppr-http/src/lib_strict.rs) ;;
+              *) echo "unexpected formatted file: $path"; exit 1 ;;
+            esac
+          done <<< "$changed"
+
+      - name: Bootstrap lock evidence
+        shell: bash
+        working-directory: ores-stack
+        run: bash scripts/bootstrap-cargo-lock.sh ensure
+
+      - name: Verify formatted framing crate
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          cargo fmt --package ores-stack-ppr-http -- --check
+          cargo check --locked -p ores-stack-ppr-http --all-targets
+          cargo test --locked -p ores-stack-ppr-http -- --nocapture
+          cargo clippy --locked -p ores-stack-ppr-http --all-targets -- -D warnings
+          git diff --check
+
+      - name: Commit and push guarded framing repair branch
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          git config user.name 'ORESoftware CI repair'
+          git config user.email 'noreply@oresoftware.com'
+          git add crates/ores-stack-ppr-http/src/lib.rs crates/ores-stack-ppr-http/src/lib_strict.rs
+          git commit -m 'style(dev): rustfmt strict PPR framing'
+          test -z "$(git ls-remote origin "refs/heads/$REPAIR_BRANCH")" || {
+            echo "repair branch appeared before push; refusing to overwrite"
+            exit 1
+          }
+          git push origin HEAD:"$REPAIR_BRANCH"
