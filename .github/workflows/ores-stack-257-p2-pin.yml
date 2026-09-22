@@ -1,0 +1,86 @@
+name: ores-stack-257-p2-pin
+
+on:
+  push:
+    branches: [ci/ores-http-clients-certification]
+    paths:
+      - '.github/workflows/ores-stack-257-p2-pin.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_BRANCH: fix/p2-pin-terminal-lifecycle-20260922
+  SOURCE_SHA: 62b1bd6ed4a66beebf05951de635532be81f6b4e
+  MAIN_SHA: f13e70f62b1746f68bc9b97dd14fd6d5254e559d
+  MIDDLEWARE_SHA: 0c29bf0c038b3df8aaaa1a5d3a13bba66b6df52f
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+
+jobs:
+  certify-and-lock:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Configure authenticated GitHub access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Fetch exact P2 pin branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init source
+          git -C source remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C source fetch origin "$SOURCE_BRANCH" main
+          test "$(git -C source rev-parse "origin/$SOURCE_BRANCH")" = "$SOURCE_SHA"
+          test "$(git -C source rev-parse origin/main)" = "$MAIN_SHA"
+          git -C source checkout -b certify "origin/$SOURCE_BRANCH"
+      - name: Install Rust 1.88
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.88.0'
+          components: rustfmt,clippy
+      - name: Reconcile only middleware lock provenance
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          cargo update -p ores-middleware --precise "$MIDDLEWARE_SHA"
+          changed="$(git diff --name-only | sort)"
+          printf 'lock reconciliation changed:\n%s\n' "$changed"
+          test "$changed" = 'Cargo.lock' || {
+            echo 'refusing lock repair because files other than Cargo.lock changed'
+            git diff --stat
+            exit 1
+          }
+          git config user.name 'ORESoftware CI lock repair'
+          git config user.email 'noreply@oresoftware.com'
+          git add Cargo.lock
+          git commit -m 'fix(p2): reconcile terminal lifecycle lock pin'
+      - name: Verify P2 protocol crate
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          cargo metadata --locked --format-version 1 --no-deps >/dev/null
+          cargo check --locked -p ores-stack-p2-edge-minimal --all-targets
+          cargo test --locked -p ores-stack-p2-edge-minimal --all-targets
+          cargo clippy --locked -p ores-stack-p2-edge-minimal --all-targets -- -D warnings
+          git diff --check
+          test -z "$(git status --porcelain)"
+      - name: Push only if exact refs remain unchanged
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin "refs/heads/$SOURCE_BRANCH" | cut -f1)" = "$SOURCE_SHA"
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$MAIN_SHA"
+          git push origin HEAD:"$SOURCE_BRANCH"
