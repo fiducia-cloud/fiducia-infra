@@ -1,4 +1,4 @@
-name: ores-stack PPR prereqs #244 #245 exact-head certification
+name: ores-stack PPR prereqs #244 #245 guarded repair
 
 on:
   pull_request:
@@ -14,7 +14,7 @@ env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
 
 jobs:
-  certify:
+  repair:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
@@ -23,10 +23,14 @@ jobs:
         include:
           - name: p2-wrapper-244
             sha: '43c6b7dd4fbc73c688598d0a2e7f2ef002488e9e'
+            branch: 'feat/ppr-edge-minimal-wrapper-current2-20260922'
             mode: wrapper
+            owned: 'crates/ores-stack-cli/src/ppr_middleware_wrapper.rs'
           - name: response-head-245
             sha: '6b924f4686e78cccacbfc56b3d9e0cc0a617c773'
+            branch: 'feat/ppr-http-canonical-response-head-20260922'
             mode: http
+            owned: 'crates/ores-stack-ppr-http/src/lib_strict.rs'
     name: ${{ matrix.name }}
     steps:
       - name: Checkout harness
@@ -53,7 +57,7 @@ jobs:
           git init ores-stack
           git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
           git -C ores-stack fetch --depth=1 origin "$ORES_STACK_SHA"
-          git -C ores-stack checkout --detach FETCH_HEAD
+          git -C ores-stack checkout -b repair FETCH_HEAD
           test "$(git -C ores-stack rev-parse HEAD)" = "$ORES_STACK_SHA"
           test "$(git -C ores-stack status --porcelain)" = ""
 
@@ -65,30 +69,61 @@ jobs:
           rustup default 1.88.0
           rustup component add rustfmt clippy
 
+      - name: Format only owned source
+        shell: bash
+        working-directory: ores-stack
+        env:
+          OWNED_FILE: ${{ matrix.owned }}
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2024 "$OWNED_FILE"
+          rustfmt --edition 2024 --check "$OWNED_FILE"
+          git diff --check
+          changed="$(git diff --name-only)"
+          test "$changed" = "$OWNED_FILE" || { echo "unexpected tracked mutation: $changed"; exit 1; }
+
       - name: Bootstrap lock evidence
         shell: bash
         working-directory: ores-stack
         run: bash scripts/bootstrap-cargo-lock.sh ensure
 
-      - name: Certify generated edge-minimal wrapper
+      - name: Verify generated edge-minimal wrapper
         if: matrix.mode == 'wrapper'
         shell: bash
         working-directory: ores-stack
         run: |
           set -euo pipefail
-          rustfmt --edition 2024 --check crates/ores-stack-cli/src/ppr_middleware_wrapper.rs
           cargo check --locked -p ores-stack-cli --all-targets
           cargo test --locked -p ores-stack-cli ppr_middleware_wrapper -- --nocapture
           git diff --check
+          test "$(git diff --name-only)" = 'crates/ores-stack-cli/src/ppr_middleware_wrapper.rs'
 
-      - name: Certify canonical response-head writer
+      - name: Verify canonical response-head writer
         if: matrix.mode == 'http'
         shell: bash
         working-directory: ores-stack
         run: |
           set -euo pipefail
-          rustfmt --edition 2024 --check crates/ores-stack-ppr-http/src/lib_strict.rs
           cargo check --locked -p ores-stack-ppr-http --all-targets
           cargo test --locked -p ores-stack-ppr-http -- --nocapture
           cargo clippy --locked -p ores-stack-ppr-http --all-targets -- -D warnings
           git diff --check
+          test "$(git diff --name-only)" = 'crates/ores-stack-ppr-http/src/lib_strict.rs'
+
+      - name: Fast-forward formatting-only repair
+        shell: bash
+        working-directory: ores-stack
+        env:
+          EXPECTED_SHA: ${{ matrix.sha }}
+          TARGET_BRANCH: ${{ matrix.branch }}
+          OWNED_FILE: ${{ matrix.owned }}
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)"
+          test "$remote_head" = "$EXPECTED_SHA" || { echo "source branch moved: expected $EXPECTED_SHA got $remote_head"; exit 1; }
+          test "$(git diff --name-only)" = "$OWNED_FILE"
+          git config user.name 'ores-stack certification'
+          git config user.email 'actions@users.noreply.github.com'
+          git add "$OWNED_FILE"
+          git commit -m 'style(ppr): format certified source'
+          git push origin HEAD:"$TARGET_BRANCH"
