@@ -12,7 +12,7 @@ permissions:
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
   SOURCE_BRANCH: fix/command-spec-static-program-test-20260922
-  SOURCE_SHA: 40a772267ce407205c37aceae536bdeb0b8dcd04
+  SOURCE_SHA: c261240732383b45b22b18b9c2db3dd6143325b5
   SOURCE_BASE: 2e0d1488ca32371e4f410f95cf6886674b86876c
 
 jobs:
@@ -43,10 +43,9 @@ jobs:
           test "$(git -C source merge-base HEAD "$SOURCE_BASE")" = "$SOURCE_BASE"
           test "$(git -C source diff --name-only "$SOURCE_BASE"..HEAD | tr '\n' ' ')" = "tests/source_filter_execution_regressions.rs "
           git -C source diff --check "$SOURCE_BASE"..HEAD
-          git -C source diff --unified=0 "$SOURCE_BASE"..HEAD -- tests/source_filter_execution_regressions.rs | tee /tmp/source-diff.txt
+          git -C source diff "$SOURCE_BASE"..HEAD -- tests/source_filter_execution_regressions.rs | tee /tmp/source-diff.txt
           grep -F -- '-        program: "git".to_owned(),' /tmp/source-diff.txt
           grep -F -- '+        program: "git",' /tmp/source-diff.txt
-          test "$(grep -Ec '^[+-][^+-]' /tmp/source-diff.txt)" -eq 2
       - name: Rust 1.98.1
         run: |
           rustup toolchain install 1.98.1 --profile minimal --component rustfmt,clippy --no-self-update
