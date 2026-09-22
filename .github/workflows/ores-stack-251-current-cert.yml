@@ -1,0 +1,112 @@
+name: ores-stack-251-current-cert
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-stack-251-current-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TARGET_SHA: '0e7545237147957758bfe26f2c39d2e19159aca0'
+  MIDDLEWARE_SHA: 'b930660d34896db1ab285c3b9bd97deaa37dc9ad'
+  P2_STACK_SHA: '1b2eda561882a38bc30f434810520d9c970810d2'
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Configure authenticated GitHub access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: '${{ secrets.ORE_SOURCE_PAT }}'
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Fetch exact current #251 head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --depth=1 origin "$TARGET_SHA"
+          git -C ores-stack checkout --detach FETCH_HEAD
+          test "$(git -C ores-stack rev-parse HEAD)" = "$TARGET_SHA"
+          test -z "$(git -C ores-stack status --porcelain)"
+      - name: Verify paired ABI pins
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          file='crates/ores-stack-cli/src/ppr_middleware_wrapper.rs'
+          grep -F "$MIDDLEWARE_SHA" "$file" >/dev/null
+          grep -F "$P2_STACK_SHA" "$file" >/dev/null
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+      - name: Bootstrap workspace lock
+        working-directory: ores-stack
+        run: bash scripts/bootstrap-cargo-lock.sh ensure
+      - name: Require bootstrap to preserve tracked source
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain)"
+      - name: Format CLI crate
+        working-directory: ores-stack
+        run: cargo fmt -p ores-stack-cli -- --check
+      - name: Check CLI crate
+        working-directory: ores-stack
+        run: cargo check --locked -p ores-stack-cli --all-targets
+      - name: Test PPR wrapper implementation
+        working-directory: ores-stack
+        run: cargo test --locked -p ores-stack-cli ppr_middleware_wrapper
+      - name: Strict Clippy CLI crate
+        working-directory: ores-stack
+        run: cargo clippy --locked -p ores-stack-cli --all-targets -- -D warnings
+      - name: Generate real wrapper fixture
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          FIXTURE="$RUNNER_TEMP/ppr-wrapper-app"
+          mkdir -p "$FIXTURE/src/middleware"
+          printf 'pub mod mw;\n' > "$FIXTURE/src/middleware/mod.rs"
+          cat > "$FIXTURE/src/middleware/mw.rs" <<'RS'
+          pub async fn middleware(
+              args: ores_middleware::EdgeMinimalCallbackArgs,
+          ) -> Result<ores_middleware::EdgeMinimalDecision, ores_middleware::IntegrationError> {
+              Ok(ores_middleware::EdgeMinimalDecision::Continue(args.request))
+          }
+          RS
+          cargo run --locked -p ores-stack-cli --bin ores-stack -- \
+            __ppr-generate-middleware-wrapper \
+            --root="$FIXTURE" \
+            --ores-middleware-rev="$MIDDLEWARE_SHA"
+          manifest="$FIXTURE/tmp/ores-stack-ppr-middleware/Cargo.toml"
+          test -f "$manifest"
+          grep -F "$MIDDLEWARE_SHA" "$manifest" >/dev/null
+          grep -F "$P2_STACK_SHA" "$manifest" >/dev/null
+          cargo check --manifest-path "$manifest" --all-targets
+      - name: Prove exact source stayed immutable
+        if: always()
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+          test -z "$(git status --porcelain)"
