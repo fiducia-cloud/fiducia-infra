@@ -16,6 +16,7 @@ jobs:
     env:
       ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
       PMAP_WEB_SHA: 2761cbcb16e38df6bbf647a6f6f550b6d6697b55
+      PMAP_LIB_CORE_SHA: e374195182745e39f6b58b56c3d02d7beb081f1d
     steps:
       - name: Require cross-org source authority
         shell: bash
@@ -35,7 +36,27 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git -C pmap-web rev-parse HEAD)" = "$PMAP_WEB_SHA"
-      - name: Build standalone image with private sibling materialization
+      - name: Regenerate exact lockfile against pinned private sibling
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CARGO_NET_GIT_FETCH_WITH_CLI=true
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0="url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf"
+          export GIT_CONFIG_VALUE_0="https://github.com/"
+          git init pmap-lib-core
+          git -C pmap-lib-core remote add origin https://github.com/premarital-asset-protection/pmap-lib-core.git
+          git -C pmap-lib-core fetch --depth=1 origin "$PMAP_LIB_CORE_SHA"
+          git -C pmap-lib-core checkout --detach FETCH_HEAD
+          test "$(git -C pmap-lib-core rev-parse HEAD)" = "$PMAP_LIB_CORE_SHA"
+          (
+            cd pmap-web
+            cargo generate-lockfile
+            echo '--- BEGIN CARGO LOCK DIFF ---'
+            git diff -- Cargo.lock
+            echo '--- END CARGO LOCK DIFF ---'
+          )
+      - name: Build standalone image with regenerated lockfile
         shell: bash
         env:
           DOCKER_BUILDKIT: "1"
