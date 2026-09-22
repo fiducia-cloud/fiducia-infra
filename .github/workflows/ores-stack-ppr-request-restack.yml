@@ -83,7 +83,7 @@ jobs:
           PY
           python3 /tmp/restack_request.py
           git diff --check
-          git diff --name-only | sort > /tmp/changed
+          git status --porcelain=v1 | cut -c4- | sort -u > /tmp/changed
           printf '%s\n' crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs | sort > /tmp/allowed
           diff -u /tmp/allowed /tmp/changed
 
@@ -107,7 +107,7 @@ jobs:
           cargo test --locked -p ores-stack-ppr-http -- --nocapture
           cargo clippy --locked -p ores-stack-ppr-http --all-targets -- -D warnings
           git diff --check
-          git diff --name-only | sort > /tmp/changed
+          git status --porcelain=v1 | cut -c4- | sort -u > /tmp/changed
           printf '%s\n' crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs | sort > /tmp/allowed
           diff -u /tmp/allowed /tmp/changed
 
