@@ -1,0 +1,74 @@
+name: certify ores-compose 176 exact head
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/cert-ores-compose-176-20260922.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+
+jobs:
+  ores-compose-176:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      SOURCE_REPO: ORESoftware/ores-compose
+      SOURCE_BRANCH: fix/command-spec-static-program-test-20260922
+      SOURCE_BASE: 2e0d1488ca32371e4f410f95cf6886674b86876c
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {persist-credentials: false}
+      - name: Configure authenticated source access
+        env:
+          ORE_SOURCE_PAT: '${{ secrets.ORE_SOURCE_PAT }}'
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Bind exact PR head and review delta
+        run: |
+          set -euo pipefail
+          git init source
+          git -C source remote add origin "https://github.com/$SOURCE_REPO.git"
+          git -C source fetch --depth=20 origin main "$SOURCE_BRANCH"
+          test "$(git -C source rev-parse origin/main)" = "$SOURCE_BASE"
+          source_head="$(git -C source rev-parse origin/$SOURCE_BRANCH)"
+          echo "SOURCE_HEAD=$source_head" >> "$GITHUB_ENV"
+          git -C source checkout --detach "$source_head"
+          test "$(git -C source merge-base HEAD "$SOURCE_BASE")" = "$SOURCE_BASE"
+          test "$(git -C source diff --name-only "$SOURCE_BASE"..HEAD | tr '\n' ' ')" = "tests/source_filter_regression.rs "
+          git -C source diff --check "$SOURCE_BASE"..HEAD
+          test -z "$(git -C source status --porcelain)"
+      - name: Rust 1.98.1
+        run: |
+          rustup toolchain install 1.98.1 --profile minimal --component rustfmt,clippy --no-self-update
+          rustup default 1.98.1
+      - name: PR-owned formatting
+        working-directory: source
+        run: rustfmt --edition 2021 --check tests/source_filter_regression.rs
+      - name: Compile all targets and features
+        working-directory: source
+        run: cargo check --all-targets --all-features
+      - name: Run source-filter regression
+        working-directory: source
+        run: cargo test --test source_filter_regression -- --nocapture
+      - name: Run library tests
+        working-directory: source
+        run: cargo test --lib
+      - name: Clippy source tree
+        working-directory: source
+        run: cargo clippy --all-targets --all-features
+      - name: Exact-source decision
+        working-directory: source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
+          test "$(git ls-remote origin "refs/heads/$SOURCE_BRANCH" | cut -f1)" = "$SOURCE_HEAD"
+          test -z "$(git status --porcelain)"
+          echo ORES_COMPOSE_176_EXACT_HEAD_PASS
