@@ -12,7 +12,7 @@ permissions:
 
 env:
   SOURCE_BRANCH: salvage/rpc-http-adapter-main-20260922
-  SOURCE_SHA: d953a8f6faaacfce35ef5ea9f3ca31977369f661
+  SOURCE_SHA: d78c39c3765484ffbbc08702aa22667e4aba1752
   MAIN_SHA: 1b2eda561882a38bc30f434810520d9c970810d2
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
 
