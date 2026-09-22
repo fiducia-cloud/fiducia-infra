@@ -1,0 +1,85 @@
+name: ores-stack-254-cert
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-stack-253-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+  ORES_STACK_SHA: 'e40499e69c345c884ffbe5a258ec8b833244b3c2'
+
+jobs:
+  p2_edge_minimal_254:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Configure authenticated GitHub source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact #254 head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --depth=1 origin "$ORES_STACK_SHA"
+          git -C ores-stack checkout --detach FETCH_HEAD
+          test "$(git -C ores-stack rev-parse HEAD)" = "$ORES_STACK_SHA"
+
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+
+      - name: Verify committed lock is source-complete
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          git diff --exit-code -- Cargo.lock
+          cargo metadata --locked --no-deps --format-version 1 >/dev/null
+
+      - name: Format P2 strict authority delta
+        shell: bash
+        working-directory: ores-stack
+        run: rustfmt --edition 2024 --check crates/ores-stack-p2-edge-minimal/tests/ingress_authority.rs
+
+      - name: Check P2 edge-minimal crate
+        shell: bash
+        working-directory: ores-stack
+        run: cargo check --locked -p ores-stack-p2-edge-minimal --all-targets
+
+      - name: Test P2 edge-minimal crate
+        shell: bash
+        working-directory: ores-stack
+        run: cargo test --locked -p ores-stack-p2-edge-minimal
+
+      - name: Strict Clippy P2 edge-minimal crate
+        shell: bash
+        working-directory: ores-stack
+        run: cargo clippy --locked -p ores-stack-p2-edge-minimal --all-targets -- -D warnings
+
+      - name: Diff hygiene
+        shell: bash
+        working-directory: ores-stack
+        run: git diff --exit-code

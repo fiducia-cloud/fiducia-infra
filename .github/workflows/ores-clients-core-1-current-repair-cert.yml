@@ -1,0 +1,93 @@
+name: ores-clients-core-1-current-repair-cert
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-clients-core-1-current-repair-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TARGET_SHA: '6551be4b4358d7bb83be5f43142130556fa87fad'
+  TARGET_BRANCH: 'feat/contracts-conformance-tooling'
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+
+jobs:
+  repair_and_certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Configure authenticated GitHub access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: '${{ secrets.ORE_SOURCE_PAT }}'
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Fetch exact current PR head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init subject
+          git -C subject remote add origin https://github.com/ORESoftware/ores-clients-core.git
+          git -C subject fetch --depth=1 origin "$TARGET_BRANCH"
+          git -C subject checkout -b repair FETCH_HEAD
+          test "$(git -C subject rev-parse HEAD)" = "$TARGET_SHA"
+          test "$(git -C subject ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$TARGET_SHA"
+          test -z "$(git -C subject status --porcelain)"
+      - name: Install source CI Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          components: rustfmt,clippy
+      - name: Apply workspace-aware formatter then retain only PR-owned delta
+        working-directory: subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          allowed='^(src/(import|lib|main|model|render|strict)\.rs|tests/basic\.rs)$'
+          while IFS= read -r path; do
+            printf '%s\n' "$path" | grep -Eq "$allowed" || git checkout -- "$path"
+          done < <(git diff --name-only)
+          changed="$(git diff --name-only)"
+          test -n "$changed"
+          while IFS= read -r path; do
+            printf '%s\n' "$path" | grep -Eq "$allowed" || {
+              echo "refusing unrelated formatter delta after restore: $path" >&2
+              exit 1
+            }
+          done <<< "$changed"
+          git diff --check
+      - name: Full repository format check
+        working-directory: subject
+        run: cargo fmt --all -- --check
+      - name: Strict Clippy
+        working-directory: subject
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Tests
+        working-directory: subject
+        run: cargo test --all-targets --all-features
+      - name: Commit narrow formatting repair
+        working-directory: subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'ORESoftware CI repair'
+          git config user.email 'noreply@oresoftware.com'
+          git add src/import.rs src/lib.rs src/main.rs src/model.rs src/render.rs src/strict.rs tests/basic.rs
+          git commit -m 'style: apply rustfmt to client contract tooling'
+          test -z "$(git status --porcelain)"
+      - name: Push exact guarded certified successor
+        working-directory: subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$TARGET_SHA"
+          git push origin HEAD:"refs/heads/$TARGET_BRANCH"

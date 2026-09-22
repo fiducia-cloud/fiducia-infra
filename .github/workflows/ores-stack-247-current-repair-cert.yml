@@ -1,0 +1,120 @@
+name: ores-stack-247-current-repair-cert
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-stack-247-current-repair-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_HEAD: 'd78c39c3765484ffbbc08702aa22667e4aba1752'
+  EXPECTED_MAIN: '1b2eda561882a38bc30f434810520d9c970810d2'
+  SOURCE_BRANCH: 'salvage/rpc-http-adapter-main-20260922'
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+
+jobs:
+  repair_and_certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Configure authenticated GitHub access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: '${{ secrets.ORE_SOURCE_PAT }}'
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Fetch exact candidate and current main with merge-base history
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch origin "$SOURCE_BRANCH"
+          git -C ores-stack checkout -b repair FETCH_HEAD
+          test "$(git -C ores-stack rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git -C ores-stack ls-remote origin "refs/heads/$SOURCE_BRANCH" | cut -f1)" = "$EXPECTED_HEAD"
+          git -C ores-stack fetch origin "$EXPECTED_MAIN"
+          test "$(git -C ores-stack rev-parse FETCH_HEAD)" = "$EXPECTED_MAIN"
+          test -n "$(git -C ores-stack merge-base HEAD "$EXPECTED_MAIN")"
+      - name: Restack on reviewed current main without conflict guessing
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'ORESoftware CI repair'
+          git config user.email 'noreply@oresoftware.com'
+          git merge --no-edit --no-ff "$EXPECTED_MAIN"
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+      - name: Apply workspace-aware formatter then retain only PR-owned delta
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt -p ores-fn-adapters
+          while IFS= read -r path; do
+            case "$path" in
+              crates/ores-fn-adapters/src/lib.rs|crates/ores-fn-adapters/src/rpc_http.rs) ;;
+              *) git checkout -- "$path" ;;
+            esac
+          done < <(git diff --name-only)
+          changed="$(git diff --name-only)"
+          test -n "$changed"
+          while IFS= read -r path; do
+            case "$path" in
+              crates/ores-fn-adapters/src/lib.rs|crates/ores-fn-adapters/src/rpc_http.rs) ;;
+              *) echo "refusing unrelated formatter delta after restore: $path" >&2; exit 1 ;;
+            esac
+          done <<< "$changed"
+          git diff --check
+      - name: Bootstrap and verify current workspace lock
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/bootstrap-cargo-lock.sh ensure
+          if ! git diff --quiet -- Cargo.lock; then
+            echo 'restacked candidate requires a lockfile delta outside the two-file feature; refusing hidden lock repair' >&2
+            git diff -- Cargo.lock
+            exit 1
+          fi
+          cargo metadata --locked --format-version 1 >/dev/null
+      - name: Check standalone provider adapter
+        working-directory: ores-stack
+        run: cargo check --locked -p ores-fn-adapters --all-targets
+      - name: Test standalone provider adapter
+        working-directory: ores-stack
+        run: cargo test --locked -p ores-fn-adapters --all-targets
+      - name: Strict Clippy standalone provider adapter
+        working-directory: ores-stack
+        run: cargo clippy --locked -p ores-fn-adapters --all-targets -- -D warnings
+      - name: Commit narrow formatting repair if needed
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then exit 0; fi
+          git add crates/ores-fn-adapters/src/lib.rs crates/ores-fn-adapters/src/rpc_http.rs
+          test -z "$(git diff --name-only)"
+          git commit -m 'style(lambda): rustfmt RPC HTTP adapter'
+      - name: Push exact guarded successor
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin "refs/heads/$SOURCE_BRANCH" | cut -f1)" = "$EXPECTED_HEAD"
+          git push origin HEAD:"refs/heads/$SOURCE_BRANCH"

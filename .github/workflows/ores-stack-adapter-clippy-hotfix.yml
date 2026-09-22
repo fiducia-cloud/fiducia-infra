@@ -1,0 +1,86 @@
+name: ores-stack-adapter-clippy-hotfix
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-stack-adapter-clippy-hotfix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+  OUTPUT_BRANCH: 'fix/fn-adapters-clippy-baseline-20260922'
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: { persist-credentials: false }
+      - name: Configure authenticated GitHub access
+        shell: bash
+        env: { ORE_SOURCE_PAT: '${{ secrets.ORE_SOURCE_PAT }}' }
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Fetch current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --depth=1 origin main
+          git -C ores-stack checkout -b "$OUTPUT_BRANCH" FETCH_HEAD
+      - name: Apply narrow lint repairs
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          reply='crates/ores-fn-adapters/src/reply.rs'
+          http='crates/ores-fn-adapters/src/http_call.rs'
+          test "$(grep -F -c 'DispatchError, OperationDispatchResult, OperationHostError, RpcV1Receipt,' "$reply")" = '1'
+          sed -i 's/DispatchError, OperationDispatchResult, OperationHostError, RpcV1Receipt,/DispatchError, OperationDispatchResult, OperationHostError,/' "$reply"
+          old='    let mut best: Option<(Vec<u8>, u8, &HttpRoute, Map<String, Value>)> = None;'
+          test "$(grep -F -c "$old" "$http")" = '1'
+          sed -i '/^fn resolve<'"'"'r>(/i type RouteMatch<'"'"'r> = (Vec<u8>, u8, &'"'"'r HttpRoute, Map<String, Value>);\n' "$http"
+          sed -i "s#${old}#    let mut best: Option<RouteMatch<'r>> = None;#" "$http"
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+      - name: Format and prove baseline
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2024 crates/ores-fn-adapters/src/reply.rs crates/ores-fn-adapters/src/http_call.rs
+          rustfmt --edition 2024 --check crates/ores-fn-adapters/src/reply.rs crates/ores-fn-adapters/src/http_call.rs
+          git diff --check
+          cargo check --manifest-path crates/ores-fn-adapters/Cargo.toml --all-targets
+          cargo test --manifest-path crates/ores-fn-adapters/Cargo.toml
+          cargo clippy --manifest-path crates/ores-fn-adapters/Cargo.toml --all-targets -- -D warnings
+      - name: Push certified baseline hotfix
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only | sort)"
+          expected=$'crates/ores-fn-adapters/src/http_call.rs\ncrates/ores-fn-adapters/src/reply.rs'
+          test "$changed" = "$expected"
+          git config user.name 'ORESoftware CI repair'
+          git config user.email 'noreply@oresoftware.com'
+          git add crates/ores-fn-adapters/src/http_call.rs crates/ores-fn-adapters/src/reply.rs
+          git commit -m 'fix(lambda): make provider adapter strict Clippy clean'
+          test -z "$(git ls-remote origin "refs/heads/$OUTPUT_BRANCH" | cut -f1)" || {
+            echo 'hotfix branch already exists; refusing overwrite' >&2
+            exit 1
+          }
+          git push origin HEAD:"$OUTPUT_BRANCH"
