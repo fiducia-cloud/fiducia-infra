@@ -1,4 +1,4 @@
-name: proof ores-stack 262 edge-minimal wrapper
+name: proof ores-stack 267 edge-minimal wrapper
 
 on:
   pull_request:
@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 env:
-  TARGET_SHA: 'c0660ea596989b47bf9318472ef9a5740828a509'
-  TARGET_BRANCH: 'feat/ppr-edge-minimal-wrapper-main4-20260922'
+  TARGET_SHA: '8aea5845ab065582a1119b805e0b871f697de753'
+  TARGET_BRANCH: 'feat/ppr-edge-minimal-wrapper-main5-20260922'
   MAIN_SHA: '8fb6fe6cd0b144feddcd047c3e8631a8efc63802'
   MIDDLEWARE_SHA: '0c29bf0c038b3df8aaaa1a5d3a13bba66b6df52f'
   P2_STACK_SHA: 'ebec1752123b77358342dfb3ca54c16986390501'
@@ -160,4 +160,4 @@ jobs:
           git add "$entry" "$wrapper"
           git commit -m 'feat(ppr): align generated edge-minimal wrapper with terminal lifecycle ABI'
           git push origin HEAD:"$TARGET_BRANCH"
-          echo ORES_STACK_262_WRAPPER_PROOF_PASS
+          echo ORES_STACK_267_WRAPPER_PROOF_PASS
