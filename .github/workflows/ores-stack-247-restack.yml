@@ -1,0 +1,87 @@
+name: ores-stack-247-restack
+
+on:
+  push:
+    branches: [ci/ores-http-clients-certification]
+    paths:
+      - '.github/workflows/ores-stack-247-restack.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_BRANCH: salvage/rpc-http-adapter-main-20260922
+  SOURCE_SHA: d953a8f6faaacfce35ef5ea9f3ca31977369f661
+  MAIN_SHA: 1b2eda561882a38bc30f434810520d9c970810d2
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+
+jobs:
+  restack:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Configure authenticated GitHub access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Fetch exact adapter branch and main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init source
+          git -C source remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C source fetch origin "$SOURCE_BRANCH" main
+          source_actual="$(git -C source rev-parse "origin/$SOURCE_BRANCH")"
+          main_actual="$(git -C source rev-parse origin/main)"
+          printf 'source=%s\nmain=%s\n' "$source_actual" "$main_actual"
+          test "$source_actual" = "$SOURCE_SHA"
+          test "$main_actual" = "$MAIN_SHA"
+          git -C source checkout -b restack "origin/$SOURCE_BRANCH"
+      - name: Merge current main losslessly
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          git config user.name 'ORESoftware CI restack'
+          git config user.email 'noreply@oresoftware.com'
+          if ! git merge --no-ff --no-edit origin/main; then
+            echo 'Semantic merge conflict; refusing automatic resolution.'
+            git status --short
+            git diff --cc
+            exit 1
+          fi
+      - name: Install Rust 1.88
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.88.0'
+          components: rustfmt,clippy
+      - name: Bootstrap lock authority
+        working-directory: source
+        run: bash scripts/bootstrap-cargo-lock.sh ensure
+      - name: Certify provider-neutral RPC HTTP adapter
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo check --locked -p ores-fn-adapters --all-targets
+          cargo test --locked -p ores-fn-adapters --all-targets
+          cargo clippy --locked -p ores-fn-adapters --all-targets -- -D warnings
+          git diff --check
+          test -z "$(git status --porcelain)"
+      - name: Push only if both source refs remain exact
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin "refs/heads/$SOURCE_BRANCH" | cut -f1)" = "$SOURCE_SHA"
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$MAIN_SHA"
+          git push origin HEAD:"$SOURCE_BRANCH"
