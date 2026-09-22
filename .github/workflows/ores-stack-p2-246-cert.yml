@@ -1,4 +1,4 @@
-name: ores-stack p2 #246 exact-head certification
+name: ores-stack P2 final ingress authority current-main cert
 
 on:
   pull_request:
@@ -12,7 +12,8 @@ permissions:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-  ORES_STACK_SHA: '23520f67a7fd05370bd2327873de92de4f6f4b73'
+  TARGET_SHA: '482bc044976bb9067149424814aa527d9bc5737f'
+  TARGET_BRANCH: 'salvage/p2-strict-authority-current-main-20260922'
 
 jobs:
   certify:
@@ -31,15 +32,15 @@ jobs:
           test -n "$ORE_SOURCE_PAT"
           echo "::add-mask::$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
-      - name: Fetch exact source head
+      - name: Fetch exact current-main restack
         shell: bash
         run: |
           set -euo pipefail
           git init ores-stack
           git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
-          git -C ores-stack fetch --depth=1 origin "$ORES_STACK_SHA"
-          git -C ores-stack checkout --detach FETCH_HEAD
-          test "$(git -C ores-stack rev-parse HEAD)" = "$ORES_STACK_SHA"
+          git -C ores-stack fetch --depth=1 origin "$TARGET_SHA"
+          git -C ores-stack checkout -b certify FETCH_HEAD
+          test "$(git -C ores-stack rev-parse HEAD)" = "$TARGET_SHA"
           test "$(git -C ores-stack status --porcelain)" = ""
       - name: Rust 1.88
         shell: bash
@@ -48,14 +49,37 @@ jobs:
           rustup toolchain install 1.88.0 --profile minimal --no-self-update
           rustup default 1.88.0
           rustup component add rustfmt clippy
-      - name: Certify final edge_minimal P2 semantics
+      - name: Refresh only root lock for final middleware merge pin
         shell: bash
         working-directory: ores-stack
         run: |
           set -euo pipefail
-          bash scripts/bootstrap-cargo-lock.sh ensure
-          rustfmt --edition 2024 --check crates/ores-stack-p2-edge-minimal/src/lib.rs
+          rustfmt --edition 2024 --check crates/ores-stack-p2-edge-minimal/src/lib.rs crates/ores-stack-p2-edge-minimal/tests/ingress_authority.rs
+          cargo check -p ores-stack-p2-edge-minimal --all-targets
+          test -f Cargo.lock
+          git diff --check
+          test "$(git diff --name-only)" = 'Cargo.lock'
+      - name: Certify final P2 ingress authority with frozen lock
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          cargo metadata --locked --format-version 1 --no-deps >/dev/null
           cargo check --locked -p ores-stack-p2-edge-minimal --all-targets
           cargo test --locked -p ores-stack-p2-edge-minimal -- --nocapture
           cargo clippy --locked -p ores-stack-p2-edge-minimal --all-targets -- -D warnings
           git diff --check
+          test "$(git diff --name-only)" = 'Cargo.lock'
+      - name: Commit lock and fast-forward exact source branch
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)"
+          test "$remote_head" = "$TARGET_SHA" || { echo "source branch moved: expected $TARGET_SHA got $remote_head"; exit 1; }
+          test "$(git diff --name-only)" = 'Cargo.lock'
+          git config user.name 'ores-stack certification'
+          git config user.email 'actions@users.noreply.github.com'
+          git add Cargo.lock
+          git commit -m 'test(p2): freeze final ingress authority lock evidence'
+          git push origin HEAD:"$TARGET_BRANCH"
