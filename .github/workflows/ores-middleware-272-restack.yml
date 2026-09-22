@@ -1,0 +1,110 @@
+name: ores-middleware-272-restack
+
+on:
+  push:
+    branches: [ci/ores-http-clients-certification]
+    paths:
+      - '.github/workflows/ores-middleware-272-restack.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_BRANCH: fix/edge-minimal-terminal-report-current-main-20260922
+  SOURCE_SHA: ad716ce2ca6dd5382a2eb065d1d0e28eb5b7f9c7
+  MAIN_SHA: 16db4232e602ff717faa33a883e70590316b2343
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+
+jobs:
+  restack:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Configure authenticated GitHub access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact source and main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init source
+          git -C source remote add origin https://github.com/ORESoftware/ores-middleware.git
+          git -C source fetch origin "$SOURCE_BRANCH" main
+          source_actual="$(git -C source rev-parse "origin/$SOURCE_BRANCH")"
+          main_actual="$(git -C source rev-parse origin/main)"
+          printf 'source=%s\nmain=%s\n' "$source_actual" "$main_actual"
+          test "$source_actual" = "$SOURCE_SHA"
+          test "$main_actual" = "$MAIN_SHA"
+          git -C source checkout -b restack "origin/$SOURCE_BRANCH"
+
+      - name: Merge constrained-request and host-ABI main
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          git config user.name 'ORESoftware CI restack'
+          git config user.email 'noreply@oresoftware.com'
+          if ! git merge --no-ff --no-edit origin/main; then
+            echo 'Semantic merge conflict; refusing automatic resolution.'
+            git status --short
+            git diff --cc
+            exit 1
+          fi
+
+      - name: Install pinned Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.95.0'
+          components: rustfmt,clippy
+
+      - name: Apply formatter only to lifecycle restack
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path src/rust/Cargo.toml --all
+          changed="$(git diff --name-only | sort)"
+          printf 'formatter changed:\n%s\n' "$changed"
+          if [ -n "$changed" ] && [ "$changed" != 'src/rust/src/hosts/edge_minimal_lifecycle.rs' ]; then
+            echo 'refusing formatter repair outside lifecycle file'
+            git diff
+            exit 1
+          fi
+          if [ -n "$changed" ]; then
+            git add src/rust/src/hosts/edge_minimal_lifecycle.rs
+            git commit -m 'style(edge-minimal): format terminal lifecycle host'
+          fi
+
+      - name: Verify request-only terminal lifecycle
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path src/rust/Cargo.toml --all -- --check
+          cargo clippy --locked --manifest-path src/rust/Cargo.toml --no-default-features --lib -- -D warnings
+          cargo test --locked --manifest-path src/rust/Cargo.toml --no-default-features --lib edge_minimal_lifecycle
+          cargo test --locked --manifest-path src/rust/Cargo.toml --no-default-features --lib edge_minimal_local
+          cargo test --locked --manifest-path src/rust/Cargo.toml --no-default-features --lib provider_api
+          cargo test --locked --manifest-path src/rust/Cargo.toml --no-default-features --test host_abi_contract
+          git diff --check
+          test -z "$(git status --porcelain)"
+
+      - name: Push only if source and main remain immutable
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin "refs/heads/$SOURCE_BRANCH" | cut -f1)" = "$SOURCE_SHA"
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$MAIN_SHA"
+          git push origin HEAD:"$SOURCE_BRANCH"
