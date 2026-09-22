@@ -1,0 +1,61 @@
+name: tmp ores-compose 175 rustfmt artifact
+
+on:
+  push:
+    branches:
+      - test/ores-compose-175-exhaustive-cert-20260922
+
+permissions:
+  contents: read
+
+env:
+  COMPOSE_HEAD: 11d753448edae184642e52a4f1f5ef0b2dfd316d
+
+jobs:
+  rustfmt-patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Configure authenticated source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-compose
+          git -C ores-compose remote add origin https://github.com/ORESoftware/ores-compose.git
+          git -C ores-compose fetch --depth=1 origin "$COMPOSE_HEAD"
+          git -C ores-compose checkout --detach FETCH_HEAD
+          test "$(git -C ores-compose rev-parse HEAD)" = "$COMPOSE_HEAD"
+
+      - name: Install rustfmt
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt
+
+      - name: Produce PR-file patch
+        shell: bash
+        working-directory: ores-compose
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          git diff --binary -- tests/formal_dependency_graph_exhaustive.rs > /tmp/ores-compose-175-rustfmt.patch
+          test -s /tmp/ores-compose-175-rustfmt.patch
+
+      - name: Upload formatter patch
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ores-compose-175-rustfmt-patch
+          path: /tmp/ores-compose-175-rustfmt.patch
+          if-no-files-found: error
