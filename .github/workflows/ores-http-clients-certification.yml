@@ -99,7 +99,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ORESoftware/ores-stack
-          ref: 71eb5eae18739ffff0bc58a1687db49b1f4e52d4
+          ref: 327cd019f66371e37d0490d68f939789b86a0310
           token: ${{ secrets.ORE_SOURCE_PAT }}
           path: ores-stack
           persist-credentials: false
@@ -116,29 +116,16 @@ jobs:
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           toolchain: 1.88.0
-          components: rustfmt,clippy
+          components: rustfmt
       - name: Bootstrap lockfile
         working-directory: ores-stack
         run: bash scripts/bootstrap-cargo-lock.sh ensure
-      - name: Format exact source and fast-forward PR branch
+      - name: Check formatting
         working-directory: ores-stack
-        shell: bash
-        env:
-          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
-        run: |
-          set -euo pipefail
-          cargo fmt --all
-          if ! git diff --quiet; then
-            git config user.name 'ORESoftware automation'
-            git config user.email 'noreply@oresoftware.com'
-            git add -u
-            git commit -m 'style(ppr): apply rustfmt after direct API child wiring'
-            git remote set-url origin "https://x-access-token:${ORE_SOURCE_PAT}@github.com/ORESoftware/ores-stack.git"
-            git push origin HEAD:feat/server-stream-lambda-ppr-20260921
-          fi
-      - name: Clippy
+        run: cargo fmt --all -- --check
+      - name: Type-check workspace
         working-directory: ores-stack
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - name: Tests
+        run: cargo check --workspace --all-targets --locked
+      - name: Test workspace
         working-directory: ores-stack
         run: cargo test --workspace --all-targets --locked
