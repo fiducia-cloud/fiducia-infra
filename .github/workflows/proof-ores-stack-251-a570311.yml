@@ -18,7 +18,7 @@ env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
 
 jobs:
-  repair_and_certify:
+  certify:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -40,7 +40,7 @@ jobs:
           git init subject
           git -C subject remote add origin https://github.com/ORESoftware/ores-stack.git
           git -C subject fetch --depth=1 origin "$TARGET_BRANCH"
-          git -C subject checkout -b repair FETCH_HEAD
+          git -C subject checkout --detach FETCH_HEAD
           test "$(git -C subject rev-parse HEAD)" = "$TARGET_SHA"
           test "$(git -C subject ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$TARGET_SHA"
           test -z "$(git -C subject status --porcelain)"
@@ -67,7 +67,7 @@ jobs:
           set -euo pipefail
           bash scripts/bootstrap-cargo-lock.sh ensure
           test -z "$(git status --porcelain)"
-      - name: Apply workspace-aware rustfmt only to PR files
+      - name: Compute PR-file-only rustfmt candidate
         working-directory: subject
         shell: bash
         run: |
@@ -81,13 +81,13 @@ jobs:
           done < <(git diff --name-only)
           while IFS= read -r path; do
             case "$path" in
-              crates/ores-stack-cli/src/entry.rs|crates/ores-stack-cli/src/ppr_middleware_wrapper.rs) ;;
-              '') ;;
+              crates/ores-stack-cli/src/entry.rs|crates/ores-stack-cli/src/ppr_middleware_wrapper.rs|'') ;;
               *) echo "refusing unrelated formatter delta: $path" >&2; exit 1 ;;
             esac
           done < <(git diff --name-only)
           git diff --check
-      - name: Check CLI crate
+          git diff -- crates/ores-stack-cli/src/entry.rs crates/ores-stack-cli/src/ppr_middleware_wrapper.rs > "$RUNNER_TEMP/pr-rustfmt.patch"
+      - name: Check CLI crate on formatted candidate
         working-directory: subject
         run: cargo check --locked -p ores-stack-cli --all-targets
       - name: Test PPR wrapper implementation
@@ -120,29 +120,12 @@ jobs:
           grep -F "$MIDDLEWARE_SHA" "$manifest" >/dev/null
           grep -F "$P2_STACK_SHA" "$manifest" >/dev/null
           cargo check --manifest-path "$manifest" --all-targets
-      - name: Commit narrow rustfmt repair if needed
-        working-directory: subject
+      - name: Report whether a source formatting repair is required
         shell: bash
         run: |
           set -euo pipefail
-          if git diff --quiet; then
-            echo 'source already formatted; no repair commit required'
-            exit 0
+          if test -s "$RUNNER_TEMP/pr-rustfmt.patch"; then
+            echo 'PR_FORMAT_REPAIR_REQUIRED=true' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'PR_FORMAT_REPAIR_REQUIRED=false' >> "$GITHUB_STEP_SUMMARY"
           fi
-          git config user.name 'ORESoftware CI repair'
-          git config user.email 'noreply@oresoftware.com'
-          git add crates/ores-stack-cli/src/entry.rs crates/ores-stack-cli/src/ppr_middleware_wrapper.rs
-          test -z "$(git diff --name-only)"
-          git commit -m 'style(ppr): rustfmt middleware wrapper path'
-          test -z "$(git status --porcelain)"
-      - name: Push certified successor only if source head is unchanged
-        working-directory: subject
-        shell: bash
-        run: |
-          set -euo pipefail
-          if test "$(git rev-parse HEAD)" = "$TARGET_SHA"; then
-            echo 'no source mutation required'
-            exit 0
-          fi
-          test "$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$TARGET_SHA"
-          git push origin HEAD:"refs/heads/$TARGET_BRANCH"
