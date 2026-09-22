@@ -12,7 +12,7 @@ permissions:
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
   SOURCE_BRANCH: fix/command-spec-static-program-test-20260922
-  SOURCE_SHA: c261240732383b45b22b18b9c2db3dd6143325b5
+  SOURCE_SHA: 16979299932106522fc0568a8150d119d2da1645
   SOURCE_BASE: 2e0d1488ca32371e4f410f95cf6886674b86876c
 
 jobs:
@@ -46,6 +46,7 @@ jobs:
           git -C source diff "$SOURCE_BASE"..HEAD -- tests/source_filter_execution_regressions.rs | tee /tmp/source-diff.txt
           grep -F -- '-        program: "git".to_owned(),' /tmp/source-diff.txt
           grep -F -- '+        program: "git",' /tmp/source-diff.txt
+          grep -F -- '+allow_lazy_start: false' /tmp/source-diff.txt
       - name: Rust 1.98.1
         run: |
           rustup toolchain install 1.98.1 --profile minimal --component rustfmt,clippy --no-self-update
