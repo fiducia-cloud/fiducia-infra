@@ -12,7 +12,7 @@ permissions:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-  ORES_STACK_SHA: '9ffb1c750b39cd2c8fc81cc3508f16b5c6742bc0'
+  ORES_STACK_SHA: 'af875fb012d1ff2d8e5b4268f5150c0b12682df2'
 
 jobs:
   certify:
