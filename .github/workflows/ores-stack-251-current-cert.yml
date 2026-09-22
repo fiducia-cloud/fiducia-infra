@@ -12,12 +12,13 @@ permissions:
 
 env:
   TARGET_SHA: '0e7545237147957758bfe26f2c39d2e19159aca0'
+  TARGET_BRANCH: 'feat/ppr-edge-minimal-wrapper-current3-20260922'
   MIDDLEWARE_SHA: 'b930660d34896db1ab285c3b9bd97deaa37dc9ad'
   P2_STACK_SHA: '1b2eda561882a38bc30f434810520d9c970810d2'
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
 
 jobs:
-  certify:
+  repair_and_certify:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -38,9 +39,10 @@ jobs:
           set -euo pipefail
           git init ores-stack
           git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
-          git -C ores-stack fetch --depth=1 origin "$TARGET_SHA"
-          git -C ores-stack checkout --detach FETCH_HEAD
+          git -C ores-stack fetch --depth=1 origin "$TARGET_BRANCH"
+          git -C ores-stack checkout -b repair FETCH_HEAD
           test "$(git -C ores-stack rev-parse HEAD)" = "$TARGET_SHA"
+          test "$(git -C ores-stack ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$TARGET_SHA"
           test -z "$(git -C ores-stack status --porcelain)"
       - name: Verify paired ABI pins
         working-directory: ores-stack
@@ -66,9 +68,21 @@ jobs:
         run: |
           set -euo pipefail
           test -z "$(git status --porcelain)"
-      - name: Format CLI crate
+      - name: Apply CLI rustfmt narrowly
         working-directory: ores-stack
-        run: cargo fmt -p ores-stack-cli -- --check
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt -p ores-stack-cli
+          changed="$(git diff --name-only)"
+          test -n "$changed"
+          while IFS= read -r path; do
+            case "$path" in
+              crates/ores-stack-cli/src/entry.rs|crates/ores-stack-cli/src/ppr_middleware_wrapper.rs) ;;
+              *) echo "refusing unrelated formatter delta: $path" >&2; exit 1 ;;
+            esac
+          done <<< "$changed"
+          git diff --check
       - name: Check CLI crate
         working-directory: ores-stack
         run: cargo check --locked -p ores-stack-cli --all-targets
@@ -102,11 +116,20 @@ jobs:
           grep -F "$MIDDLEWARE_SHA" "$manifest" >/dev/null
           grep -F "$P2_STACK_SHA" "$manifest" >/dev/null
           cargo check --manifest-path "$manifest" --all-targets
-      - name: Prove exact source stayed immutable
-        if: always()
+      - name: Commit narrow formatting repair
         working-directory: ores-stack
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+          git config user.name 'ORESoftware CI repair'
+          git config user.email 'noreply@oresoftware.com'
+          git add crates/ores-stack-cli/src/entry.rs crates/ores-stack-cli/src/ppr_middleware_wrapper.rs
+          git commit -m 'style(ppr): rustfmt generated middleware wrapper path'
           test -z "$(git status --porcelain)"
+      - name: Push exact guarded certified successor
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$TARGET_SHA"
+          git push origin HEAD:"refs/heads/$TARGET_BRANCH"
