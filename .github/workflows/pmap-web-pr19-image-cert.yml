@@ -10,13 +10,15 @@ permissions:
   contents: read
 
 jobs:
-  certify:
+  repair-lock:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 15
     env:
       ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
       PMAP_WEB_SHA: 2761cbcb16e38df6bbf647a6f6f550b6d6697b55
+      PMAP_WEB_BRANCH: fix/materialize-lib-core-docker-context
       PMAP_LIB_CORE_SHA: e374195182745e39f6b58b56c3d02d7beb081f1d
+      EXPECTED_LOCK_SHA256: 52e1cd3fc1afe0e29d0509d2913630b187290280b00b7817c3476beeda64248f
     steps:
       - name: Require cross-org source authority
         shell: bash
@@ -31,15 +33,12 @@ jobs:
           token: ${{ secrets.ORE_SOURCE_PAT }}
           path: pmap-web
           persist-credentials: false
-      - name: Verify exact candidate
+          fetch-depth: 0
+      - name: Regenerate and verify exact lockfile
         shell: bash
         run: |
           set -euo pipefail
           test "$(git -C pmap-web rev-parse HEAD)" = "$PMAP_WEB_SHA"
-      - name: Regenerate exact lockfile against pinned private sibling
-        shell: bash
-        run: |
-          set -euo pipefail
           export CARGO_NET_GIT_FETCH_WITH_CLI=true
           export GIT_CONFIG_COUNT=1
           export GIT_CONFIG_KEY_0="url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf"
@@ -50,22 +49,16 @@ jobs:
           git -C pmap-lib-core checkout --detach FETCH_HEAD
           test "$(git -C pmap-lib-core rev-parse HEAD)" = "$PMAP_LIB_CORE_SHA"
           (cd pmap-web && cargo generate-lockfile)
-      - name: Export regenerated Cargo.lock
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: pmap-web-pr19-cargo-lock
-          path: pmap-web/Cargo.lock
-          if-no-files-found: error
-          retention-days: 1
-      - name: Build standalone image with regenerated lockfile
+          actual="$(sha256sum pmap-web/Cargo.lock | awk '{print $1}')"
+          test "$actual" = "$EXPECTED_LOCK_SHA256"
+          test "$(git -C pmap-web status --porcelain | awk '{print $2}')" = "Cargo.lock"
+      - name: Commit only Cargo.lock to PR branch
         shell: bash
-        env:
-          DOCKER_BUILDKIT: "1"
         run: |
           set -euo pipefail
-          docker build \
-            --secret id=github_token,env=ORE_SOURCE_PAT \
-            --build-arg TARGETARCH=amd64 \
-            --tag pmap-web-pr19-cert:latest \
-            --file pmap-web/Dockerfile \
-            pmap-web
+          git -C pmap-web config user.name "ORESoftware"
+          git -C pmap-web config user.email "alex@oresoftware.com"
+          git -C pmap-web add Cargo.lock
+          git -C pmap-web diff --cached --quiet && { echo "Cargo.lock already current"; exit 0; }
+          git -C pmap-web commit -m "fix(lock): sync web image with pinned lib-core"
+          git -C pmap-web -c "url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf=https://github.com/" push https://github.com/premarital-asset-protection/pmap-web-server.rs HEAD:"$PMAP_WEB_BRANCH"
