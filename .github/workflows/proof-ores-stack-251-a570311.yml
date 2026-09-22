@@ -80,6 +80,14 @@ jobs:
           grep -F "const ORES_MIDDLEWARE_ABI_REV: &str = \"$MIDDLEWARE_SHA\";" "$wrapper"
           grep -F "const ORES_STACK_P2_PROTOCOL_REV: &str = \"$P2_STACK_SHA\";" "$wrapper"
 
+          # These are generated-Rust closure openers inside the outer format!(r#"..."#)
+          # template. They must be doubled for the outer formatter while still
+          # rendering as single braces in generated main.rs.
+          sed -i 's/reqwest::Method::from_bytes(request.method.as_bytes()).map_err(|error| {/reqwest::Method::from_bytes(request.method.as_bytes()).map_err(|error| {{/' "$wrapper"
+          sed -i 's/builder.body(request.body).send().await.map_err(|error| {/builder.body(request.body).send().await.map_err(|error| {{/' "$wrapper"
+          grep -F 'reqwest::Method::from_bytes(request.method.as_bytes()).map_err(|error| {{' "$wrapper" >/dev/null
+          grep -F 'builder.body(request.body).send().await.map_err(|error| {{' "$wrapper" >/dev/null
+
           grep -q '^mod ppr_middleware_wrapper;$' "$entry" || sed -i '/^mod legacy;$/a mod ppr_middleware_wrapper;' "$entry"
           grep -q 'ppr_middleware_wrapper::try_run(&argv)' "$entry" || \
             sed -i '/let result = stack_dev_hardened::try_run(&argv)/a\        .or_else(|| ppr_middleware_wrapper::try_run(&argv))' "$entry"
