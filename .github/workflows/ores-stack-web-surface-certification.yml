@@ -51,6 +51,18 @@ jobs:
           toolchain: 1.88.0
           components: rustfmt, clippy
 
+      - name: Authenticate private Cargo git dependencies
+        shell: bash
+        env:
+          SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$SOURCE_PAT"
+          echo 'CARGO_NET_GIT_FETCH_WITH_CLI=true' >> "$GITHUB_ENV"
+          git config --global credential.helper store
+          printf 'https://x-access-token:%s@github.com\n' "$SOURCE_PAT" > "$HOME/.git-credentials"
+          chmod 600 "$HOME/.git-credentials"
+
       - name: Compile and test web-surface core
         shell: bash
         run: |
@@ -64,6 +76,14 @@ jobs:
       - name: Run canonical build/dev smoke
         shell: bash
         run: bash scripts/ci-build-dev-smoke.sh
+
+      - name: Remove private dependency credentials
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "$HOME/.git-credentials"
+          git config --global --unset-all credential.helper || true
 
       - name: Prove source identity remained immutable
         if: ${{ always() }}
