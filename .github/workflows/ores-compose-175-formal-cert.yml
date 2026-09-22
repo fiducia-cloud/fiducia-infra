@@ -1,4 +1,4 @@
-name: ores-compose #175 exhaustive planner cert
+name: ores-compose #175 exhaustive planner guarded repair
 
 on:
   pull_request:
@@ -14,11 +14,12 @@ env:
   TARGET_SHA: '11d753448edae184642e52a4f1f5ef0b2dfd316d'
   BASE_SHA: '2e0d1488ca32371e4f410f95cf6886674b86876c'
   TARGET_BRANCH: 'formal/exhaustive-dependency-waves-20260922'
+  OWNED_FILE: 'tests/formal_dependency_graph_exhaustive.rs'
 
 jobs:
-  certify:
+  repair:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -41,26 +42,49 @@ jobs:
           git -C ores-compose fetch --depth=10 origin main "$TARGET_BRANCH"
           test "$(git -C ores-compose rev-parse origin/main)" = "$BASE_SHA"
           test "$(git -C ores-compose rev-parse origin/$TARGET_BRANCH)" = "$TARGET_SHA"
-          git -C ores-compose checkout --detach "$TARGET_SHA"
+          git -C ores-compose checkout -b repair "$TARGET_SHA"
           test "$(git -C ores-compose merge-base HEAD "$BASE_SHA")" = "$BASE_SHA"
-          test "$(git -C ores-compose diff --name-only "$BASE_SHA"..HEAD)" = 'tests/formal_dependency_graph_exhaustive.rs'
+          test "$(git -C ores-compose diff --name-only "$BASE_SHA"..HEAD)" = "$OWNED_FILE"
           test "$(git -C ores-compose status --porcelain)" = ""
-      - name: Rust 1.88
+      - name: Install repository-pinned Rust toolchain
         shell: bash
         run: |
           set -euo pipefail
-          rustup toolchain install 1.88.0 --profile minimal --no-self-update
-          rustup default 1.88.0
-          rustup component add rustfmt clippy
+          rustup toolchain install 1.98.1 --profile minimal --component rustfmt --component clippy --no-self-update
+          cd ores-compose
+          test "$(rustc --version | awk '{print $2}')" = '1.98.1'
+          rustfmt --version
+          cargo clippy --version
+      - name: Format only the exhaustive proof
+        shell: bash
+        working-directory: ores-compose
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2021 "$OWNED_FILE"
+          rustfmt --edition 2021 --check "$OWNED_FILE"
+          git diff --check
+          test "$(git diff --name-only)" = "$OWNED_FILE"
       - name: Certify exhaustive dependency planner proof
         shell: bash
         working-directory: ores-compose
         run: |
           set -euo pipefail
-          rustfmt --edition 2021 --check tests/formal_dependency_graph_exhaustive.rs
           cargo metadata --locked --format-version 1 --no-deps >/dev/null
           cargo check --locked --all-targets
           cargo test --locked --test formal_dependency_graph_exhaustive -- --nocapture
           cargo clippy --locked --test formal_dependency_graph_exhaustive -- -D warnings
           git diff --check
-          test "$(git status --porcelain)" = ""
+          test "$(git diff --name-only)" = "$OWNED_FILE"
+      - name: Commit and fast-forward formatting-only repair
+        shell: bash
+        working-directory: ores-compose
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)"
+          test "$remote_head" = "$TARGET_SHA" || { echo "source branch moved: expected $TARGET_SHA got $remote_head"; exit 1; }
+          test "$(git diff --name-only)" = "$OWNED_FILE"
+          git config user.name 'ORESoftware funded certification'
+          git config user.email 'noreply@oresoftware.com'
+          git add "$OWNED_FILE"
+          git commit -m 'style(formal): format exhaustive dependency proof'
+          git push origin HEAD:"$TARGET_BRANCH"
