@@ -49,16 +49,19 @@ jobs:
           rustup toolchain install 1.88.0 --profile minimal --no-self-update
           rustup default 1.88.0
           rustup component add rustfmt clippy
-      - name: Refresh only root lock for final middleware merge pin
+      - name: Format regression and refresh final middleware lock
         shell: bash
         working-directory: ores-stack
         run: |
           set -euo pipefail
+          rustfmt --edition 2024 crates/ores-stack-p2-edge-minimal/tests/ingress_authority.rs
           rustfmt --edition 2024 --check crates/ores-stack-p2-edge-minimal/src/lib.rs crates/ores-stack-p2-edge-minimal/tests/ingress_authority.rs
           cargo check -p ores-stack-p2-edge-minimal --all-targets
           test -f Cargo.lock
           git diff --check
-          test "$(git diff --name-only)" = 'Cargo.lock'
+          git diff --name-only | sort > /tmp/changed
+          printf '%s\n' Cargo.lock crates/ores-stack-p2-edge-minimal/tests/ingress_authority.rs | sort > /tmp/allowed
+          diff -u /tmp/allowed /tmp/changed
       - name: Certify final P2 ingress authority with frozen lock
         shell: bash
         working-directory: ores-stack
@@ -69,17 +72,21 @@ jobs:
           cargo test --locked -p ores-stack-p2-edge-minimal -- --nocapture
           cargo clippy --locked -p ores-stack-p2-edge-minimal --all-targets -- -D warnings
           git diff --check
-          test "$(git diff --name-only)" = 'Cargo.lock'
-      - name: Commit lock and fast-forward exact source branch
+          git diff --name-only | sort > /tmp/changed
+          printf '%s\n' Cargo.lock crates/ores-stack-p2-edge-minimal/tests/ingress_authority.rs | sort > /tmp/allowed
+          diff -u /tmp/allowed /tmp/changed
+      - name: Commit certified formatting and lock evidence
         shell: bash
         working-directory: ores-stack
         run: |
           set -euo pipefail
           remote_head="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)"
           test "$remote_head" = "$TARGET_SHA" || { echo "source branch moved: expected $TARGET_SHA got $remote_head"; exit 1; }
-          test "$(git diff --name-only)" = 'Cargo.lock'
+          git diff --name-only | sort > /tmp/changed
+          printf '%s\n' Cargo.lock crates/ores-stack-p2-edge-minimal/tests/ingress_authority.rs | sort > /tmp/allowed
+          diff -u /tmp/allowed /tmp/changed
           git config user.name 'ores-stack certification'
           git config user.email 'actions@users.noreply.github.com'
-          git add Cargo.lock
-          git commit -m 'test(p2): freeze final ingress authority lock evidence'
+          git add Cargo.lock crates/ores-stack-p2-edge-minimal/tests/ingress_authority.rs
+          git commit -m 'test(p2): freeze final ingress authority evidence'
           git push origin HEAD:"$TARGET_BRANCH"
