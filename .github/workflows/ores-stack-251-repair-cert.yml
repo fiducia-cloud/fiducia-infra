@@ -1,0 +1,110 @@
+name: ores-stack-251-repair-cert
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-stack-251-repair-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+  TARGET_SHA: '469dd0339d6e797c30e9322b4711b011d3b44b4d'
+  TARGET_BRANCH: 'feat/ppr-edge-minimal-wrapper-current3-20260922'
+  MIDDLEWARE_SHA: 'b930660d34896db1ab285c3b9bd97deaa37dc9ad'
+  P2_STACK_SHA: '1b2eda561882a38bc30f434810520d9c970810d2'
+
+jobs:
+  repair_and_certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: { persist-credentials: false }
+      - name: Configure authenticated GitHub access
+        shell: bash
+        env: { ORE_SOURCE_PAT: '${{ secrets.ORE_SOURCE_PAT }}' }
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Fetch exact #251 branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --depth=1 origin "$TARGET_BRANCH"
+          git -C ores-stack checkout -b repair FETCH_HEAD
+          test "$(git -C ores-stack rev-parse HEAD)" = "$TARGET_SHA"
+      - name: Advance the two ABI pins together
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          file='crates/ores-stack-cli/src/ppr_middleware_wrapper.rs'
+          test "$(grep -F -c '5c43cea4bf01e13857d353dce5d14b88cfc24695' "$file")" = '1'
+          test "$(grep -F -c '1f527c8e25ba10ba0fc9e0e4707b3b40bf05ac71' "$file")" = '1'
+          sed -i "s/5c43cea4bf01e13857d353dce5d14b88cfc24695/$MIDDLEWARE_SHA/g" "$file"
+          sed -i "s/1f527c8e25ba10ba0fc9e0e4707b3b40bf05ac71/$P2_STACK_SHA/g" "$file"
+          git diff --check
+          test "$(git diff --name-only)" = "$file"
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+      - name: Bootstrap workspace lock
+        shell: bash
+        working-directory: ores-stack
+        run: bash scripts/bootstrap-cargo-lock.sh ensure
+      - name: Verify CLI source
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo check --locked -p ores-stack-cli --all-targets
+          cargo test --locked -p ores-stack-cli ppr_middleware_wrapper
+          cargo clippy --locked -p ores-stack-cli --all-targets -- -D warnings
+      - name: Generate real wrapper fixture
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          FIXTURE="$RUNNER_TEMP/ppr-wrapper-app"
+          mkdir -p "$FIXTURE/src/middleware"
+          printf 'pub mod mw;\n' > "$FIXTURE/src/middleware/mod.rs"
+          cat > "$FIXTURE/src/middleware/mw.rs" <<'RS'
+          pub async fn middleware(
+              args: ores_middleware::EdgeMinimalCallbackArgs,
+          ) -> Result<ores_middleware::EdgeMinimalDecision, ores_middleware::IntegrationError> {
+              Ok(ores_middleware::EdgeMinimalDecision::Continue(args.request))
+          }
+          RS
+          cargo run --locked -p ores-stack-cli --bin ores-stack -- \
+            __ppr-generate-middleware-wrapper \
+            --root="$FIXTURE" \
+            --ores-middleware-rev="$MIDDLEWARE_SHA"
+          manifest="$FIXTURE/tmp/ores-stack-ppr-middleware/Cargo.toml"
+          test -f "$manifest"
+          grep -F "$MIDDLEWARE_SHA" "$manifest"
+          grep -F "$P2_STACK_SHA" "$manifest"
+          cargo check --manifest-path "$manifest" --all-targets
+      - name: Push exact guarded repair
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          test "$(git diff --name-only)" = 'crates/ores-stack-cli/src/ppr_middleware_wrapper.rs'
+          git config user.name 'ORESoftware CI repair'
+          git config user.email 'noreply@oresoftware.com'
+          git add crates/ores-stack-cli/src/ppr_middleware_wrapper.rs
+          git commit -m 'fix(ppr): advance wrapper and P2 middleware ABI pins together'
+          test "$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$TARGET_SHA"
+          git push origin HEAD:"$TARGET_BRANCH"
