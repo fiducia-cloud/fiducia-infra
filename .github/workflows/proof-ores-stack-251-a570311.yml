@@ -1,0 +1,148 @@
+name: proof ores-stack 251 a570311
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/proof-ores-stack-251-a570311.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TARGET_SHA: 'a57031115345d21a56ba56a76b8a69fbce9bb8a6'
+  TARGET_BRANCH: 'feat/ppr-edge-minimal-wrapper-current3-20260922'
+  MIDDLEWARE_SHA: 'b930660d34896db1ab285c3b9bd97deaa37dc9ad'
+  P2_STACK_SHA: '1b2eda561882a38bc30f434810520d9c970810d2'
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+
+jobs:
+  repair_and_certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Configure authenticated private Git reads
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: '${{ secrets.ORE_SOURCE_PAT }}'
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Fetch exact current source head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init subject
+          git -C subject remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C subject fetch --depth=1 origin "$TARGET_BRANCH"
+          git -C subject checkout -b repair FETCH_HEAD
+          test "$(git -C subject rev-parse HEAD)" = "$TARGET_SHA"
+          test "$(git -C subject ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$TARGET_SHA"
+          test -z "$(git -C subject status --porcelain)"
+      - name: Verify paired ABI pins
+        working-directory: subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          file='crates/ores-stack-cli/src/ppr_middleware_wrapper.rs'
+          grep -F "$MIDDLEWARE_SHA" "$file" >/dev/null
+          grep -F "$P2_STACK_SHA" "$file" >/dev/null
+      - name: Install Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+          rustc --version | grep -F 'rustc 1.88.0'
+      - name: Bootstrap workspace lock without tracked mutation
+        working-directory: subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/bootstrap-cargo-lock.sh ensure
+          test -z "$(git status --porcelain)"
+      - name: Apply workspace-aware rustfmt only to PR files
+        working-directory: subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt -p ores-stack-cli
+          while IFS= read -r path; do
+            case "$path" in
+              crates/ores-stack-cli/src/entry.rs|crates/ores-stack-cli/src/ppr_middleware_wrapper.rs) ;;
+              *) git checkout -- "$path" ;;
+            esac
+          done < <(git diff --name-only)
+          while IFS= read -r path; do
+            case "$path" in
+              crates/ores-stack-cli/src/entry.rs|crates/ores-stack-cli/src/ppr_middleware_wrapper.rs) ;;
+              '') ;;
+              *) echo "refusing unrelated formatter delta: $path" >&2; exit 1 ;;
+            esac
+          done < <(git diff --name-only)
+          git diff --check
+      - name: Check CLI crate
+        working-directory: subject
+        run: cargo check --locked -p ores-stack-cli --all-targets
+      - name: Test PPR wrapper implementation
+        working-directory: subject
+        run: cargo test --locked -p ores-stack-cli ppr_middleware_wrapper
+      - name: Strict Clippy CLI crate
+        working-directory: subject
+        run: cargo clippy --locked -p ores-stack-cli --all-targets -- -D warnings
+      - name: Compile a generated wrapper fixture
+        working-directory: subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          FIXTURE="$RUNNER_TEMP/ppr-wrapper-app"
+          mkdir -p "$FIXTURE/src/middleware"
+          printf 'pub mod mw;\n' > "$FIXTURE/src/middleware/mod.rs"
+          cat > "$FIXTURE/src/middleware/mw.rs" <<'RS'
+          pub async fn middleware(
+              args: ores_middleware::EdgeMinimalCallbackArgs,
+          ) -> Result<ores_middleware::EdgeMinimalDecision, ores_middleware::IntegrationError> {
+              Ok(ores_middleware::EdgeMinimalDecision::Continue(args.request))
+          }
+          RS
+          cargo run --locked -p ores-stack-cli --bin ores-stack -- \
+            __ppr-generate-middleware-wrapper \
+            --root="$FIXTURE" \
+            --ores-middleware-rev="$MIDDLEWARE_SHA"
+          manifest="$FIXTURE/tmp/ores-stack-ppr-middleware/Cargo.toml"
+          test -f "$manifest"
+          grep -F "$MIDDLEWARE_SHA" "$manifest" >/dev/null
+          grep -F "$P2_STACK_SHA" "$manifest" >/dev/null
+          cargo check --manifest-path "$manifest" --all-targets
+      - name: Commit narrow rustfmt repair if needed
+        working-directory: subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo 'source already formatted; no repair commit required'
+            exit 0
+          fi
+          git config user.name 'ORESoftware CI repair'
+          git config user.email 'noreply@oresoftware.com'
+          git add crates/ores-stack-cli/src/entry.rs crates/ores-stack-cli/src/ppr_middleware_wrapper.rs
+          test -z "$(git diff --name-only)"
+          git commit -m 'style(ppr): rustfmt middleware wrapper path'
+          test -z "$(git status --porcelain)"
+      - name: Push certified successor only if source head is unchanged
+        working-directory: subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test "$(git rev-parse HEAD)" = "$TARGET_SHA"; then
+            echo 'no source mutation required'
+            exit 0
+          fi
+          test "$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$TARGET_SHA"
+          git push origin HEAD:"refs/heads/$TARGET_BRANCH"
