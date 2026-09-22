@@ -79,3 +79,5 @@ jobs:
           git -C /tmp/ores-stack add crates/ores-stack-core/src/rpc_http_client_lane.rs crates/ores-stack-core/src/rpc_http_client_lane_post.rs
           git -C /tmp/ores-stack commit -m 'chore(rpc): rustfmt parallel client lane'
           git -C /tmp/ores-stack push origin "HEAD:${SOURCE_BRANCH}"
+
+          echo 'Funded rustfmt writeback completed without revealing token material.'
