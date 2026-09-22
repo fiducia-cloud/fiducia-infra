@@ -1,0 +1,142 @@
+name: pmap-route-map-v1-repair
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/pmap-route-map-v1-repair.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  certify-and-land:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+      LIB_CORE_MAIN_SHA: c6ad9c5993846eaf183065ccc3dfb0057b0b908a
+      INTERFACES_MAIN_SHA: 9c377c399f5103cfa2b8cf88c661f09640b1cd97
+      V1_SOURCE_SHA: c0897dcdbde28670b968ac429660b5684b162149
+      WEB_MAIN_SHA: 9cb5721ff80f5d6a57bc5a9d7f9d44e0f13df611
+      API_MAIN_SHA: 51fe70dc84b4c16059f13666bc8462f9a2f52d14
+      ORES_API_DOCS_SHA: 2dbd222872a93a6fac02521f8b8d982dc406f146
+    steps:
+      - name: Require cross-org source authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+
+      - name: Check out exact PMAP repositories
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: premarital-asset-protection/pmap-lib-core
+          ref: ${{ env.LIB_CORE_MAIN_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: pmap-lib-core
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: premarital-asset-protection/pmap-interfaces
+          ref: ${{ env.INTERFACES_MAIN_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: pmap-interfaces
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: premarital-asset-protection/pmap-web-server.rs
+          ref: ${{ env.WEB_MAIN_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: pmap-web-server
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: premarital-asset-protection/pmap-api-server.rs
+          ref: ${{ env.API_MAIN_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: pmap-api-server
+          persist-credentials: false
+
+      - name: Restore last known-good v1 runtime route maps
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C pmap-lib-core rev-parse HEAD)" = "$LIB_CORE_MAIN_SHA"
+          test "$(git -C pmap-interfaces rev-parse HEAD)" = "$INTERFACES_MAIN_SHA"
+          git -C pmap-lib-core show "$V1_SOURCE_SHA:route-maps/api.route-map.json" > pmap-lib-core/route-maps/api.route-map.json
+          git -C pmap-lib-core show "$V1_SOURCE_SHA:route-maps/web.route-map.json" > pmap-lib-core/route-maps/web.route-map.json
+          cp pmap-lib-core/route-maps/api.route-map.json pmap-interfaces/route-maps/api.route-map.json
+          cp pmap-lib-core/route-maps/web.route-map.json pmap-interfaces/route-maps/web.route-map.json
+          cmp pmap-lib-core/route-maps/api.route-map.json pmap-interfaces/route-maps/api.route-map.json
+          cmp pmap-lib-core/route-maps/web.route-map.json pmap-interfaces/route-maps/web.route-map.json
+          test "$(jq -r .schema_version pmap-lib-core/route-maps/api.route-map.json)" = "1.0.0"
+          test "$(jq -r .schema_version pmap-lib-core/route-maps/web.route-map.json)" = "1.0.0"
+          test "$(jq 'has("types")' pmap-lib-core/route-maps/api.route-map.json)" = "false"
+          test "$(jq 'has("types")' pmap-lib-core/route-maps/web.route-map.json)" = "false"
+
+      - name: Validate lib-core itself
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path pmap-lib-core/Cargo.toml --locked
+          cargo clippy --manifest-path pmap-lib-core/Cargo.toml --all-targets --locked -- -D warnings
+
+      - name: Validate web against candidate lib-core
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CARGO_NET_GIT_FETCH_WITH_CLI=true
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0="url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf"
+          export GIT_CONFIG_VALUE_0="https://github.com/"
+          cargo test --manifest-path pmap-web-server/Cargo.toml --package pmap-web-server --locked
+
+      - name: Validate API against candidate lib-core
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CARGO_NET_GIT_FETCH_WITH_CLI=true
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0="url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf"
+          export GIT_CONFIG_VALUE_0="https://github.com/"
+          sed -i 's#pmap-lib-core = { git = "https://github.com/premarital-asset-protection/pmap-lib-core.git", rev = "[^"]*", version = "0.1.0", features = \["http"\] }#pmap-lib-core = { path = "../pmap-lib-core", features = ["http"] }#' pmap-api-server/Cargo.toml
+          sed -i 's#pmap-crossborder = { git = "https://github.com/premarital-asset-protection/pmap-lib-core.git", branch = "[^"]*", features = \["serde"\] }#pmap-crossborder = { path = "../pmap-lib-core/crossborder", features = ["serde"] }#' pmap-api-server/Cargo.toml
+          sed -i "s#ores-api-docs = { git = \"https://github.com/ORESoftware/api-docs\", features = \[\"axum\"\] }#ores-api-docs = { git = \"https://github.com/ORESoftware/api-docs\", rev = \"${ORES_API_DOCS_SHA}\", features = [\"axum\"] }#" pmap-api-server/Cargo.toml
+          (cd pmap-api-server && cargo generate-lockfile)
+          cargo test --manifest-path pmap-api-server/Cargo.toml --package pmap-api-server --locked
+          cargo clippy --manifest-path pmap-api-server/Cargo.toml --package pmap-api-server --all-targets --locked -- -D warnings
+
+      - name: Guard exact remote heads and route-map-only diffs
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth="url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf=https://github.com/"
+          test "$(git -C pmap-lib-core -c "$auth" ls-remote origin refs/heads/main | awk '{print $1}')" = "$LIB_CORE_MAIN_SHA"
+          test "$(git -C pmap-interfaces -c "$auth" ls-remote origin refs/heads/main | awk '{print $1}')" = "$INTERFACES_MAIN_SHA"
+          test "$(git -C pmap-lib-core diff --name-only | sort)" = $'route-maps/api.route-map.json\nroute-maps/web.route-map.json'
+          test "$(git -C pmap-interfaces diff --name-only | sort)" = $'route-maps/api.route-map.json\nroute-maps/web.route-map.json'
+
+      - name: Commit and publish lib-core runtime repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth="url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf=https://github.com/"
+          git -C pmap-lib-core config user.name "ORESoftware"
+          git -C pmap-lib-core config user.email "alex@oresoftware.com"
+          git -C pmap-lib-core add route-maps/api.route-map.json route-maps/web.route-map.json
+          git -C pmap-lib-core commit -m "fix(routes): restore v1 runtime map authority" -m "Undo the September 12 dialect union that mixed v2 typed-IDL fields and unimplemented routes into the v1 runtime maps. The complete v2 work remains preserved on agent/typed-route-idl."
+          git -C pmap-lib-core -c "$auth" push origin HEAD:main
+
+      - name: Commit and publish interfaces mirror repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth="url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf=https://github.com/"
+          git -C pmap-interfaces config user.name "ORESoftware"
+          git -C pmap-interfaces config user.email "alex@oresoftware.com"
+          git -C pmap-interfaces add route-maps/api.route-map.json route-maps/web.route-map.json
+          git -C pmap-interfaces commit -m "fix(routes): restore v1 runtime map authority" -m "Mirror the validated lib-core v1 runtime maps exactly; v2 typed-IDL work remains preserved on its dedicated branch."
+          git -C pmap-interfaces -c "$auth" push origin HEAD:main
