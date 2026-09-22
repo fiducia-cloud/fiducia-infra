@@ -1,0 +1,41 @@
+name: ores-stack PR 143 compile
+
+on:
+  push:
+    branches:
+      - ci/ores-stack-pr143-compile-20260921
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact ores-stack PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/ores-stack
+          ref: 08d8f9cda3f430eb04efc07ff30b4ef9f87f80ce
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: ores-stack
+          persist-credentials: false
+          show-progress: false
+      - name: Install Rust 1.88.0
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+          components: rustfmt,clippy
+      - name: Bootstrap lockfile
+        working-directory: ores-stack
+        run: bash scripts/bootstrap-cargo-lock.sh ensure
+      - name: Check formatting
+        working-directory: ores-stack
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        working-directory: ores-stack
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Tests
+        working-directory: ores-stack
+        run: cargo test --workspace --all-targets --locked
