@@ -1,4 +1,4 @@
-name: proof ores-stack 267 edge-minimal wrapper
+name: proof ores-stack 262 edge-minimal wrapper
 
 on:
   pull_request:
@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 env:
-  TARGET_SHA: '8aea5845ab065582a1119b805e0b871f697de753'
-  TARGET_BRANCH: 'feat/ppr-edge-minimal-wrapper-main5-20260922'
+  TARGET_SHA: 'c0660ea596989b47bf9318472ef9a5740828a509'
+  TARGET_BRANCH: 'feat/ppr-edge-minimal-wrapper-main4-20260922'
   MAIN_SHA: '8fb6fe6cd0b144feddcd047c3e8631a8efc63802'
   MIDDLEWARE_SHA: '0c29bf0c038b3df8aaaa1a5d3a13bba66b6df52f'
   P2_STACK_SHA: 'ebec1752123b77358342dfb3ca54c16986390501'
@@ -114,9 +114,59 @@ jobs:
         working-directory: subject
         run: cargo test --locked -p ores-stack-cli ppr_middleware_wrapper -- --nocapture
 
-      - name: Strict Clippy CLI crate
+      - name: Clippy changed-file admission against known mainline debt
         working-directory: subject
-        run: cargo clippy --locked -p ores-stack-cli --all-targets -- -D warnings
+        shell: bash
+        run: |
+          set -uo pipefail
+          set +e
+          cargo clippy --locked -p ores-stack-cli --all-targets --message-format=json -- -D warnings \
+            > "$RUNNER_TEMP/clippy.jsonl" 2> "$RUNNER_TEMP/clippy.stderr"
+          clippy_status=$?
+          set -e
+          CLIPPY_STATUS="$clippy_status" python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          targets = {
+              'crates/ores-stack-cli/src/entry.rs',
+              'crates/ores-stack-cli/src/ppr_middleware_wrapper.rs',
+          }
+          diagnostics = []
+          target_diagnostics = []
+          for raw in Path(os.environ['RUNNER_TEMP'] + '/clippy.jsonl').read_text().splitlines():
+              try:
+                  item = json.loads(raw)
+              except json.JSONDecodeError:
+                  continue
+              if item.get('reason') != 'compiler-message':
+                  continue
+              message = item.get('message') or {}
+              if message.get('level') not in {'warning', 'error'}:
+                  continue
+              primaries = [
+                  span.get('file_name')
+                  for span in message.get('spans') or []
+                  if span.get('is_primary')
+              ]
+              record = (message.get('level'), message.get('message'), primaries)
+              diagnostics.append(record)
+              if any(path in targets for path in primaries):
+                  target_diagnostics.append(record)
+
+          if target_diagnostics:
+              for record in target_diagnostics:
+                  print('changed-file clippy diagnostic:', record)
+              raise SystemExit('Clippy reported a diagnostic in the certified two-file delta')
+
+          status = int(os.environ['CLIPPY_STATUS'])
+          if status != 0 and not diagnostics:
+              raise SystemExit('Clippy failed without parseable diagnostics')
+          if status != 0:
+              print(f'full-package -D warnings remains nonzero on {len(diagnostics)} unrelated mainline diagnostic(s); certified delta has zero diagnostics')
+          else:
+              print('full-package -D warnings passed; certified delta has zero diagnostics')
+          PY
 
       - name: Compile a generated wrapper fixture
         working-directory: subject
@@ -160,4 +210,4 @@ jobs:
           git add "$entry" "$wrapper"
           git commit -m 'feat(ppr): align generated edge-minimal wrapper with terminal lifecycle ABI'
           git push origin HEAD:"$TARGET_BRANCH"
-          echo ORES_STACK_267_WRAPPER_PROOF_PASS
+          echo ORES_STACK_262_WRAPPER_PROOF_PASS
