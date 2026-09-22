@@ -12,7 +12,7 @@ permissions:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-  ORES_STACK_SHA: 'a0fa9d96ec30d79b129d28c267d6103d6f365ff9'
+  ORES_STACK_SHA: '466ab5782615975110fca160c5af1f49449d3343'
   ORES_STACK_BRANCH: 'feat/p2-edge-minimal-protocol-current-main-20260922'
 
 jobs:
@@ -64,7 +64,7 @@ jobs:
           git diff --check
           git status --porcelain=v1 | cut -c4- | sort > /tmp/changed
           printf '%s\n' crates/ores-stack-p2-edge-minimal/src/lib.rs > /tmp/allowed
-          diff -u /tmp/allowed /tmp/changed
+          test ! -s <(comm -23 /tmp/changed /tmp/allowed)
 
       - name: Refresh only required workspace lock evidence
         shell: bash
@@ -72,10 +72,12 @@ jobs:
         run: |
           set -euo pipefail
           cargo check -p ores-stack-p2-edge-minimal --all-targets
+          test -f Cargo.lock
           git diff --check
-          git status --porcelain=v1 | cut -c4- | sort > /tmp/changed
+          git status --porcelain=v1 | cut -c4- | sort -u > /tmp/changed
           printf '%s\n' Cargo.lock crates/ores-stack-p2-edge-minimal/src/lib.rs | sort > /tmp/allowed
-          diff -u /tmp/allowed /tmp/changed
+          test ! -s <(comm -23 /tmp/changed /tmp/allowed)
+          grep -qx 'Cargo.lock' /tmp/changed
 
       - name: Check portable P2 crate and workspace with lock frozen
         shell: bash
@@ -100,9 +102,10 @@ jobs:
           set -euo pipefail
           cargo test --locked -p ores-stack-p2-edge-minimal -- --nocapture
           git diff --check
-          git status --porcelain=v1 | cut -c4- | sort > /tmp/changed
+          git status --porcelain=v1 | cut -c4- | sort -u > /tmp/changed
           printf '%s\n' Cargo.lock crates/ores-stack-p2-edge-minimal/src/lib.rs | sort > /tmp/allowed
-          diff -u /tmp/allowed /tmp/changed
+          test ! -s <(comm -23 /tmp/changed /tmp/allowed)
+          grep -qx 'Cargo.lock' /tmp/changed
 
       - name: Fast-forward certified repair to ores-stack PR branch
         shell: bash
@@ -110,11 +113,14 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$ORES_STACK_SHA"
-          git status --porcelain=v1 | cut -c4- | sort > /tmp/changed
+          remote_head="$(git ls-remote origin "refs/heads/${ORES_STACK_BRANCH}" | cut -f1)"
+          test "$remote_head" = "$ORES_STACK_SHA" || { echo "source branch moved: $remote_head"; exit 1; }
+          git status --porcelain=v1 | cut -c4- | sort -u > /tmp/changed
           printf '%s\n' Cargo.lock crates/ores-stack-p2-edge-minimal/src/lib.rs | sort > /tmp/allowed
-          diff -u /tmp/allowed /tmp/changed
+          test ! -s <(comm -23 /tmp/changed /tmp/allowed)
+          grep -qx 'Cargo.lock' /tmp/changed
           git config user.name "ores-stack certification"
           git config user.email "actions@users.noreply.github.com"
           git add Cargo.lock crates/ores-stack-p2-edge-minimal/src/lib.rs
-          git commit -m "style(p2): certify edge_minimal runtime"
+          git commit -m "test(p2): freeze certified edge_minimal lock evidence"
           git push origin "HEAD:refs/heads/${ORES_STACK_BRANCH}"
