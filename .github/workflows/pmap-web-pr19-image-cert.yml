@@ -10,13 +10,12 @@ permissions:
   contents: read
 
 jobs:
-  repair-lock:
+  certify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
-      PMAP_WEB_SHA: 2761cbcb16e38df6bbf647a6f6f550b6d6697b55
-      PMAP_WEB_BRANCH: fix/materialize-lib-core-docker-context
+      PMAP_WEB_SHA: 856d676fc2c2deac4635404089e18567abe0a354
       PMAP_LIB_CORE_SHA: e374195182745e39f6b58b56c3d02d7beb081f1d
       EXPECTED_LOCK_SHA256: 52e1cd3fc1afe0e29d0509d2913630b187290280b00b7817c3476beeda64248f
     steps:
@@ -33,13 +32,13 @@ jobs:
           token: ${{ secrets.ORE_SOURCE_PAT }}
           path: pmap-web
           persist-credentials: false
-          fetch-depth: 0
-      - name: Regenerate and verify exact lockfile
+      - name: Verify exact committed inputs
         shell: bash
         run: |
           set -euo pipefail
           test "$(git -C pmap-web rev-parse HEAD)" = "$PMAP_WEB_SHA"
-          export CARGO_NET_GIT_FETCH_WITH_CLI=true
+          actual="$(sha256sum pmap-web/Cargo.lock | awk '{print $1}')"
+          test "$actual" = "$EXPECTED_LOCK_SHA256"
           export GIT_CONFIG_COUNT=1
           export GIT_CONFIG_KEY_0="url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf"
           export GIT_CONFIG_VALUE_0="https://github.com/"
@@ -48,17 +47,15 @@ jobs:
           git -C pmap-lib-core fetch --depth=1 origin "$PMAP_LIB_CORE_SHA"
           git -C pmap-lib-core checkout --detach FETCH_HEAD
           test "$(git -C pmap-lib-core rev-parse HEAD)" = "$PMAP_LIB_CORE_SHA"
-          (cd pmap-web && cargo generate-lockfile)
-          actual="$(sha256sum pmap-web/Cargo.lock | awk '{print $1}')"
-          test "$actual" = "$EXPECTED_LOCK_SHA256"
-          test "$(git -C pmap-web status --porcelain | awk '{print $2}')" = "Cargo.lock"
-      - name: Commit only Cargo.lock to PR branch
+      - name: Build standalone image from committed lockfile
         shell: bash
+        env:
+          DOCKER_BUILDKIT: "1"
         run: |
           set -euo pipefail
-          git -C pmap-web config user.name "ORESoftware"
-          git -C pmap-web config user.email "alex@oresoftware.com"
-          git -C pmap-web add Cargo.lock
-          git -C pmap-web diff --cached --quiet && { echo "Cargo.lock already current"; exit 0; }
-          git -C pmap-web commit -m "fix(lock): sync web image with pinned lib-core"
-          git -C pmap-web -c "url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf=https://github.com/" push https://github.com/premarital-asset-protection/pmap-web-server.rs HEAD:"$PMAP_WEB_BRANCH"
+          docker build \
+            --secret id=github_token,env=ORE_SOURCE_PAT \
+            --build-arg TARGETARCH=amd64 \
+            --tag pmap-web-pr19-cert:latest \
+            --file pmap-web/Dockerfile \
+            pmap-web
