@@ -1,4 +1,4 @@
-name: ores-http-clients and ores-stack certification
+name: ores-http-clients certification
 
 on:
   push:
@@ -89,43 +89,3 @@ jobs:
         run: cargo clippy --all-targets --features rxrust-support -- -D warnings
       - working-directory: source/src/rust
         run: cargo check --target wasm32-unknown-unknown
-
-  ores-stack-pr197:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 35
-    steps:
-      - name: Check out exact ores-stack PR #197 head
-        uses: actions/checkout@v4
-        with:
-          repository: ORESoftware/ores-stack
-          ref: ceea90ee4416a491836f467bff93111a4e8f19e2
-          token: ${{ secrets.ORE_SOURCE_PAT }}
-          path: ores-stack
-          persist-credentials: false
-      - name: Configure private Git dependency auth
-        shell: bash
-        env:
-          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
-        run: |
-          set -euo pipefail
-          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
-          echo 'CARGO_NET_GIT_FETCH_WITH_CLI=true' >> "$GITHUB_ENV"
-      - name: Install Rust 1.88.0
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.88.0
-          components: rustfmt
-      - name: Bootstrap lockfile
-        working-directory: ores-stack
-        run: bash scripts/bootstrap-cargo-lock.sh ensure
-      - name: Check formatting
-        working-directory: ores-stack
-        run: cargo fmt --all -- --check
-      - name: Type-check workspace
-        working-directory: ores-stack
-        run: cargo check --workspace --all-targets --locked
-      - name: Test REST source-boundary and core behavior
-        working-directory: ores-stack
-        run: |
-          cargo test -p ores-stack-core --all-targets --locked
-          cargo test -p ores-stack-cli --all-targets --locked
