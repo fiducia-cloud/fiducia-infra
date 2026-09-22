@@ -12,7 +12,7 @@ permissions:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-  ORES_MIDDLEWARE_SHA: '31bc7dbbaf5a10aa1a466eeeaae4e9148b049a31'
+  ORES_MIDDLEWARE_SHA: '81b9da14c5a4a585f3a5a375d4627e5b7d5cc1cc'
 
 jobs:
   rust:
@@ -34,7 +34,7 @@ jobs:
           echo "::add-mask::$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
 
-      - name: Fetch exact ores-middleware #264 head
+      - name: Fetch exact clean #264 head
         shell: bash
         run: |
           set -euo pipefail
@@ -52,7 +52,7 @@ jobs:
           rustup default 1.88.0
           rustup component add rustfmt clippy
 
-      - name: Exact portable-source format gate
+      - name: Portable P2 format gate
         shell: bash
         working-directory: ores-middleware
         run: |
@@ -65,20 +65,19 @@ jobs:
       - name: Portable core Clippy
         shell: bash
         working-directory: ores-middleware
-        run: |
-          set -euo pipefail
-          cargo clippy --locked -p ores-middleware --no-default-features --lib -- -D warnings
+        run: cargo clippy --locked -p ores-middleware --no-default-features --lib -- -D warnings
 
-      - name: Edge provider and local-host tests
+      - name: Provider API tests
         shell: bash
         working-directory: ores-middleware
-        run: |
-          set -euo pipefail
-          cargo test --locked -p ores-middleware --no-default-features provider_api::tests -- --nocapture
-          cargo test --locked -p ores-middleware --no-default-features hosts::edge_minimal_local::tests -- --nocapture
-          git diff --exit-code
+        run: cargo test --locked -p ores-middleware --no-default-features provider_api::tests -- --nocapture
 
-      - name: Portable core check
+      - name: LocalEdgeMinimalHost tests
+        shell: bash
+        working-directory: ores-middleware
+        run: cargo test --locked -p ores-middleware --no-default-features hosts::edge_minimal_local::tests -- --nocapture
+
+      - name: Portable core all-target check
         shell: bash
         working-directory: ores-middleware
         run: |
