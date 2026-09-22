@@ -1,0 +1,51 @@
+name: pmap-api-four-transport-proof
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/pmap-api-four-transport-proof.yml"
+      - "ci/pmap-api-four-transport-proof/**"
+
+permissions:
+  contents: read
+
+jobs:
+  prove:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.98.1
+          components: clippy,rustfmt
+      - name: Require private source credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Generate lockfile against exact private revision
+        working-directory: ci/pmap-api-four-transport-proof
+        run: cargo generate-lockfile
+      - name: Format check exact adapter
+        working-directory: ci/pmap-api-four-transport-proof
+        run: cargo fmt --check
+      - name: Test exact adapter
+        working-directory: ci/pmap-api-four-transport-proof
+        run: cargo test --locked
+      - name: Clippy exact adapter
+        working-directory: ci/pmap-api-four-transport-proof
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Assert immutable transport revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F 'rev = "1fb45fe0f954440dfc8eaa56ba1c4cf002e17ff7"' ci/pmap-api-four-transport-proof/Cargo.toml
+          ! grep -R --line-number 'branch *= *"main"' ci/pmap-api-four-transport-proof
