@@ -8,162 +8,31 @@ on:
 permissions:
   contents: read
 
+env:
+  SOURCE_REPO: ORESoftware/ores-http-clients
+  SOURCE_REF: audit/harden-representations
+
 jobs:
-  repair:
+  conformance:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          repository: ORESoftware/ores-http-clients
-          ref: audit/harden-representations
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ env.SOURCE_REF }}
           token: ${{ secrets.ORE_SOURCE_PAT }}
           path: source
-          persist-credentials: true
-          fetch-depth: 0
-      - uses: dart-lang/setup-dart@v1
-        with:
-          sdk: stable
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          components: rustfmt
-      - name: Apply compiler-driven fixes
-        working-directory: source
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          index = Path('src/ts/src/index.ts')
-          s = index.read_text()
-          s = s.replace('let body: Uint8Array | undefined;', 'let body: BodyInit | undefined;')
-          s = s.replace(
-              'body = options.requestCodec.encode(options.body);',
-              'body = Uint8Array.from(options.requestCodec.encode(options.body)).buffer;'
-          )
-          old = 'return client.request<TData, TVariables>(document, variables as TVariables);'
-          new = '''return (client.request as unknown as (\n      document: string,\n      variables?: TVariables,\n    ) => Promise<TData>)(document, variables);'''
-          if old in s:
-              s = s.replace(old, new)
-          index.write_text(s)
-
-          ws = Path('src/ts/src/websockets.ts')
-          s = ws.read_text()
-          s = s.replace('onopen: ((event: unknown) => void) | null;', 'onopen: ((event: any) => void) | null;')
-          s = s.replace('onmessage: ((event: { data?: unknown }) => void) | null;', 'onmessage: ((event: any) => void) | null;')
-          s = s.replace('onerror: ((event: unknown) => void) | null;', 'onerror: ((event: any) => void) | null;')
-          s = s.replace('onclose: ((event: unknown) => void) | null;', 'onclose: ((event: any) => void) | null;')
-          ws.write_text(s)
-
-          scheduler = Path('src/ts/src/scheduler.ts')
-          s = scheduler.read_text()
-          s = s.replace(
-              '''      (value) => {\n        first.resolve(value);\n        void emitTelemetry''',
-              '''      (value) => {\n        this.active -= 1;\n        this.pump();\n        first.resolve(value);\n        void emitTelemetry'''
-          )
-          s = s.replace(
-              '''      (error) => {\n        first.reject(error);\n        void emitTelemetry''',
-              '''      (error) => {\n        this.active -= 1;\n        this.pump();\n        first.reject(error);\n        void emitTelemetry'''
-          )
-          s = s.replace(
-              '''    ).finally(() => {\n      this.active -= 1;\n      this.pump();\n    });''',
-              '''    );'''
-          )
-          scheduler.write_text(s)
-
-          test = Path('src/ts/test/client.test.ts')
-          s = test.read_text()
-          marker = 'import {DEFAULT_PATHS, OresHttpClients, ResponseTooLargeError, messagePackCodec, protobufCodec} from "../src/index.js";\n'
-          helper = marker + '\nconst bodyFromBytes = (bytes: Uint8Array): ArrayBuffer => Uint8Array.from(bytes).buffer;\n'
-          if 'const bodyFromBytes' not in s and marker in s:
-              s = s.replace(marker, helper)
-          s = s.replace('new Response(Uint8Array.from([137, 80, 78, 71])', 'new Response(bodyFromBytes(Uint8Array.from([137, 80, 78, 71]))')
-          s = s.replace('new Response(codec.encode({value: 9})', 'new Response(bodyFromBytes(codec.encode({value: 9}))')
-          s = s.replace('new Response(Uint8Array.of(7)', 'new Response(bodyFromBytes(Uint8Array.of(7))')
-          s = s.replace('new Response(Uint8Array.of(1, 2, 3)', 'new Response(bodyFromBytes(Uint8Array.of(1, 2, 3))')
-          test.write_text(s)
-
-          dart_test = Path('src/dart/test/websocket_hub_test.dart')
-          s = dart_test.read_text()
-          import_line = "import 'package:stream_channel/stream_channel.dart';\n"
-          anchor = "import 'package:test/test.dart';\n"
-          if import_line not in s and anchor in s:
-              s = s.replace(anchor, anchor + import_line)
-          s = s.replace(
-              'final class _FakeChannel implements WebSocketChannel {',
-              'final class _FakeChannel with StreamChannelMixin<dynamic> implements WebSocketChannel {'
-          )
-          s = s.replace('  final StreamController<dynamic> _outgoing = StreamController<dynamic>();\n', '')
-          s = s.replace(
-              'WebSocketSink get sink => _FakeSink(_outgoing.sink, _incoming);',
-              'WebSocketSink get sink => _FakeSink(_incoming);'
-          )
-          start = s.find('final class _FakeSink implements WebSocketSink {')
-          end = s.find('\nvoid main() {', start)
-          if start != -1 and end != -1:
-              fake_sink = '''final class _FakeSink implements WebSocketSink {\n  _FakeSink(this._incoming);\n  final StreamController<dynamic> _incoming;\n  bool _closed = false;\n\n  @override\n  void add(dynamic data) {}\n\n  @override\n  void addError(Object error, [StackTrace? stackTrace]) {}\n\n  @override\n  Future addStream(Stream stream) => stream.drain<void>();\n\n  @override\n  Future close([int? closeCode, String? closeReason]) async {\n    if (_closed) return;\n    _closed = true;\n    await _incoming.close();\n  }\n\n  @override\n  Future get done => Future<void>.value();\n}\n'''
-              s = s[:start] + fake_sink + s[end:]
-          dart_test.write_text(s)
-
-          pubspec = Path('src/dart/pubspec.yaml')
-          s = pubspec.read_text()
-          if '  stream_channel:' not in s:
-              s = s.replace('dev_dependencies:\n', 'dev_dependencies:\n  stream_channel: ^2.1.4\n')
-          pubspec.write_text(s)
-
-          reactive = Path('src/rust/src/reactive.rs')
-          s = reactive.read_text()
-          s = s.replace(
-              'use futures_util::{StreamExt, stream as futures_stream};',
-              'use futures_util::{StreamExt, TryStreamExt, stream as futures_stream};'
-          )
-          s = s.replace(
-              'stream.collect::<Result<Vec<_>, _>>().await.unwrap()',
-              'stream.try_collect::<Vec<_>>().await.unwrap()'
-          )
-          reactive.write_text(s)
-
-          rust_lib = Path('src/rust/src/lib.rs')
-          s = rust_lib.read_text()
-          old = '''        if let Some(actual_value) = &actual {\n            if expected\n                .iter()\n                .any(|candidate| media_type_matches(actual_value, candidate))\n            {\n                return Ok(());\n            }\n        }'''
-          new = '''        if let Some(actual_value) = &actual\n            && expected\n                .iter()\n                .any(|candidate| media_type_matches(actual_value, candidate))\n        {\n            return Ok(());\n        }'''
-          if old in s:
-              s = s.replace(old, new)
-          old = '''        if let Some(length) = advertised {\n            if length > self.max_response_bytes as u64 {\n                return Err(Error::ResponseTooLarge {\n                    limit: self.max_response_bytes,\n                    observed: Some(length),\n                });\n            }\n        }'''
-          new = '''        if let Some(length) = advertised\n            && length > self.max_response_bytes as u64\n        {\n            return Err(Error::ResponseTooLarge {\n                limit: self.max_response_bytes,\n                observed: Some(length),\n            });\n        }'''
-          if old in s:
-              s = s.replace(old, new)
-          rust_lib.write_text(s)
-          PY
-      - name: Format Dart and Rust
-        working-directory: source
-        run: |
-          set -euo pipefail
-          dart format src/dart/lib src/dart/test
-          cargo fmt --manifest-path src/rust/Cargo.toml --all
-      - name: Push repaired source branch
-        working-directory: source
-        run: |
-          set -euo pipefail
-          if git diff --quiet; then
-            echo 'No repair changes to push.'
-            exit 0
-          fi
-          git config user.name 'ORESoftware CI Repair'
-          git config user.email 'ci-repair@oresoftware.com'
-          git add src/ts src/dart src/rust
-          git commit -m 'fix: clear final polyglot certification lints'
-          git push origin HEAD:audit/harden-representations
+          persist-credentials: false
+      - working-directory: source
+        run: sh scripts/check.sh
 
   typescript:
-    needs: repair
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          repository: ORESoftware/ores-http-clients
-          ref: audit/harden-representations
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ env.SOURCE_REF }}
           token: ${{ secrets.ORE_SOURCE_PAT }}
           path: source
           persist-credentials: false
@@ -171,18 +40,17 @@ jobs:
         with:
           node-version: '22'
       - working-directory: source/src/ts
-        run: npm install --no-audit --no-fund
+        run: npm install --ignore-scripts --no-audit --no-fund
       - working-directory: source/src/ts
         run: npm test
 
   dart:
-    needs: repair
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          repository: ORESoftware/ores-http-clients
-          ref: audit/harden-representations
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ env.SOURCE_REF }}
           token: ${{ secrets.ORE_SOURCE_PAT }}
           path: source
           persist-credentials: false
@@ -197,19 +65,19 @@ jobs:
         run: dart test
 
   rust:
-    needs: repair
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          repository: ORESoftware/ores-http-clients
-          ref: audit/harden-representations
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ env.SOURCE_REF }}
           token: ${{ secrets.ORE_SOURCE_PAT }}
           path: source
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
+          targets: wasm32-unknown-unknown
           components: rustfmt,clippy
       - working-directory: source/src/rust
         run: cargo fmt --all -- --check
@@ -219,25 +87,5 @@ jobs:
         run: cargo test --all-targets --features rxrust-support
       - working-directory: source/src/rust
         run: cargo clippy --all-targets --features rxrust-support -- -D warnings
-
-  contract-shape:
-    needs: repair
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          repository: ORESoftware/ores-http-clients
-          ref: audit/harden-representations
-          token: ${{ secrets.ORE_SOURCE_PAT }}
-          path: source
-          persist-credentials: false
-      - run: |
-          set -euo pipefail
-          test -f source/src/ts/src/websockets.ts
-          test -f source/src/dart/lib/src/websocket_hub.dart
-          test -f source/src/rust/src/websocket_hub.rs
-          test -f source/.contracts/runtime-config.schema.json
-          test -f source/.contracts/runtime-config.tsp
-          grep -q 'supabase' source/src/ts/src/websockets.ts
-          grep -q 'supabase' source/src/dart/lib/src/websocket_hub.dart
-          grep -q 'supabase' source/src/rust/src/websocket_hub.rs
+      - working-directory: source/src/rust
+        run: cargo check --target wasm32-unknown-unknown
