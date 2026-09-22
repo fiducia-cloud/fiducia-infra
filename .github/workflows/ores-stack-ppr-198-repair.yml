@@ -53,24 +53,20 @@ jobs:
           rustup default 1.88.0
           rustup component add rustfmt
 
-      - name: Let Cargo and rustfmt repair their own generated state
+      - name: Repair only the PPR integration file and verify with repository lock policy
         shell: bash
         working-directory: ores-stack
         run: |
           set -euo pipefail
-          cargo fmt --all
-          set +e
-          cargo check -p ores-stack-cli -p ores-stack-process-tree -p ores-stack-middleware-runner -p ores-stack-ppr-http --all-targets
-          check_status=$?
-          set -e
-          printf 'cargo_check_status=%s\n' "$check_status"
+          rustfmt --edition 2024 crates/ores-stack-cli/src/ppr_supervisor_process.rs
+          bash scripts/bootstrap-cargo-lock.sh ensure
+          cargo check --locked -p ores-stack-cli -p ores-stack-process-tree -p ores-stack-middleware-runner -p ores-stack-ppr-http --all-targets
           git diff --check
           changed="$(git diff --name-only | sort)"
-          printf 'changed files:\n%s\n' "$changed"
-          allowed=$'Cargo.lock\ncrates/ores-stack-cli/src/ppr_supervisor_process.rs'
-          test "$changed" = "$allowed" || {
-            echo 'refusing guarded repair because the toolchain changed an unexpected tracked file'
-            git diff --stat
+          printf 'tracked changed files:\n%s\n' "$changed"
+          test "$changed" = 'crates/ores-stack-cli/src/ppr_supervisor_process.rs' || {
+            echo 'refusing guarded repair because an unexpected tracked file changed'
+            git status --short
             exit 1
           }
 
@@ -83,8 +79,8 @@ jobs:
           set -euo pipefail
           git config user.name 'ORESoftware CI repair'
           git config user.email 'noreply@oresoftware.com'
-          git add Cargo.lock crates/ores-stack-cli/src/ppr_supervisor_process.rs
-          git commit -m 'fix(ppr): refresh formatting and lockfile'
+          git add crates/ores-stack-cli/src/ppr_supervisor_process.rs
+          git commit -m 'fix(ppr): format supervisor integration'
           remote_head="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)"
           test "$remote_head" = "$TARGET_SHA" || { echo "source branch moved before push: $remote_head"; exit 1; }
           git push origin HEAD:"$TARGET_BRANCH"
