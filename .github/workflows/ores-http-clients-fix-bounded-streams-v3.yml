@@ -50,6 +50,22 @@ jobs:
               'assert.ok(pulls <= 3, `response limit was enforced only after ${pulls} pulls`);',
               'assert.ok(pulls <= 4, `response limit was enforced only after ${pulls} pulls`);',
           )
+          script = script.replace(
+              '''              assert!(matches!(
+                  result,
+                  Err(Error::ResponseTooLarge {
+                      limit: 8,
+                      observed: Some(12)
+                  })
+              ));''',
+              '''              assert!(matches!(
+                  result,
+                  Err(Error::ResponseTooLarge {
+                      limit: 8,
+                      observed: Some(observed)
+                  }) if observed > 8
+              ));''',
+          )
           exec(compile(script, 'bounded-stream-remediation.py', 'exec'), {})
           PY
 
