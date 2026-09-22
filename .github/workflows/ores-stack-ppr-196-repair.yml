@@ -53,15 +53,45 @@ jobs:
           rustup default 1.88.0
           rustup component add rustfmt clippy
 
-      - name: Format and guard changed paths
+      - name: Run rustfmt and capture exact delta
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -u
+          OUT="$RUNNER_TEMP/ppr-196-rustfmt"
+          mkdir -p "$OUT"
+          set +e
+          cargo fmt --all >"$OUT/rustfmt.log" 2>&1
+          rc=$?
+          set -e
+          printf '%s\n' "$rc" > "$OUT/rustfmt-exit.txt"
+          git diff --name-only | sort > "$OUT/changed-files.txt"
+          git diff --binary > "$OUT/rustfmt.patch"
+          git status --short > "$OUT/git-status.txt"
+          exit 0
+
+      - name: Upload rustfmt diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ores-stack-ppr-196-rustfmt
+          path: ${{ runner.temp }}/ppr-196-rustfmt
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Guard formatted paths
         shell: bash
         working-directory: ores-stack
         run: |
           set -euo pipefail
-          cargo fmt --all
+          OUT="$RUNNER_TEMP/ppr-196-rustfmt"
+          test "$(cat "$OUT/rustfmt-exit.txt")" = '0' || {
+            cat "$OUT/rustfmt.log" >&2
+            exit 1
+          }
           cargo fmt --all -- --check
           git diff --check
-          mapfile -t changed < <(git diff --name-only | sort)
+          mapfile -t changed < "$OUT/changed-files.txt"
           printf 'rustfmt changed files:\n'
           printf '%s\n' "${changed[@]}"
           test "${#changed[@]}" -gt 0 || { echo 'no rustfmt repair needed'; exit 1; }
