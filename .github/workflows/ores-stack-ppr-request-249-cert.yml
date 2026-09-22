@@ -1,4 +1,4 @@
-name: ores-stack PPR request #249 guarded repair and certification
+name: ores-stack PPR request current-main restack
 
 on:
   pull_request:
@@ -12,11 +12,12 @@ permissions:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-  TARGET_SHA: '8c8632950cee3c1ed0b7230e73f40dc01c3e8d71'
-  TARGET_BRANCH: 'feat/ppr-strict-request-path-20260922'
+  SOURCE_SHA: '8c8632950cee3c1ed0b7230e73f40dc01c3e8d71'
+  TARGET_BASE: 'bd4f6fcd352830bb55f13661468fb7f464420bd8'
+  TARGET_BRANCH: 'salvage/ppr-request-ingress-current-main-20260922'
 
 jobs:
-  repair:
+  restack:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -32,16 +33,58 @@ jobs:
           test -n "$ORE_SOURCE_PAT"
           echo "::add-mask::$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
-      - name: Fetch exact ores-stack head
+      - name: Fetch exact source and current-main target
         shell: bash
         run: |
           set -euo pipefail
           git init ores-stack
           git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
-          git -C ores-stack fetch --depth=1 origin "$TARGET_SHA"
-          git -C ores-stack checkout -b repair FETCH_HEAD
-          test "$(git -C ores-stack rev-parse HEAD)" = "$TARGET_SHA"
-          test "$(git -C ores-stack status --porcelain)" = ""
+          git -C ores-stack fetch --depth=1 origin "$TARGET_BASE"
+          git -C ores-stack checkout -b restack FETCH_HEAD
+          test "$(git -C ores-stack rev-parse HEAD)" = "$TARGET_BASE"
+          remote_head="$(git -C ores-stack ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)"
+          test "$remote_head" = "$TARGET_BASE" || { echo "target branch moved: expected $TARGET_BASE got $remote_head"; exit 1; }
+          git -C ores-stack fetch --depth=1 origin "$SOURCE_SHA"
+      - name: Reapply request authority without overwriting response writer
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          git show "$SOURCE_SHA:crates/ores-stack-ppr-http/src/request.rs" > crates/ores-stack-ppr-http/src/request.rs
+          python3 - <<'PY'
+          from pathlib import Path
+
+          request = Path('crates/ores-stack-ppr-http/src/request.rs')
+          text = request.read_text()
+          old = '    with_tcp_deadline(stream, deadline, read_request_head)'
+          new = '    with_tcp_deadline(stream, deadline, |reader| read_request_head(reader))'
+          assert text.count(old) == 1, f'unexpected deadline call count: {text.count(old)}'
+          request.write_text(text.replace(old, new, 1))
+
+          strict = Path('crates/ores-stack-ppr-http/src/lib_strict.rs')
+          text = strict.read_text()
+          assert 'mod request;' not in text
+          text = text.replace('mod framing;\n', 'mod framing;\nmod request;\n', 1)
+          marker = '/// Write one already-validated P3 response head through the canonical P1\n'
+          assert marker in text
+          export = '''pub use request::{
+    MAX_REQUEST_BODY_BYTES, MAX_REQUEST_CHUNK_LINE_BYTES, MAX_REQUEST_CHUNKS,
+    MAX_REQUEST_HEADER_COUNT, MAX_REQUEST_HEAD_BYTES, MAX_REQUEST_METHOD_BYTES,
+    MAX_REQUEST_TARGET_BYTES, MAX_REQUEST_TRAILER_BYTES, RequestBodyFraming, RequestHead,
+    read_request_head, read_tcp_request_head_before, relay_request_body,
+    relay_tcp_request_body_before,
+};
+
+'''
+          text = text.replace(marker, export + marker, 1)
+          strict.write_text(text)
+          PY
+          rustfmt --edition 2024 crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs
+          rustfmt --edition 2024 --check crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs
+          git diff --check
+          git diff --name-only | sort > /tmp/changed
+          printf '%s\n' crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs | sort > /tmp/allowed
+          diff -u /tmp/allowed /tmp/changed
       - name: Rust 1.88
         shell: bash
         run: |
@@ -49,23 +92,12 @@ jobs:
           rustup toolchain install 1.88.0 --profile minimal --no-self-update
           rustup default 1.88.0
           rustup component add rustfmt clippy
-      - name: Format only request-authority sources
+      - name: Verify bounded request ingress on merged response authority
         shell: bash
         working-directory: ores-stack
         run: |
           set -euo pipefail
-          rustfmt --edition 2024 crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs
-          rustfmt --edition 2024 --check crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs
-          git diff --check
-          git diff --name-only | sort > /tmp/changed
-          printf '%s\n' crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs | sort > /tmp/allowed
-          diff -u /tmp/allowed /tmp/changed
-      - name: Verify bounded request ingress authority
-        shell: bash
-        working-directory: ores-stack
-        run: |
-          set -euo pipefail
-          bash scripts/bootstrap-cargo-lock.sh ensure
+          cargo metadata --locked --format-version 1 --no-deps >/dev/null
           cargo check --locked -p ores-stack-ppr-http --all-targets
           cargo test --locked -p ores-stack-ppr-http -- --nocapture
           cargo clippy --locked -p ores-stack-ppr-http --all-targets -- -D warnings
@@ -73,18 +105,15 @@ jobs:
           git diff --name-only | sort > /tmp/changed
           printf '%s\n' crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs | sort > /tmp/allowed
           diff -u /tmp/allowed /tmp/changed
-      - name: Fast-forward guarded repair
+      - name: Commit and fast-forward clean restack
         shell: bash
         working-directory: ores-stack
         run: |
           set -euo pipefail
           remote_head="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)"
-          test "$remote_head" = "$TARGET_SHA" || { echo "source branch moved: expected $TARGET_SHA got $remote_head"; exit 1; }
-          git diff --name-only | sort > /tmp/changed
-          printf '%s\n' crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs | sort > /tmp/allowed
-          diff -u /tmp/allowed /tmp/changed
+          test "$remote_head" = "$TARGET_BASE" || { echo "target branch moved: expected $TARGET_BASE got $remote_head"; exit 1; }
           git config user.name 'ores-stack certification'
           git config user.email 'actions@users.noreply.github.com'
           git add crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs
-          git commit -m 'style(ppr): format request ingress authority'
+          git commit -m 'feat(ppr): add bounded request ingress authority'
           git push origin HEAD:"$TARGET_BRANCH"
