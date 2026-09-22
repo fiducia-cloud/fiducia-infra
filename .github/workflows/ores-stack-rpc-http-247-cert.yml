@@ -12,8 +12,8 @@ permissions:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-  TARGET_SHA: '80173862ecffc4fee18fd2dd8b261418e7628048'
-  TARGET_BRANCH: 'feat/rpc-v1-http-adapter-current-main-20260922'
+  TARGET_SHA: 'd953a8f6faaacfce35ef5ea9f3ca31977369f661'
+  TARGET_BRANCH: 'salvage/rpc-http-adapter-main-20260922'
   OWNED_FILE: 'crates/ores-fn-adapters/src/rpc_http.rs'
 
 jobs:
