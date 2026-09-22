@@ -12,7 +12,7 @@ permissions:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-  ORES_STACK_SHA: '91aeb44c6301e87f0e6844e8ee34b2a791f188f4'
+  ORES_STACK_SHA: 'bcd4f4a55be789514323fea35521db80aab15dfd'
 
 jobs:
   rust:
