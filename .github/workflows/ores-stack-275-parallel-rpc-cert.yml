@@ -12,7 +12,7 @@ permissions:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-  STACK_HEAD: '6840f05d4062b91f447b8a2865733692ab936c34'
+  STACK_HEAD: 'b52055d4cc5d3496a48cffa8685f41c0e33c4c45'
   STACK_BASE: '253382da3634ce9fde62704e79e42160cee66838'
   STACK_BRANCH: 'feat/parallel-rpc-runtime-client-lane'
 
@@ -33,7 +33,7 @@ jobs:
           test -n "$ORE_SOURCE_PAT"
           echo "::add-mask::$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
-      - name: Merge exact PR head onto current main
+      - name: Fetch exact PR head on current main
         shell: bash
         run: |
           set -euo pipefail
@@ -42,11 +42,10 @@ jobs:
           git -C ores-stack fetch --depth=20 origin main "$STACK_BRANCH"
           test "$(git -C ores-stack rev-parse origin/main)" = "$STACK_BASE"
           test "$(git -C ores-stack rev-parse origin/$STACK_BRANCH)" = "$STACK_HEAD"
-          git -C ores-stack checkout -b proof "$STACK_BASE"
-          git -C ores-stack config user.name 'funded exact-head certification'
-          git -C ores-stack config user.email 'noreply@oresoftware.com'
-          git -C ores-stack merge --no-ff --no-edit "$STACK_HEAD"
-          test "$(git -C ores-stack diff --name-only "$STACK_BASE"...HEAD | sort | tr '\n' ' ')" = "crates/ores-stack-cli/src/legacy/mod.rs crates/ores-stack-core/src/lib.rs crates/ores-stack-core/src/rpc_http_client_lane.rs crates/ores-stack-core/src/rpc_http_client_lane_post.rs "
+          git -C ores-stack checkout --detach "$STACK_HEAD"
+          test "$(git -C ores-stack rev-parse HEAD^)" = "$STACK_BASE"
+          test "$(git -C ores-stack diff --name-only "$STACK_BASE"..HEAD | sort | tr '\n' ' ')" = "crates/ores-stack-cli/src/legacy/mod.rs crates/ores-stack-core/src/lib.rs crates/ores-stack-core/src/rpc_http_client_lane.rs crates/ores-stack-core/src/rpc_http_client_lane_post.rs "
+          test "$(git -C ores-stack status --porcelain)" = ""
       - name: Rust 1.88
         shell: bash
         run: |
@@ -73,6 +72,7 @@ jobs:
           cargo test --locked -p ores-stack-core rpc_http_client_lane -- --nocapture
           cargo clippy --locked -p ores-stack-core -p ores-stack-cli --all-targets -- -D warnings
           git diff --check
+          test "$(git status --porcelain)" = ""
       - name: Verify fluent terminal contract
         shell: bash
         working-directory: ores-stack
