@@ -1,0 +1,109 @@
+name: ores-stack infra yaml #242 guarded repair
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-stack-infra-yaml-242-repair.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+  TARGET_SHA: '44bd44f1c0122a0fd4f233cd67c63055da4180df'
+  TARGET_BRANCH: 'fix/infra-cross-check-yaml-20260922'
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Configure authenticated GitHub source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact #242 source head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --depth=1 origin "$TARGET_SHA"
+          git -C ores-stack checkout -b repair FETCH_HEAD
+          test "$(git -C ores-stack rev-parse HEAD)" = "$TARGET_SHA"
+          test "$(git -C ores-stack status --porcelain)" = ""
+
+      - name: Apply only canonical root YAML repairs
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          scaffold = Path('crates/ores-stack-cli/src/scaffold_cli.rs')
+          text = scaffold.read_text()
+          old = '    require_regular(&root.join(".ores-stack.toml"), ".ores-stack.toml")?;'
+          new = '    require_regular(&root.join(".ores-stack.yaml"), ".ores-stack.yaml")?;'
+          assert text.count(old) == 1, f'unexpected scaffold replacement count: {text.count(old)}'
+          scaffold.write_text(text.replace(old, new, 1))
+
+          flags = Path('.cli-flags.toml')
+          text = flags.read_text()
+          old = 'Read-only cross-check of .ores-stack.toml, .ores-compose.yaml, zed-pkg lock parity, symlink/path policy, git diff hygiene, and local sibling repos.'
+          new = 'Read-only cross-check of .ores-stack.yaml, .ores-compose.yaml, zed-pkg lock parity, symlink/path policy, git diff hygiene, and local sibling repos.'
+          assert text.count(old) == 1, f'unexpected help replacement count: {text.count(old)}'
+          flags.write_text(text.replace(old, new, 1))
+          PY
+          git diff --check
+          git diff --name-only | sort > /tmp/changed
+          printf '%s\n' .cli-flags.toml crates/ores-stack-cli/src/scaffold_cli.rs | sort > /tmp/allowed
+          diff -u /tmp/allowed /tmp/changed
+
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt
+
+      - name: Verify CLI and regression
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2024 --check crates/ores-stack-cli/src/scaffold_cli.rs crates/ores-stack-cli/tests/infra_cross_check_yaml.rs
+          bash scripts/bootstrap-cargo-lock.sh ensure
+          cargo check --locked -p ores-stack-cli --all-targets
+          cargo test --locked -p ores-stack-cli --test infra_cross_check_yaml -- --nocapture
+          git diff --check
+          git diff --name-only | sort > /tmp/changed
+          printf '%s\n' .cli-flags.toml crates/ores-stack-cli/src/scaffold_cli.rs | sort > /tmp/allowed
+          diff -u /tmp/allowed /tmp/changed
+
+      - name: Commit and fast-forward guarded repair
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)"
+          test "$remote_head" = "$TARGET_SHA" || { echo "source branch moved: $remote_head"; exit 1; }
+          git config user.name 'ores-stack certification'
+          git config user.email 'actions@users.noreply.github.com'
+          git add .cli-flags.toml crates/ores-stack-cli/src/scaffold_cli.rs
+          git commit -m 'fix(infra): require canonical root yaml in cross-check'
+          git push origin HEAD:"$TARGET_BRANCH"
