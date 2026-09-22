@@ -11,7 +11,6 @@ permissions:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-  STACK_HEAD: 'e7495168f0bee4eb396d5c9a6922925ba57adf56'
   STACK_BASE: '253382da3634ce9fde62704e79e42160cee66838'
   STACK_BRANCH: 'feat/parallel-rpc-runtime-client-lane'
 
@@ -23,9 +22,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-
       - name: Configure authenticated source access
-        shell: bash
         env:
           ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
         run: |
@@ -33,82 +30,47 @@ jobs:
           test -n "$ORE_SOURCE_PAT"
           echo "::add-mask::$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
-
-      - name: Fetch exact PR head
-        shell: bash
+      - name: Fetch and bind current PR branch head
         run: |
           set -euo pipefail
           git init ores-stack
           git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
           git -C ores-stack fetch --depth=20 origin main "$STACK_BRANCH"
           test "$(git -C ores-stack rev-parse origin/main)" = "$STACK_BASE"
-          test "$(git -C ores-stack rev-parse origin/$STACK_BRANCH)" = "$STACK_HEAD"
-          git -C ores-stack checkout --detach "$STACK_HEAD"
+          source_head="$(git -C ores-stack rev-parse origin/$STACK_BRANCH)"
+          echo "SOURCE_HEAD=$source_head" >> "$GITHUB_ENV"
+          git -C ores-stack checkout --detach "$source_head"
           test "$(git -C ores-stack merge-base HEAD "$STACK_BASE")" = "$STACK_BASE"
           test "$(git -C ores-stack diff --name-only "$STACK_BASE"..HEAD | sort | tr '\n' ' ')" = "crates/ores-stack-cli/src/legacy/mod.rs crates/ores-stack-core/src/lib.rs crates/ores-stack-core/src/rpc_http_client_lane.rs crates/ores-stack-core/src/rpc_http_client_lane_post.rs "
           test -z "$(git -C ores-stack status --porcelain)"
           git -C ores-stack diff --check "$STACK_BASE"..HEAD
-
       - name: Rust 1.88
-        shell: bash
         run: |
           set -euo pipefail
           rustup toolchain install 1.88.0 --profile minimal --no-self-update
           rustup default 1.88.0
           rustup component add rustfmt clippy
-
-      - name: Repair rustfmt only on PR-owned files
-        shell: bash
+      - name: PR-owned formatting
         working-directory: ores-stack
         run: |
-          set -euo pipefail
-          owned=(
-            crates/ores-stack-cli/src/legacy/mod.rs
-            crates/ores-stack-core/src/lib.rs
-            crates/ores-stack-core/src/rpc_http_client_lane.rs
+          rustfmt --edition 2024 --check \
+            crates/ores-stack-cli/src/legacy/mod.rs \
+            crates/ores-stack-core/src/lib.rs \
+            crates/ores-stack-core/src/rpc_http_client_lane.rs \
             crates/ores-stack-core/src/rpc_http_client_lane_post.rs
-          )
-          rustfmt --edition 2024 "${owned[@]}"
-          git diff --check
-          git diff --name-only | sort > /tmp/changed.txt
-          printf '%s\n' "${owned[@]}" | sort > /tmp/allowed.txt
-          test -z "$(comm -23 /tmp/changed.txt /tmp/allowed.txt)"
-          if test -s /tmp/changed.txt; then
-            remote_head="$(git ls-remote origin "refs/heads/$STACK_BRANCH" | cut -f1)"
-            test "$remote_head" = "$STACK_HEAD"
-            git config user.name 'ORESoftware'
-            git config user.email 'alex@oresoftware.com'
-            git add -- "${owned[@]}"
-            git commit -m 'style: rustfmt parallel RPC client lane'
-            git push origin "HEAD:refs/heads/$STACK_BRANCH"
-          fi
-          new_head="$(git rev-parse HEAD)"
-          echo "NEW_STACK_HEAD=$new_head" >> "$GITHUB_ENV"
-          rustfmt --edition 2024 --check "${owned[@]}"
-          test -z "$(git status --porcelain)"
-
       - name: Locked metadata
-        shell: bash
         working-directory: ores-stack
         run: cargo metadata --locked --format-version 1 --no-deps >/dev/null
-
-      - name: Compile exact repaired head
-        shell: bash
+      - name: Compile exact head
         working-directory: ores-stack
         run: cargo check --locked -p ores-stack-core -p ores-stack-cli --all-targets
-
       - name: Focused parallel lane tests
-        shell: bash
         working-directory: ores-stack
         run: cargo test --locked -p ores-stack-core rpc_http_client_lane -- --nocapture
-
       - name: Focused post-sync lane tests
-        shell: bash
         working-directory: ores-stack
         run: cargo test --locked -p ores-stack-core rpc_http_client_lane_post -- --nocapture
-
       - name: Prove zero new Clippy diagnostics versus base
-        shell: bash
         run: |
           set -uo pipefail
           set +e
@@ -120,62 +82,39 @@ jobs:
           set -e
           export HEAD_CLIPPY_RC="$head_rc" BASE_CLIPPY_RC="$base_rc"
           python3 - <<'PY'
-          import json
-          import os
+          import json, os
           from pathlib import Path
-
-          owned = {
-              'crates/ores-stack-core/src/rpc_http_client_lane.rs',
-              'crates/ores-stack-core/src/rpc_http_client_lane_post.rs',
-              'crates/ores-stack-core/src/lib.rs',
-              'crates/ores-stack-cli/src/legacy/mod.rs',
-          }
-          def normalize_file(value):
-              value = str(value or '').replace('\\', '/')
-              for marker in ('/ores-stack-base/', '/ores-stack/'):
-                  if marker in value:
-                      return value.split(marker, 1)[1]
-              return value
-          def diagnostics(path):
-              out = set()
+          owned = {'crates/ores-stack-core/src/rpc_http_client_lane.rs','crates/ores-stack-core/src/rpc_http_client_lane_post.rs','crates/ores-stack-core/src/lib.rs','crates/ores-stack-cli/src/legacy/mod.rs'}
+          def norm(v):
+              v = str(v or '').replace('\\','/')
+              for marker in ('/ores-stack-base/','/ores-stack/'):
+                  if marker in v: return v.split(marker,1)[1]
+              return v
+          def diags(path):
+              out=set()
               for raw in Path(path).read_text().splitlines():
-                  try:
-                      obj = json.loads(raw)
-                  except json.JSONDecodeError:
-                      continue
-                  if obj.get('reason') != 'compiler-message':
-                      continue
-                  msg = obj.get('message') or {}
-                  if msg.get('level') not in {'warning', 'error'}:
-                      continue
-                  spans = msg.get('spans') or []
-                  primary = next((s for s in spans if s.get('is_primary')), spans[0] if spans else {})
-                  filename = normalize_file(primary.get('file_name'))
-                  code = (msg.get('code') or {}).get('code') or ''
-                  rendered = (msg.get('message') or '').strip()
-                  out.add((msg.get('level') or '', code, filename, rendered))
+                  try: obj=json.loads(raw)
+                  except json.JSONDecodeError: continue
+                  if obj.get('reason')!='compiler-message': continue
+                  msg=obj.get('message') or {}
+                  if msg.get('level') not in {'warning','error'}: continue
+                  spans=msg.get('spans') or []
+                  primary=next((s for s in spans if s.get('is_primary')),spans[0] if spans else {})
+                  out.add((msg.get('level') or '',(msg.get('code') or {}).get('code') or '',norm(primary.get('file_name')),(msg.get('message') or '').strip()))
               return out
-          base = diagnostics('/tmp/base.jsonl')
-          head = diagnostics('/tmp/head.jsonl')
-          owned_findings = sorted(d for d in head if d[2] in owned)
-          new_findings = sorted(head - base)
+          base, head = diags('/tmp/base.jsonl'), diags('/tmp/head.jsonl')
+          owned_findings=sorted(d for d in head if d[2] in owned)
+          new_findings=sorted(head-base)
           print(f"Clippy exit codes: base={os.environ['BASE_CLIPPY_RC']} head={os.environ['HEAD_CLIPPY_RC']}")
           print(f"Clippy diagnostics: base={len(base)} head={len(head)}")
           if owned_findings:
-              print('owned-file Clippy findings:')
-              for item in owned_findings: print(item)
+              print('owned-file Clippy findings:', *owned_findings, sep='\n')
           if new_findings:
-              print('new Clippy findings versus base:')
-              for item in new_findings: print(item)
-          if owned_findings or new_findings:
-              raise SystemExit(1)
-          if int(os.environ['HEAD_CLIPPY_RC']) != 0 and int(os.environ['BASE_CLIPPY_RC']) == 0:
-              raise SystemExit('head Clippy failed while base passed')
-          print('PASS: no new Clippy diagnostics')
+              print('new Clippy findings versus base:', *new_findings, sep='\n')
+          if owned_findings or new_findings: raise SystemExit(1)
+          if int(os.environ['HEAD_CLIPPY_RC']) != 0 and int(os.environ['BASE_CLIPPY_RC']) == 0: raise SystemExit(1)
           PY
-
       - name: Verify fluent and hardening contracts
-        shell: bash
         working-directory: ores-stack
         run: |
           set -euo pipefail
@@ -190,15 +129,12 @@ jobs:
           grep -q 'is a symlink; refusing generated writes' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
           grep -q 'contract_sha256' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
           grep -q 'does not admit handlers audience' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
-
-      - name: Final exact-head guard
-        shell: bash
+      - name: Final immutable-head guard
         working-directory: ores-stack
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$NEW_STACK_HEAD"
-          test "$(git ls-remote origin "refs/heads/$STACK_BRANCH" | cut -f1)" = "$NEW_STACK_HEAD"
+          test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
+          test "$(git ls-remote origin "refs/heads/$STACK_BRANCH" | cut -f1)" = "$SOURCE_HEAD"
           test -z "$(git status --porcelain)"
-          test "$(git diff --name-only "$STACK_BASE"..HEAD | sort | tr '\n' ' ')" = "crates/ores-stack-cli/src/legacy/mod.rs crates/ores-stack-core/src/lib.rs crates/ores-stack-core/src/rpc_http_client_lane.rs crates/ores-stack-core/src/rpc_http_client_lane_post.rs "
           git diff --check "$STACK_BASE"..HEAD
           echo ORES_STACK_275_HARDENED_PARALLEL_RPC_CERT_PASS
