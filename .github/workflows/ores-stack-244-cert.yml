@@ -12,7 +12,8 @@ permissions:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-  ORES_STACK_SHA: '43c6b7dd4fbc73c688598d0a2e7f2ef002488e9e'
+  ORES_STACK_SHA: '96fec0a9360d167552b86816864aa7195d4c34ba'
+  ORES_MIDDLEWARE_SHA: '5c43cea4bf01e13857d353dce5d14b88cfc24695'
 
 jobs:
   rust:
@@ -52,13 +53,14 @@ jobs:
           rustup default 1.88.0
           rustup component add rustfmt clippy
 
-      - name: Format-check P2 wrapper slice
+      - name: Format-check exact P2 wrapper slice
         working-directory: ores-stack
         shell: bash
         run: |
           set -euo pipefail
+          rustfmt --edition 2024 --check --config skip_children=true \
+            crates/ores-stack-cli/src/entry.rs
           rustfmt --edition 2024 --check \
-            crates/ores-stack-cli/src/entry.rs \
             crates/ores-stack-cli/src/ppr_middleware_wrapper.rs
           git diff --exit-code
 
@@ -88,6 +90,32 @@ jobs:
           cargo test --locked -p ores-stack ppr_middleware_wrapper -- --nocapture
           cargo test --locked -p ores-stack -- --nocapture
           git diff --exit-code
+
+      - name: Compile generated P2 crate against current middleware authority
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$(mktemp -d)"
+          mkdir -p "$fixture/src/middleware"
+          printf 'pub mod mw;\n' > "$fixture/src/middleware/mod.rs"
+          cat > "$fixture/src/middleware/mw.rs" <<'RS'
+          pub async fn middleware(
+              mut args: ores_middleware::EdgeMinimalCallbackArgs,
+          ) -> Result<ores_middleware::EdgeMinimalDecision, ores_middleware::IntegrationError> {
+              args.set_request_header("x-ores-wrapper-cert", "admitted");
+              Ok(ores_middleware::EdgeMinimalDecision::Continue(args.request))
+          }
+          RS
+          cargo run --locked -p ores-stack -- \
+            __ppr-generate-middleware-wrapper \
+            --root="$fixture" \
+            --ores-middleware-rev="$ORES_MIDDLEWARE_SHA"
+          test -s "$fixture/tmp/ores-stack-ppr-middleware/Cargo.toml"
+          test -s "$fixture/tmp/ores-stack-ppr-middleware/main.rs"
+          ! grep -q 'ores-app' "$fixture/tmp/ores-stack-ppr-middleware/Cargo.toml"
+          grep -q "$ORES_MIDDLEWARE_SHA" "$fixture/tmp/ores-stack-ppr-middleware/Cargo.toml"
+          cargo check --manifest-path "$fixture/tmp/ores-stack-ppr-middleware/Cargo.toml"
 
       - name: Prove exact source identity after tests
         if: ${{ always() }}
