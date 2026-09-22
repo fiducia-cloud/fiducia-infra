@@ -1,0 +1,67 @@
+name: tmp ores-compose 176 JobState repair
+
+on:
+  push:
+    branches:
+      - test/ores-compose-176-jobstate-repair-20260922
+
+permissions:
+  contents: read
+
+env:
+  COMPOSE_HEAD: f9af2f2a152e5229134b113c3ae3dae91d370da0
+  COMPOSE_BRANCH: fix/command-spec-static-program-test-20260922
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Configure authenticated source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact source branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --no-checkout https://github.com/ORESoftware/ores-compose.git ores-compose
+          git -C ores-compose checkout "$COMPOSE_BRANCH"
+          test "$(git -C ores-compose rev-parse HEAD)" = "$COMPOSE_HEAD"
+          test -z "$(git -C ores-compose status --porcelain)"
+
+      - name: Make JobState import test-only
+        shell: bash
+        working-directory: ores-compose
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/machine.rs')
+          s = p.read_text()
+          old = '''use crate::queue::{\n    EnqueueResult, GitRevision, JobId, JobRequest, JobSnapshot, JobState, QueueError,\n    SerialJobQueue,\n};\n'''
+          new = '''use crate::queue::{\n    EnqueueResult, GitRevision, JobId, JobRequest, JobSnapshot, QueueError, SerialJobQueue,\n};\n#[cfg(test)]\nuse crate::queue::JobState;\n'''
+          assert s.count(old) == 1, 'expected queue import shape not found exactly once'
+          p.write_text(s.replace(old, new))
+          PY
+          cargo fmt --all
+          test "$(git diff --name-only)" = "src/machine.rs"
+          git diff --check
+
+      - name: Commit and push repair
+        shell: bash
+        working-directory: ores-compose
+        run: |
+          set -euo pipefail
+          git config user.name 'ORESoftware CI'
+          git config user.email 'alex@oresoftware.com'
+          git add src/machine.rs
+          git commit -m 'fix: scope JobState import to tests'
+          git push origin "HEAD:$COMPOSE_BRANCH"
+          echo "NEW_COMPOSE_HEAD=$(git rev-parse HEAD)"
