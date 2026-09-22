@@ -1,4 +1,4 @@
-name: ores-stack PPR request #249 exact-head certification
+name: ores-stack PPR request #249 guarded repair and certification
 
 on:
   pull_request:
@@ -13,9 +13,10 @@ permissions:
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
   TARGET_SHA: '8c8632950cee3c1ed0b7230e73f40dc01c3e8d71'
+  TARGET_BRANCH: 'feat/ppr-strict-request-path-20260922'
 
 jobs:
-  certify:
+  repair:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -38,7 +39,7 @@ jobs:
           git init ores-stack
           git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
           git -C ores-stack fetch --depth=1 origin "$TARGET_SHA"
-          git -C ores-stack checkout --detach FETCH_HEAD
+          git -C ores-stack checkout -b repair FETCH_HEAD
           test "$(git -C ores-stack rev-parse HEAD)" = "$TARGET_SHA"
           test "$(git -C ores-stack status --porcelain)" = ""
       - name: Rust 1.88
@@ -48,14 +49,42 @@ jobs:
           rustup toolchain install 1.88.0 --profile minimal --no-self-update
           rustup default 1.88.0
           rustup component add rustfmt clippy
-      - name: Certify bounded request ingress authority
+      - name: Format only request-authority sources
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2024 crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs
+          rustfmt --edition 2024 --check crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs
+          git diff --check
+          git diff --name-only | sort > /tmp/changed
+          printf '%s\n' crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs | sort > /tmp/allowed
+          diff -u /tmp/allowed /tmp/changed
+      - name: Verify bounded request ingress authority
         shell: bash
         working-directory: ores-stack
         run: |
           set -euo pipefail
           bash scripts/bootstrap-cargo-lock.sh ensure
-          rustfmt --edition 2024 --check crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs
           cargo check --locked -p ores-stack-ppr-http --all-targets
           cargo test --locked -p ores-stack-ppr-http -- --nocapture
           cargo clippy --locked -p ores-stack-ppr-http --all-targets -- -D warnings
           git diff --check
+          git diff --name-only | sort > /tmp/changed
+          printf '%s\n' crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs | sort > /tmp/allowed
+          diff -u /tmp/allowed /tmp/changed
+      - name: Fast-forward guarded repair
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)"
+          test "$remote_head" = "$TARGET_SHA" || { echo "source branch moved: expected $TARGET_SHA got $remote_head"; exit 1; }
+          git diff --name-only | sort > /tmp/changed
+          printf '%s\n' crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs | sort > /tmp/allowed
+          diff -u /tmp/allowed /tmp/changed
+          git config user.name 'ores-stack certification'
+          git config user.email 'actions@users.noreply.github.com'
+          git add crates/ores-stack-ppr-http/src/lib_strict.rs crates/ores-stack-ppr-http/src/request.rs
+          git commit -m 'style(ppr): format request ingress authority'
+          git push origin HEAD:"$TARGET_BRANCH"
