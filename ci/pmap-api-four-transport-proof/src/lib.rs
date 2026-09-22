@@ -1,9 +1,7 @@
 #![forbid(unsafe_code)]
 
-use ores_transport::{
-    Envelope, NatsSubjects, OperationHandler, Reply, ServeError, serve_envelope,
-};
-use serde::{Serialize, de::DeserializeOwned};
+use ores_transport::{serve_envelope, Envelope, NatsSubjects, OperationHandler, Reply, ServeError};
+use serde::{de::DeserializeOwned, Serialize};
 use std::sync::Arc;
 
 pub const SERVICE_SLUG: &str = "pmap";
@@ -47,9 +45,10 @@ where
     ores_transport::serve_jetstream(context, subjects(), handler).await
 }
 
-pub async fn jetstream_from_env()
--> Result<Option<ores_transport::async_nats::jetstream::Context>, Box<dyn std::error::Error + Send + Sync>>
-{
+pub async fn jetstream_from_env() -> Result<
+    Option<ores_transport::async_nats::jetstream::Context>,
+    Box<dyn std::error::Error + Send + Sync>,
+> {
     let config = ores_transport::TransportConfig::from_env(ENV_PREFIX)?;
     match config.nats_url.as_deref() {
         None => Ok(None),
