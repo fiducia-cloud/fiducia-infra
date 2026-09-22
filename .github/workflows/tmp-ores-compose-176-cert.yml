@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  COMPOSE_HEAD: f9af2f2a152e5229134b113c3ae3dae91d370da0
+  COMPOSE_HEAD: 0106b173f0a35a3a42593f6a35b6eae5ed8771e2
   COMPOSE_BASE: 2e0d1488ca32371e4f410f95cf6886674b86876c
 
 jobs:
@@ -26,7 +26,6 @@ jobs:
           test -n "$ORE_SOURCE_PAT"
           echo "::add-mask::$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
-
       - name: Fetch exact source
         shell: bash
         run: |
@@ -37,10 +36,11 @@ jobs:
           git -C ores-compose checkout --detach "$COMPOSE_HEAD"
           test "$(git -C ores-compose rev-parse HEAD)" = "$COMPOSE_HEAD"
           test "$(git -C ores-compose merge-base HEAD "$COMPOSE_BASE")" = "$COMPOSE_BASE"
-          test "$(git -C ores-compose diff --name-only "$COMPOSE_BASE"..HEAD)" = "tests/source_filter_execution_regressions.rs"
+          printf '%s\n' src/machine.rs tests/source_filter_execution_regressions.rs | sort > /tmp/expected
+          git -C ores-compose diff --name-only "$COMPOSE_BASE"..HEAD | sort > /tmp/actual
+          diff -u /tmp/expected /tmp/actual
           test -z "$(git -C ores-compose status --porcelain)"
           git -C ores-compose diff --check "$COMPOSE_BASE"..HEAD
-
       - name: Install repository Rust toolchain
         shell: bash
         working-directory: ores-compose
@@ -48,22 +48,18 @@ jobs:
           set -euo pipefail
           rustup show active-toolchain
           rustup component add rustfmt clippy
-
       - name: Native rustfmt gate
         shell: bash
         working-directory: ores-compose
         run: cargo fmt --all --check
-
       - name: Native clippy gate
         shell: bash
         working-directory: ores-compose
         run: cargo clippy --all-targets --all-features -- -D warnings
-
       - name: Native test gate
         shell: bash
         working-directory: ores-compose
         run: cargo test --all-targets --all-features
-
       - name: Exact source hygiene
         shell: bash
         working-directory: ores-compose
