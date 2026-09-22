@@ -20,6 +20,7 @@ jobs:
       PR_HEAD_SHA: fe66eafadba7ba4a64582d24b6004d052bc73767
       PMAP_LIB_CORE_SHA: e374195182745e39f6b58b56c3d02d7beb081f1d
       ORES_API_DOCS_SHA: 2dbd222872a93a6fac02521f8b8d982dc406f146
+      PMAP_PACKAGE: pmap-web-server
     steps:
       - name: Require cross-org source authority
         shell: bash
@@ -95,9 +96,9 @@ jobs:
         run: |
           set -euo pipefail
           cd pmap-web
-          cargo fmt --all -- --check
-          cargo test --locked
-          cargo clippy --all-targets --locked -- -D warnings
+          cargo fmt --package "$PMAP_PACKAGE" -- --check
+          cargo test --package "$PMAP_PACKAGE" --locked
+          cargo clippy --package "$PMAP_PACKAGE" --all-targets --locked -- -D warnings
           cargo test --manifest-path tools/flags-contract-check/Cargo.toml --locked
 
       - name: Build real standalone image from candidate
