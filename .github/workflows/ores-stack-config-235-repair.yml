@@ -1,4 +1,4 @@
-name: ores-stack-config-235-repair
+name: ores-stack-config-main-repair
 
 on:
   pull_request:
@@ -12,8 +12,8 @@ permissions:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-  TARGET_BRANCH: 'fix/canonical-ores-stack-yaml-20260922'
-  TARGET_SHA: '6046bd8081ae1303365ee414938aa9baaf78be22'
+  TARGET_SHA: '1ee2360737256783e8ba1eec3251119511dc7272'
+  REPAIR_BRANCH: 'fix/config-yaml-rustfmt-certified-20260922'
 
 jobs:
   repair:
@@ -35,15 +35,19 @@ jobs:
           echo "::add-mask::$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
 
-      - name: Fetch exact #235 branch head
+      - name: Fetch exact merged YAML main
         shell: bash
         run: |
           set -euo pipefail
           git init ores-stack
           git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
-          git -C ores-stack fetch --depth=1 origin "$TARGET_BRANCH"
-          git -C ores-stack checkout -b repair FETCH_HEAD
+          git -C ores-stack fetch --depth=1 origin "$TARGET_SHA"
+          git -C ores-stack checkout -b "$REPAIR_BRANCH" FETCH_HEAD
           test "$(git -C ores-stack rev-parse HEAD)" = "$TARGET_SHA"
+          test -z "$(git -C ores-stack ls-remote origin "refs/heads/$REPAIR_BRANCH")" || {
+            echo "repair branch already exists; refusing to overwrite"
+            exit 1
+          }
 
       - name: Rust 1.88
         shell: bash
@@ -99,7 +103,7 @@ jobs:
         working-directory: ores-stack
         run: cargo clippy --locked -p ores-stack-core --all-targets -- -D warnings
 
-      - name: Commit and push guarded repair
+      - name: Commit and push guarded repair branch
         shell: bash
         working-directory: ores-stack
         run: |
@@ -110,6 +114,13 @@ jobs:
           git config user.email 'noreply@oresoftware.com'
           git add crates/ores-stack-core/src/config.rs
           git commit -m 'style(config): rustfmt nested YAML authority'
-          remote_head="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)"
-          test "$remote_head" = "$TARGET_SHA" || { echo "source branch moved: expected $TARGET_SHA got $remote_head"; exit 1; }
-          git push origin HEAD:"$TARGET_BRANCH"
+          current_main="$(git ls-remote origin refs/heads/main | cut -f1)"
+          test "$current_main" = "$TARGET_SHA" || {
+            echo "ores-stack main moved from $TARGET_SHA to $current_main; refusing stale repair push"
+            exit 1
+          }
+          test -z "$(git ls-remote origin "refs/heads/$REPAIR_BRANCH")" || {
+            echo "repair branch appeared before push; refusing to overwrite"
+            exit 1
+          }
+          git push origin HEAD:"$REPAIR_BRANCH"
