@@ -89,37 +89,29 @@ jobs:
           path = Path('crates/ores-stack-core/src/lambda_callable_inventory.rs')
           text = path.read_text()
 
-          def replace_once(old: str, new: str, label: str) -> None:
-              global text
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'{label}: expected one match, found {count}')
-              text = text.replace(old, new, 1)
+          old_helper = 'fn assemble_registry(\n'
+          if text.count(old_helper) != 1:
+              raise SystemExit(f'test-only compatibility helper: expected one match, found {text.count(old_helper)}')
+          text = text.replace(old_helper, '#[cfg(test)]\nfn assemble_registry(\n', 1)
 
-          replace_once(
-              'fn assemble_registry(\n',
-              '#[cfg(test)]\nfn assemble_registry(\n',
-              'test-only compatibility helper',
+          initializer = '        let operation = SemanticOperation {\n'
+          function_field = '            function_name: "get_user".to_owned(),\n'
+          if text.count(initializer) != 1:
+              raise SystemExit(f'expected-invoker initializer: expected one match, found {text.count(initializer)}')
+          start = text.index(initializer)
+          insert_at = text.index(function_field, start) + len(function_field)
+          authority_field = '            authority_source: "src/routes/rest/users/get/handlers.rs".to_owned(),\n'
+          if text.find(authority_field, insert_at) < 0:
+              raise SystemExit('expected-invoker authority field not found after function field')
+          fields = (
+              '            origin_kind: CallableOriginKind::RestLeaf,\n'
+              '            leaf_identity: format!(\n'
+              '                "{}:{}",\n'
+              '                CallableOriginKind::RestLeaf.as_str(),\n'
+              '                "src/routes/rest/users/get"\n'
+              '            ),\n'
           )
-          replace_once(
-              '''        let operation = SemanticOperation {
-              callable: callable("users.get_user").unwrap(),
-              function_name: "get_user".to_owned(),
-              authority_source: "src/routes/rest/users/get/handlers.rs".to_owned(),
-          ''',
-              '''        let operation = SemanticOperation {
-              callable: callable("users.get_user").unwrap(),
-              function_name: "get_user".to_owned(),
-              origin_kind: CallableOriginKind::RestLeaf,
-              leaf_identity: format!(
-                  "{}:{}",
-                  CallableOriginKind::RestLeaf.as_str(),
-                  "src/routes/rest/users/get"
-              ),
-              authority_source: "src/routes/rest/users/get/handlers.rs".to_owned(),
-          ''',
-              'expected-invoker test semantic locator',
-          )
+          text = text[:insert_at] + fields + text[insert_at:]
           path.write_text(text)
           PY
 
