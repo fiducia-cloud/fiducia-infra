@@ -18,8 +18,8 @@ jobs:
       LIB_CORE_MAIN_SHA: c6ad9c5993846eaf183065ccc3dfb0057b0b908a
       INTERFACES_MAIN_SHA: 9c377c399f5103cfa2b8cf88c661f09640b1cd97
       V1_SOURCE_SHA: c0897dcdbde28670b968ac429660b5684b162149
-      WEB_MAIN_SHA: 9cb5721ff80f5d6a57bc5a9d7f9d44e0f13df611
-      API_MAIN_SHA: 51fe70dc84b4c16059f13666bc8462f9a2f52d14
+      WEB_MAIN_SHA: 5f8087db093810b22f6a3acb0902a39cc0ad4119
+      API_MAIN_SHA: f32ab9072da6299149f41e2003aac2add6a61905
       ORES_API_DOCS_SHA: 2dbd222872a93a6fac02521f8b8d982dc406f146
     steps:
       - name: Require cross-org source authority
@@ -93,6 +93,7 @@ jobs:
           export GIT_CONFIG_KEY_0="url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf"
           export GIT_CONFIG_VALUE_0="https://github.com/"
           cargo test --manifest-path pmap-web-server/Cargo.toml --package pmap-web-server --locked
+          cargo clippy --manifest-path pmap-web-server/Cargo.toml --package pmap-web-server --all-targets --locked -- -D warnings
 
       - name: Validate API v1 route contract against candidate lib-core
         shell: bash
