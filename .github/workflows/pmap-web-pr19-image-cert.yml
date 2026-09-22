@@ -1,0 +1,49 @@
+name: pmap-web-pr19-image-cert
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/pmap-web-pr19-image-cert.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+      PMAP_WEB_SHA: 2761cbcb16e38df6bbf647a6f6f550b6d6697b55
+    steps:
+      - name: Require cross-org source authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+      - name: Check out exact PMAP web candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: premarital-asset-protection/pmap-web-server.rs
+          ref: ${{ env.PMAP_WEB_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: pmap-web
+          persist-credentials: false
+      - name: Verify exact candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C pmap-web rev-parse HEAD)" = "$PMAP_WEB_SHA"
+      - name: Build standalone image with private sibling materialization
+        shell: bash
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: |
+          set -euo pipefail
+          docker build \
+            --secret id=github_token,env=ORE_SOURCE_PAT \
+            --build-arg TARGETARCH=amd64 \
+            --tag pmap-web-pr19-cert:latest \
+            --file pmap-web/Dockerfile \
+            pmap-web
