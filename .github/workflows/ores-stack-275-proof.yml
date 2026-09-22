@@ -1,0 +1,86 @@
+name: ores-stack-275-proof
+
+on:
+  push:
+    branches: [ci/ores-http-clients-certification]
+    paths:
+      - '.github/workflows/ores-stack-275-proof.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_BRANCH: feat/parallel-rpc-runtime-client-lane
+  SOURCE_SHA: 6840f05d4062b91f447b8a2865733692ab936c34
+  MAIN_SHA: 07ab77c6e22c3c07639c23c58b913ef12962185e
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+
+jobs:
+  exact-head:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Configure authenticated GitHub access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact ores-stack source and base
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init source
+          git -C source remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C source fetch origin "$SOURCE_BRANCH" main
+          source_actual="$(git -C source rev-parse "origin/$SOURCE_BRANCH")"
+          main_actual="$(git -C source rev-parse origin/main)"
+          printf 'source=%s\nmain=%s\n' "$source_actual" "$main_actual"
+          test "$source_actual" = "$SOURCE_SHA"
+          test "$main_actual" = "$MAIN_SHA"
+          git -C source checkout --detach "$SOURCE_SHA"
+
+      - name: Install repository Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.88.0'
+          components: rustfmt,clippy
+
+      - name: Bootstrap Cargo lock authority
+        working-directory: source
+        run: bash scripts/bootstrap-cargo-lock.sh ensure
+
+      - name: Certify parallel generated-client lane
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo check --locked -p ores-stack-core --all-targets
+          cargo test --locked -p ores-stack-core --all-targets
+          cargo check --locked -p ores-stack-cli --all-targets
+          cargo test --locked -p ores-stack-cli --all-targets
+          cargo clippy --locked -p ores-stack-core -p ores-stack-cli --all-targets -- -D warnings
+          git diff --check
+          test -z "$(git status --porcelain)"
+
+      - name: Verify lane semantics from exact source
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          grep -Fq 'generated_ores_http' crates/ores-stack-core/src/rpc_http_client_lane.rs
+          grep -Fq 'ORESoftware/ores-interfaces/contracts/rpc-client-call/v1' crates/ores-stack-core/src/rpc_http_client_lane.rs
+          grep -Fq '@oresoftware/ores-http-clients/fluent' crates/ores-stack-core/src/rpc_http_client_lane.rs
+          grep -Fq 'package:ores_http_clients/ores_http_clients.dart' crates/ores-stack-core/src/rpc_http_client_lane.rs
+          grep -Fq '::ores_http_clients::' crates/ores-stack-core/src/rpc_http_client_lane.rs
+          grep -Fq 'ores_http_clients/fluent' crates/ores-stack-core/src/rpc_http_client_lane.rs
+          ! grep -Eq '\.stream\(|\.stream\(\)' crates/ores-stack-core/src/rpc_http_client_lane.rs
