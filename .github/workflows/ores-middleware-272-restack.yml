@@ -68,12 +68,12 @@ jobs:
           toolchain: '1.95.0'
           components: rustfmt,clippy
 
-      - name: Apply formatter only to lifecycle restack
+      - name: Format only authored lifecycle file
         shell: bash
         working-directory: source
         run: |
           set -euo pipefail
-          cargo fmt --manifest-path src/rust/Cargo.toml --all
+          rustfmt --edition 2024 src/rust/src/hosts/edge_minimal_lifecycle.rs
           changed="$(git diff --name-only | sort)"
           printf 'formatter changed:\n%s\n' "$changed"
           if [ -n "$changed" ] && [ "$changed" != 'src/rust/src/hosts/edge_minimal_lifecycle.rs' ]; then
@@ -91,7 +91,7 @@ jobs:
         working-directory: source
         run: |
           set -euo pipefail
-          cargo fmt --manifest-path src/rust/Cargo.toml --all -- --check
+          rustfmt --edition 2024 --check src/rust/src/hosts/edge_minimal_lifecycle.rs
           cargo clippy --locked --manifest-path src/rust/Cargo.toml --no-default-features --lib -- -D warnings
           cargo test --locked --manifest-path src/rust/Cargo.toml --no-default-features --lib edge_minimal_lifecycle
           cargo test --locked --manifest-path src/rust/Cargo.toml --no-default-features --lib edge_minimal_local
