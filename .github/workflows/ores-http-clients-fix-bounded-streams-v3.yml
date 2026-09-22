@@ -53,6 +53,13 @@ jobs:
           )
           exec(compile(script, 'bounded-stream-remediation.py', 'exec'), {})
 
+          rust_lib = Path('src/rust/src/lib.rs')
+          rust_lib_text = rust_lib.read_text()
+          old_add = 'bytes.len().checked_add(chunk.len()).unwrap_or(usize::MAX)'
+          if rust_lib_text.count(old_add) != 1:
+              raise SystemExit(f'expected one Rust manual saturating arithmetic target, got {rust_lib_text.count(old_add)}')
+          rust_lib.write_text(rust_lib_text.replace(old_add, 'bytes.len().saturating_add(chunk.len())', 1))
+
           rust_test = Path('src/rust/tests/client.rs')
           rust_text = rust_test.read_text()
           fn_start = rust_text.index('async fn chunked_response_limit_returns_before_body_finishes()')
