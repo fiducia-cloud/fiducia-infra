@@ -1,3 +1,4 @@
+# Certification harness for the latest cancellation-safe scheduler/Rx branch.
 name: ores-http-clients certification
 
 on:
