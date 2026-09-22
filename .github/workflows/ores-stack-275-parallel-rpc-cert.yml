@@ -83,39 +83,76 @@ jobs:
       - name: Prove zero new Clippy diagnostics versus base
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          set +e
           CARGO_TARGET_DIR=/tmp/head-target cargo clippy --manifest-path ores-stack/Cargo.toml --locked -p ores-stack-core -p ores-stack-cli --all-targets --message-format=json > /tmp/head.jsonl
+          head_rc=$?
           git -C ores-stack worktree add --detach /tmp/ores-stack-base "$STACK_BASE"
           CARGO_TARGET_DIR=/tmp/base-target cargo clippy --manifest-path /tmp/ores-stack-base/Cargo.toml --locked -p ores-stack-core -p ores-stack-cli --all-targets --message-format=json > /tmp/base.jsonl
+          base_rc=$?
+          set -e
+          export HEAD_CLIPPY_RC="$head_rc" BASE_CLIPPY_RC="$base_rc"
           python3 - <<'PY'
           import json
+          import os
           from pathlib import Path
-          owned = {'crates/ores-stack-core/src/rpc_http_client_lane.rs','crates/ores-stack-core/src/rpc_http_client_lane_post.rs'}
-          def read(path):
-              out=set()
+
+          owned = {
+              'crates/ores-stack-core/src/rpc_http_client_lane.rs',
+              'crates/ores-stack-core/src/rpc_http_client_lane_post.rs',
+          }
+
+          def normalize_file(value):
+              value = str(value or '').replace('\\', '/')
+              for marker in ('/ores-stack-base/', '/ores-stack/'):
+                  if marker in value:
+                      return value.split(marker, 1)[1]
+              return value
+
+          def diagnostics(path):
+              out = set()
               for raw in Path(path).read_text().splitlines():
-                  try: obj=json.loads(raw)
-                  except json.JSONDecodeError: continue
-                  if obj.get('reason')!='compiler-message': continue
-                  m=obj.get('message') or {}
-                  if m.get('level') not in {'warning','error'}: continue
-                  spans=m.get('spans') or []
-                  p=next((s for s in spans if s.get('is_primary')), spans[0] if spans else {})
-                  f=str(p.get('file_name') or '')
-                  if '/ores-stack/' in f: f=f.split('/ores-stack/',1)[1]
-                  if '/ores-stack-base/' in f: f=f.split('/ores-stack-base/',1)[1]
-                  code=(m.get('code') or {}).get('code') or ''
-                  out.add((m.get('level') or '',code,f,m.get('message') or ''))
+                  try:
+                      obj = json.loads(raw)
+                  except json.JSONDecodeError:
+                      continue
+                  if obj.get('reason') != 'compiler-message':
+                      continue
+                  msg = obj.get('message') or {}
+                  if msg.get('level') not in {'warning', 'error'}:
+                      continue
+                  spans = msg.get('spans') or []
+                  primary = next((s for s in spans if s.get('is_primary')), spans[0] if spans else {})
+                  filename = normalize_file(primary.get('file_name'))
+                  code = (msg.get('code') or {}).get('code') or ''
+                  rendered = (msg.get('message') or '').strip()
+                  out.add((msg.get('level') or '', code, filename, rendered))
               return out
-          base,head=read('/tmp/base.jsonl'),read('/tmp/head.jsonl')
-          owned_findings=sorted(x for x in head if x[2] in owned)
-          new_findings=sorted(head-base)
-          for label,items in [('owned-file Clippy findings',owned_findings),('new Clippy findings versus base',new_findings)]:
+
+          base = diagnostics('/tmp/base.jsonl')
+          head = diagnostics('/tmp/head.jsonl')
+          head_rc = int(os.environ['HEAD_CLIPPY_RC'])
+          base_rc = int(os.environ['BASE_CLIPPY_RC'])
+          owned_findings = sorted(d for d in head if d[2] in owned)
+          new_findings = sorted(head - base)
+
+          print(f'Clippy exit codes: base={base_rc} head={head_rc}')
+          print(f'Clippy diagnostics: base={len(base)} head={len(head)}')
+          for label, items in (
+              ('owned-file Clippy findings', owned_findings),
+              ('new Clippy findings versus base', new_findings),
+          ):
               if items:
-                  print(label+':')
-                  for item in items: print(item)
-          if owned_findings or new_findings: raise SystemExit(1)
-          print(f'PASS: zero new Clippy diagnostics; inherited baseline={len(base)}')
+                  print(label + ':')
+                  for item in items:
+                      print(item)
+
+          if head_rc != 0 and base_rc == 0:
+              print('FAIL: head Clippy failed while base Clippy passed')
+              raise SystemExit(1)
+          if owned_findings or new_findings:
+              raise SystemExit(1)
+          print('PASS: head introduces zero Clippy diagnostics beyond current main')
           PY
       - name: Verify fluent terminal contract
         shell: bash
