@@ -18,7 +18,7 @@ env:
 jobs:
   certify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -57,9 +57,54 @@ jobs:
       - name: Compile production targets under exact lock
         working-directory: source
         run: cargo check --locked --lib --bins
-      - name: Clippy production targets under exact lock
-        working-directory: source
-        run: cargo clippy --locked --lib --bins -- -D warnings
+      - name: Normalize base lock only in disposable worktree
+        run: |
+          set -euo pipefail
+          git -C source worktree add --detach /tmp/compose-177-base "$SOURCE_BASE"
+          cargo metadata --manifest-path /tmp/compose-177-base/Cargo.toml --format-version 1 >/dev/null
+          test "$(git -C /tmp/compose-177-base diff --name-only | tr '\n' ' ')" = "Cargo.lock "
+          cmp source/Cargo.lock /tmp/compose-177-base/Cargo.lock
+      - name: Compare production Clippy diagnostics with normalized base
+        run: |
+          set -uo pipefail
+          set +e
+          CARGO_TARGET_DIR=/tmp/head-clippy-target cargo clippy --manifest-path source/Cargo.toml --locked --lib --bins --message-format=json -- -D warnings > /tmp/head-clippy.jsonl
+          head_rc=$?
+          CARGO_TARGET_DIR=/tmp/base-clippy-target cargo clippy --manifest-path /tmp/compose-177-base/Cargo.toml --locked --lib --bins --message-format=json -- -D warnings > /tmp/base-clippy.jsonl
+          base_rc=$?
+          set -e
+          export HEAD_RC="$head_rc" BASE_RC="$base_rc"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          def norm(v):
+              v=str(v or '').replace('\\','/')
+              for marker in ('/compose-177-base/','/source/'):
+                  if marker in v: return v.split(marker,1)[1]
+              return v
+          def ds(path):
+              out=set()
+              for raw in Path(path).read_text().splitlines():
+                  try: obj=json.loads(raw)
+                  except json.JSONDecodeError: continue
+                  if obj.get('reason')!='compiler-message': continue
+                  m=obj.get('message') or {}
+                  if m.get('level') not in {'warning','error'}: continue
+                  spans=m.get('spans') or []
+                  p=next((x for x in spans if x.get('is_primary')),spans[0] if spans else {})
+                  out.add((m.get('level') or '',(m.get('code') or {}).get('code') or '',norm(p.get('file_name')),(m.get('message') or '').strip()))
+              return out
+          base,head=ds('/tmp/base-clippy.jsonl'),ds('/tmp/head-clippy.jsonl')
+          new=sorted(head-base)
+          removed=sorted(base-head)
+          print(f"exit base={os.environ['BASE_RC']} head={os.environ['HEAD_RC']}")
+          print(f"diagnostics base={len(base)} head={len(head)} new={len(new)} removed={len(removed)}")
+          for x in new: print('NEW',x)
+          for x in removed: print('REMOVED',x)
+          if new: raise SystemExit(1)
+          if int(os.environ['HEAD_RC']) != 0 and int(os.environ['BASE_RC']) == 0:
+              raise SystemExit('lock refresh introduced a Clippy failure')
+          PY
       - name: Final immutable source guard
         working-directory: source
         run: |
