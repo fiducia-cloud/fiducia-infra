@@ -14,11 +14,19 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
+      - name: Require private source credential
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          test -n "$ORE_SOURCE_PAT" || { echo 'ORE_SOURCE_PAT is required' >&2; exit 1; }
+
       - name: Check out exact ores-compose head
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: ORESoftware/ores-compose
           ref: c261240732383b45b22b18b9c2db3dd6143325b5
+          token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
 
       - name: Install Rust 1.88
