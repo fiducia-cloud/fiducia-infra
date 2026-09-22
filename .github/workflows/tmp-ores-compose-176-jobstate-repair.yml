@@ -50,7 +50,8 @@ jobs:
           assert s.count(old) == 1, 'expected queue import shape not found exactly once'
           p.write_text(s.replace(old, new))
           PY
-          cargo fmt --all
+          rustfmt src/machine.rs
+          git diff --name-only
           test "$(git diff --name-only)" = "src/machine.rs"
           git diff --check
 
