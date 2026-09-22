@@ -1,0 +1,66 @@
+name: tmp ores-stack 275 rustfmt artifact
+
+on:
+  push:
+    branches:
+      - test/ores-stack-275-parallel-rpc-cert-20260922
+
+permissions:
+  contents: read
+
+env:
+  STACK_HEAD: e7495168f0bee4eb396d5c9a6922925ba57adf56
+
+jobs:
+  rustfmt-patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Configure authenticated source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact ores-stack head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --depth=1 origin "$STACK_HEAD"
+          git -C ores-stack checkout --detach FETCH_HEAD
+          test "$(git -C ores-stack rev-parse HEAD)" = "$STACK_HEAD"
+          test -z "$(git -C ores-stack status --porcelain)"
+
+      - name: Install rustfmt
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt
+
+      - name: Produce formatter patch
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          git diff --binary > /tmp/ores-stack-275-rustfmt.patch
+          git diff --name-only > /tmp/ores-stack-275-rustfmt-files.txt
+          test -s /tmp/ores-stack-275-rustfmt.patch
+          cat /tmp/ores-stack-275-rustfmt-files.txt
+
+      - name: Upload formatter patch
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ores-stack-275-rustfmt-patch
+          path: |
+            /tmp/ores-stack-275-rustfmt.patch
+            /tmp/ores-stack-275-rustfmt-files.txt
+          if-no-files-found: error
