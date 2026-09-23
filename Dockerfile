@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # GitOps manifest render/check image.
 # Node major must match .nvmrc and .github/workflows/ci.yml (22).
-FROM node:26.8.1-bookworm-slim@sha256:367679cf9792759492a486e4aa4b421764d71a9546a6dae8aab81a99eb797b3e
+FROM node:26.9.0-bookworm-slim@sha256:582460f614631b59b824ac6020533b9bf339c7fdf3a6d7db31abb6b4065f0212
 WORKDIR /app
 COPY package.json package-lock.json topology.toml ./
 COPY tools tools
