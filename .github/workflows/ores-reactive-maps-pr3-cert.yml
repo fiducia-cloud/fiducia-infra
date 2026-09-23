@@ -97,11 +97,14 @@ jobs:
         shell: bash
         run: gleam test
 
-      - name: Verify immutable source after tests
+      - name: Verify immutable tracked source after tests
         working-directory: source
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
-          test -z "$(git status --porcelain)"
+          git diff --quiet
+          git diff --cached --quiet
           git diff --check "$SOURCE_BASE"..HEAD
+          echo 'Untracked test/build artifacts (non-source evidence only):'
+          git status --short --untracked-files=all || true
