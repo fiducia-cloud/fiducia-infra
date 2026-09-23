@@ -1,0 +1,280 @@
+name: ores-stack system-policy YAML migration
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-stack-system-policy-yaml-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_BASE: d46c07e0f91c2dbda9b2fee64bdd82f6d52fc1ef
+  SOURCE_BRANCH: feat/system-policy-yaml-20260922
+
+jobs:
+  migrate-certify-publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Require funded cross-org source authority
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+
+      - name: Check out exact clean source branch
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth="url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf=https://github.com/"
+          git -c "$auth" clone --no-tags --branch "$SOURCE_BRANCH" https://github.com/ORESoftware/ores-stack.git ores-stack
+          test "$(git -C ores-stack rev-parse HEAD)" = "$SOURCE_BASE"
+          remote_main="$(git -C ores-stack -c "$auth" ls-remote origin refs/heads/main | awk '{print $1}')"
+          remote_branch="$(git -C ores-stack -c "$auth" ls-remote origin "refs/heads/$SOURCE_BRANCH" | awk '{print $1}')"
+          test "$remote_main" = "$SOURCE_BASE"
+          test "$remote_branch" = "$SOURCE_BASE"
+          test -z "$(git -C ores-stack status --porcelain)"
+
+      - name: Apply atomic YAML migration
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          def read(path):
+              return Path(path).read_text()
+          def write(path, text):
+              Path(path).write_text(text)
+          def replace(path, old, new, count=None):
+              text = read(path)
+              actual = text.count(old)
+              if count is not None and actual != count:
+                  raise SystemExit(f"{path}: expected {count} occurrences of {old!r}, found {actual}")
+              if actual == 0:
+                  raise SystemExit(f"{path}: missing expected text {old!r}")
+              write(path, text.replace(old, new))
+
+          yaml_policy = '''schema_version: ores.stack.system.v1
+          owner: ORESoftware
+          default_branch: main
+          repositories:
+            web_server: "{prefix}-web-server.rs"
+            api_server: "{prefix}-api-server.rs"
+            lambdas: "{prefix}-lambdas"
+            infra: "{prefix}-infra"
+            monorepo: "{prefix}-monorepo"
+          templates:
+            web_server:
+              repository: "https://github.com/ORESoftware/ores-web-server.template.rs.git"
+              commit: "e63123e9d16d426198ea0b77c362c77688c8314f"
+            api_server:
+              repository: "https://github.com/ORESoftware/ores-api-server.template.rs.git"
+              commit: "29ef90a2ddefc943b6632d61ca2a10ece330305a"
+            lambdas:
+              repository: "https://github.com/ORESoftware/ores-lambdas-template.git"
+              commit: "f9194e4d61c102f41e970c813e31e27ae1b192aa"
+          dev:
+            compose_file: ".ores-compose.yaml"
+            compose_program: ores-compose
+            local_workspace_env: ORES_COMPOSE_LOCAL_WORKSPACE_ROOT
+          '''
+
+          cli = 'crates/ores-stack-cli/src/stack_cli_hardened.rs'
+          text = read(cli)
+          text = text.replace('.github/.ores-stack.toml', '.github/.ores-stack.yaml')
+          text = text.replace('root.join(".ores-stack.toml")', 'root.join(".ores-stack.yaml")')
+          text = text.replace('root.join(".ores-stack.toml")', 'root.join(".ores-stack.yaml")')
+          text = text.replace('let config_path = root.join(".ores-stack.toml");', 'let config_path = root.join(".ores-stack.yaml");')
+          text = text.replace('let policy: Self = toml::from_str(&text)', 'let policy: Self = serde_yaml::from_str(&text)')
+          text = text.replace('let policy: SystemPolicy = toml::from_str(POLICY).expect("parse policy");', 'let policy: SystemPolicy = serde_yaml::from_str(POLICY).expect("parse policy");')
+          text = text.replace('assert!(toml::from_str::<SystemPolicy>(&missing).is_err());', 'assert!(serde_yaml::from_str::<SystemPolicy>(&missing).is_err());')
+          text = text.replace('let parsed: SystemPolicy = toml::from_str(&wrong).expect("syntax");', 'let parsed: SystemPolicy = serde_yaml::from_str(&wrong).expect("syntax");')
+          text = text.replace('"local_workspace_env = \\"ORES_COMPOSE_LOCAL_WORKSPACE_ROOT\\"\\n",', '"  local_workspace_env: ORES_COMPOSE_LOCAL_WORKSPACE_ROOT\\n",')
+
+          policy_pat = re.compile(r'    const POLICY: &str = r#".*?"#;', re.S)
+          text, n = policy_pat.subn('    const POLICY: &str = r#"\\n' + yaml_policy.rstrip() + '\\n"#;', text, count=1)
+          if n != 1:
+              raise SystemExit(f'{cli}: could not replace test policy constant')
+
+          role_pat = re.compile(r'fn render_role_config\(prefix: &str, role: &str, names: &StackNames\) -> String \{.*?\n\}\n\nfn write_monorepo_files', re.S)
+          role_fn = '''fn render_role_config(prefix: &str, role: &str, names: &StackNames) -> String {
+              format!(
+                  "{GENERATED_CONFIG_HEADER}# stack_prefix = \\\"{prefix}\\\"\\n# stack_role = \\\"{role}\\\"\\n# canonical_system_policy = \\\"../.github/.ores-stack.yaml\\\"\\n# web_server_repo = \\\"{}\\\"\\n# api_server_repo = \\\"{}\\\"\\n# lambdas_repo = \\\"{}\\\"\\n# infra_repo = \\\"{}\\\"\\n# monorepo_repo = \\\"{}\\\"\\nschema_version: ores.stack.v2\\nproject:\\n  version: 1\\n",
+                  names.web_server, names.api_server, names.lambdas, names.infra, names.monorepo
+              )
+          }
+
+          fn write_monorepo_files'''
+          text, n = role_pat.subn(role_fn, text, count=1)
+          if n != 1:
+              raise SystemExit(f'{cli}: could not replace render_role_config')
+          text = text.replace('assert!(config.ends_with("version = 1\\n"));', 'assert!(config.ends_with("project:\\n  version: 1\\n"));\\n        assert!(config.contains("schema_version: ores.stack.v2"));')
+          write(cli, text)
+
+          test = 'crates/ores-stack-cli/tests/create_stack_cli.rs'
+          text = read(test)
+          text, n = re.subn(r'const POLICY: &str = r#".*?"#;', 'const POLICY: &str = r#"' + yaml_policy.rstrip() + '\\n"#;', text, count=1, flags=re.S)
+          if n != 1:
+              raise SystemExit(f'{test}: could not replace policy constant')
+          text = text.replace('policy.toml', 'policy.yaml')
+          write(test, text)
+
+          for path in [
+              'crates/ores-stack-cli/src/stack_post_create.rs',
+              'crates/ores-stack-cli/src/stack_post_verify.rs',
+          ]:
+              text = read(path)
+              text = text.replace('.github/.ores-stack.toml', '.github/.ores-stack.yaml')
+              text = text.replace('toml::from_str(&text)', 'serde_yaml::from_str(&text)')
+              text = text.replace('.ores-stack.toml', '.ores-stack.yaml')
+              write(path, text)
+
+          dev = 'crates/ores-stack-cli/src/stack_dev_hardened.rs'
+          text = read(dev).replace('.github/.ores-stack.toml', '.github/.ores-stack.yaml').replace('.ores-stack.toml', '.ores-stack.yaml')
+          write(dev, text)
+
+          # Public fixtures already use canonical YAML; migrate the source-side negative controls.
+          wf = '.github/workflows/test-org-certification.yml'
+          text = read(wf).replace('.ores-stack.toml', '.ores-stack.yaml').replace('/tmp/ores-stack-good.toml', '/tmp/ores-stack-good.yaml')
+          text = text.replace('''          version = 1
+                    out_dir = "../escape"''', '''          schema_version: ores.stack.v2
+                    project:
+                      version: 1
+                      out_dir: ../escape''')
+          text = text.replace('''          version = 1
+                    [dev]
+                    reload_bind = "0.0.0.0:35729"''', '''          schema_version: ores.stack.v2
+                    project:
+                      version: 1
+                      dev:
+                        reload_bind: "0.0.0.0:35729"''')
+          text = text.replace('''          version = 1
+                    out_dir = "generated"''', '''          schema_version: ores.stack.v2
+                    project:
+                      version: 1
+                      out_dir: generated''')
+          write(wf, text)
+
+          simple_paths = [
+              'README.md',
+              'docs/create-stack.md',
+              'docs/local-stack-validation.md',
+              'docs/local-generated-stack-validation.md',
+              'scripts/local-generated-stack-smoke.sh',
+          ]
+          for path in simple_paths:
+              text = read(path).replace('.github/.ores-stack.toml', '.github/.ores-stack.yaml').replace('.ores-stack.toml', '.ores-stack.yaml')
+              if path == 'docs/create-stack.md':
+                  text = text.replace('typed TOML', 'typed YAML')
+              write(path, text)
+
+          authority = 'docs/ores-stack-yaml-authority.md'
+          text = read(authority)
+          old = 'The organization policy is migrating separately from `.github/.ores-stack.toml` to `.github/.ores-stack.yaml`, while retaining the independently versioned `ores.stack.system.v1` schema. Generated repositories must reference the YAML policy and must themselves contain `.ores-stack.yaml`, never `.ores-stack.toml`.'
+          new = 'The canonical organization policy is `.github/.ores-stack.yaml`, using the independently versioned `ores.stack.system.v1` schema. Generated repositories reference that YAML policy and themselves contain `.ores-stack.yaml`; TOML is legacy input and is not a second authority.'
+          if old not in text:
+              raise SystemExit(f'{authority}: migration paragraph drifted')
+          write(authority, text.replace(old, new))
+
+          web = 'crates/ores-stack-core/src/web.rs'
+          text = read(web).replace('existing `.ores-stack.toml` v1 schema', 'strict `.ores-stack.yaml` v2 project schema')
+          write(web, text)
+          PY
+
+          # The only remaining TOML stack-config mentions must be explicit legacy rejection evidence.
+          python3 - <<'PY'
+          from pathlib import Path
+          allowed = {
+              'crates/ores-stack-core/src/config.rs',
+              'crates/ores-stack-cli/tests/infra_cross_check_yaml.rs',
+          }
+          bad = []
+          for p in Path('.').rglob('*'):
+              if not p.is_file() or '.git' in p.parts or 'target' in p.parts:
+                  continue
+              try:
+                  text = p.read_text()
+              except UnicodeDecodeError:
+                  continue
+              if '.ores-stack.toml' in text and p.as_posix() not in allowed:
+                  bad.append(p.as_posix())
+          if bad:
+              raise SystemExit('unexpected legacy .ores-stack.toml references: ' + ', '.join(sorted(bad)))
+          PY
+
+      - name: Install and pin Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt
+
+      - name: Compile and run focused migration tests
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          bash scripts/bootstrap-cargo-lock.sh ensure
+          cargo metadata --locked --format-version 1 --no-deps >/dev/null
+          cargo check --locked -p ores-stack-cli --all-targets
+          cargo test --locked -p ores-stack-cli generated_role_config_stays_valid_for_existing_stack_config_loader
+          cargo test --locked -p ores-stack-cli typed_policy_requires_the_reserved_local_workspace_field
+          cargo test --locked -p ores-stack-cli --test create_stack_cli
+          cargo test --locked -p ores-stack-cli --test infra_cross_check_yaml
+          git diff --check "$SOURCE_BASE"..HEAD || true
+
+      - name: Audit candidate diff and source immutability
+        working-directory: ores-stack
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth="url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf=https://github.com/"
+          remote_main="$(git -c "$auth" ls-remote origin refs/heads/main | awk '{print $1}')"
+          remote_branch="$(git -c "$auth" ls-remote origin "refs/heads/$SOURCE_BRANCH" | awk '{print $1}')"
+          test "$remote_main" = "$SOURCE_BASE"
+          test "$remote_branch" = "$SOURCE_BASE"
+          git diff --check
+          changed="$(git diff --name-only | sort)"
+          printf '%s\n' "$changed"
+          test -n "$changed"
+          test -z "$(git diff --name-only | grep '^Cargo.lock$' || true)"
+          git diff -- crates/ores-stack-cli/src/stack_cli_hardened.rs crates/ores-stack-cli/tests/create_stack_cli.rs
+
+      - name: Publish certified source branch
+        working-directory: ores-stack
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth="url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf=https://github.com/"
+          git config user.name ORESoftware
+          git config user.email alex@oresoftware.com
+          git add README.md docs scripts crates .github/workflows/test-org-certification.yml
+          git commit -m 'feat(config): finish system-policy YAML migration' -m 'Move create-stack system policy, generated role configs, post-create verification, generated-infra dev admission, tests, docs, and test-org certification onto the canonical YAML authority. Preserve TOML only as explicit rejected legacy input.'
+          candidate="$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD^)" = "$SOURCE_BASE"
+          test "$(git -c "$auth" ls-remote origin refs/heads/main | awk '{print $1}')" = "$SOURCE_BASE"
+          test "$(git -c "$auth" ls-remote origin "refs/heads/$SOURCE_BRANCH" | awk '{print $1}')" = "$SOURCE_BASE"
+          git -c "$auth" push origin "HEAD:refs/heads/$SOURCE_BRANCH"
+          test "$(git -c "$auth" ls-remote origin "refs/heads/$SOURCE_BRANCH" | awk '{print $1}')" = "$candidate"
+          echo "ORES_STACK_SYSTEM_POLICY_YAML_PASS $candidate"
