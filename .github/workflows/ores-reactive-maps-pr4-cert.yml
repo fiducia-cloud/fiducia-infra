@@ -1,0 +1,96 @@
+name: certify ores-reactive-maps PR 4
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-reactive-maps-pr4-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_REPO: ORESoftware/ores-reactive-maps
+  SOURCE_PR: '4'
+  SOURCE_HEAD: 774e46b3791dfe9911339df361b94f685dc4ae2f
+  SOURCE_BASE: 5a2a9fd797af7caabda73ce4d99372d70bdc2cd9
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Configure authenticated source access
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch immutable source PR head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init source
+          git -C source remote add origin "https://github.com/${SOURCE_REPO}.git"
+          git -C source fetch --no-tags origin "+refs/pull/${SOURCE_PR}/head:refs/remotes/origin/pr-${SOURCE_PR}-head" "$SOURCE_BASE"
+          actual_head="$(git -C source rev-parse "refs/remotes/origin/pr-${SOURCE_PR}-head")"
+          test "$actual_head" = "$SOURCE_HEAD"
+          git -C source checkout --detach "$SOURCE_HEAD"
+          actual_base="$(git -C source merge-base HEAD "$SOURCE_BASE")"
+          test "$actual_base" = "$SOURCE_BASE"
+          changed="$(git -C source diff --name-only "$SOURCE_BASE"..HEAD | sort | tr '\n' ' ')"
+          test "$changed" = 'CONFORMANCE.md '
+          git -C source diff --check "$SOURCE_BASE"..HEAD
+          test -z "$(git -C source status --porcelain)"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+          cache-dependency-path: source/src/go/go.mod
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '27.3'
+          gleam-version: '1.15.4'
+          rebar3-version: '3'
+
+      - name: TypeScript regression gate
+        working-directory: source/src/typescript
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --ignore-scripts
+          npm test
+          npm run build
+      - name: Go regression gate
+        working-directory: source/src/go
+        run: go test -race ./...
+      - name: Rust regression gate
+        working-directory: source/src/rust
+        run: cargo test --all-targets
+      - name: Gleam regression gate
+        working-directory: source/src/gleam
+        run: gleam test
+
+      - name: Verify immutable tracked source after tests
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
+          git diff --quiet
+          git diff --cached --quiet
+          git diff --check "$SOURCE_BASE"..HEAD
+          git status --short --untracked-files=all || true
