@@ -1,0 +1,106 @@
+name: ores-compose-154 exact-head certification
+
+on:
+  push:
+    branches: [ci/ores-compose-154-da06]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_SHA: da06fc34404ac6b3e42590d6cdfc5ab55cfea59f
+  SOURCE_BRANCH: feat/service-environment-isolation
+  TJSV_SHA: db0f1e66b2a65cad43c909aa558ae00c6a91578c
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+
+jobs:
+  rust:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: source
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Assert exact source and configure private dependencies
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test "$(git -C source rev-parse HEAD)" = "$SOURCE_SHA"
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Install reviewed Rust
+        run: |
+          rustup toolchain install 1.98.1 --profile minimal --component rustfmt,clippy
+          rustup default 1.98.1
+          rustc --version | grep -F 'rustc 1.98.1'
+      - name: Format
+        working-directory: source
+        run: cargo fmt --all --check
+      - name: Clippy all targets/features
+        working-directory: source
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Test all targets/features
+        working-directory: source
+        run: cargo test --all-targets --all-features
+      - name: Prove checkout stayed immutable
+        working-directory: source
+        run: test -z "$(git status --porcelain)"
+
+  contract-parity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: source
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/checkout@v4
+        with:
+          repository: ORESoftware/typespec-json-schema-validator
+          ref: ${{ env.TJSV_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: tjsv
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.9.0'
+      - name: Assert exact immutable authorities
+        run: |
+          set -euo pipefail
+          test "$(git -C source rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(git -C tjsv rev-parse HEAD)" = "$TJSV_SHA"
+      - name: Install pinned validator outside source checkout
+        run: |
+          set -euo pipefail
+          mkdir runner
+          cd runner
+          npm init -y >/dev/null
+          npm install --ignore-scripts --no-audit --no-fund ../tjsv
+      - name: Compare independent TypeSpec and JSON Schema authorities
+        run: |
+          set -euo pipefail
+          mkdir -p runner/out
+          runner/node_modules/.bin/tjsv check \
+            --typespec=source/contracts/typespec/main.tsp \
+            --schema=source/contracts/json-schema/contract.schema.json \
+            --instances=source/contracts/instances \
+            --report=runner/out/compose-contract-parity.json \
+            --quiet
+      - name: Prove both source checkouts stayed immutable
+        run: |
+          set -euo pipefail
+          test -z "$(git -C source status --porcelain)"
+          test -z "$(git -C tjsv status --porcelain)"
