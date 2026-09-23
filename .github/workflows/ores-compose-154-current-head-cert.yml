@@ -63,13 +63,15 @@ jobs:
           rustup component add rustfmt clippy
           rustc --version | grep -F 'rustc 1.98.1'
 
-      - name: Format exact changed Rust surface and locked metadata
+      - name: Format exact changed Rust surface
         working-directory: ores-compose
         shell: bash
-        run: |
-          set -euo pipefail
-          rustfmt --edition 2021 --check src/config_loader.rs src/local_up_process.rs src/service_environment.rs
-          cargo metadata --locked --format-version 1 --no-deps >/dev/null
+        run: rustfmt --edition 2021 --check src/config_loader.rs src/local_up_process.rs src/service_environment.rs
+
+      - name: Verify locked metadata
+        working-directory: ores-compose
+        shell: bash
+        run: cargo metadata --locked --format-version 1 --no-deps >/dev/null
 
       - name: Locked all-target all-feature compile
         working-directory: ores-compose
