@@ -1,0 +1,172 @@
+name: certify ores-compose 154 exact head
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/cert-ores-compose-154-exact-head-20260923.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_REPO: ORESoftware/ores-compose
+  SOURCE_BRANCH: feat/service-environment-isolation
+  SOURCE_SHA: 14b10f64ef6e77430ce60fc8a2df9f5bea41ccbf
+  SOURCE_MAIN_SHA: fb6d0b2aeb7d87c598e006bed050162b55e0c9f0
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Configure authenticated source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch immutable compose base and candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init source
+          git -C source remote add origin "https://github.com/$SOURCE_REPO.git"
+          git -C source fetch --depth=80 origin main "$SOURCE_BRANCH"
+          test "$(git -C source rev-parse origin/main)" = "$SOURCE_MAIN_SHA"
+          test "$(git -C source rev-parse origin/$SOURCE_BRANCH)" = "$SOURCE_SHA"
+          git -C source checkout --detach "$SOURCE_SHA"
+          test "$(git -C source merge-base HEAD "$SOURCE_MAIN_SHA")" = "$SOURCE_MAIN_SHA"
+          git -C source diff --check "$SOURCE_MAIN_SHA" "$SOURCE_SHA"
+          mapfile -t changed < <(git -C source diff --name-only "$SOURCE_MAIN_SHA" "$SOURCE_SHA" | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" -eq 6
+          test "${changed[0]}" = "contracts/json-schema/contract.schema.json"
+          test "${changed[1]}" = "contracts/typespec/main.tsp"
+          test "${changed[2]}" = "src/config_loader.rs"
+          test "${changed[3]}" = "src/local_up_process.rs"
+          test "${changed[4]}" = "src/service_environment.rs"
+          test "${changed[5]}" = "src/up_orchestrator.rs"
+          git -C source worktree add --detach ../source-main "$SOURCE_MAIN_SHA"
+
+      - name: Install reviewed Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.98.1 --profile minimal --component rustfmt,clippy --no-self-update
+          rustup default 1.98.1
+          rustc --version | grep -F 'rustc 1.98.1'
+
+      - name: Exact PR-delta formatting gate
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2021 --config skip_children=true --check \
+            src/config_loader.rs \
+            src/local_up_process.rs \
+            src/service_environment.rs \
+            src/up_orchestrator.rs
+
+      - name: Candidate Rust compile gate
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --all-targets --all-features
+
+      - name: Candidate Rust test gate
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --all-targets --all-features
+
+      - name: Differential strict Clippy gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          extract_diagnostics() {
+            jq -r '
+              select(.reason == "compiler-message")
+              | select(.message.level == "error" or .message.level == "warning")
+              | .message as $m
+              | ($m.spans | map(select(.is_primary == true)) | .[0].file_name // "<unknown>") as $file
+              | (($m.code.code // "no-code") + "\t" + $file + "\t" + $m.message)
+            ' "$1" | sort -u
+          }
+
+          run_clippy() {
+            local dir="$1"
+            local out="$2"
+            set +e
+            (cd "$dir" && cargo clippy --all-targets --all-features --message-format=json -- -D warnings) >"$out" 2>"${out}.stderr"
+            local status=$?
+            set -e
+            echo "clippy status for $dir: $status"
+          }
+
+          run_clippy source-main "$RUNNER_TEMP/main-clippy.jsonl"
+          run_clippy source "$RUNNER_TEMP/candidate-clippy.jsonl"
+          extract_diagnostics "$RUNNER_TEMP/main-clippy.jsonl" >"$RUNNER_TEMP/main-diags.txt"
+          extract_diagnostics "$RUNNER_TEMP/candidate-clippy.jsonl" >"$RUNNER_TEMP/candidate-diags.txt"
+          comm -13 "$RUNNER_TEMP/main-diags.txt" "$RUNNER_TEMP/candidate-diags.txt" >"$RUNNER_TEMP/new-diags.txt"
+          echo 'New candidate diagnostics versus exact main:'
+          cat "$RUNNER_TEMP/new-diags.txt"
+
+          candidate_owned='^(src/config_loader\.rs|src/local_up_process\.rs|src/service_environment\.rs|src/up_orchestrator\.rs)$'
+          if awk -F '\t' -v re="$candidate_owned" '$2 ~ re { print; found=1 } END { exit found ? 0 : 1 }' "$RUNNER_TEMP/new-diags.txt"; then
+            echo 'candidate-owned strict Clippy regression detected' >&2
+            exit 1
+          fi
+          echo 'No new strict-Clippy diagnostics in PR-owned Rust files relative to exact main.'
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22.9.0'
+          package-manager-cache: false
+
+      - name: Exact compose contract parity gate
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p target
+          npx --yes \
+            --package=https://github.com/ORESoftware/typespec-json-schema-validator/archive/db0f1e66b2a65cad43c909aa558ae00c6a91578c.tar.gz \
+            tjsv check \
+            --typespec=contracts/typespec/main.tsp \
+            --schema=contracts/json-schema/contract.schema.json \
+            --instances=contracts/instances \
+            --report=target/compose-contract-parity.json \
+            --quiet
+
+      - name: Assert environment-isolation execution surface
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(grep -Fc '.env_clear()' src/local_up_process.rs)" -ge 3
+          grep -F 'build_service_and_healthcheck_clear_ambient_environment' src/local_up_process.rs
+          grep -F 'parse_compose_service_environment_policies(&input, &project)' src/up_orchestrator.rs
+          grep -F 'let build_environments = admit_service_environments' src/up_orchestrator.rs
+          grep -F 'build_environments,' src/up_orchestrator.rs
+
+      - name: Final immutable source guard
+        working-directory: source
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=no)"
+          echo ORES_COMPOSE_154_EXACT_HEAD_PASS
