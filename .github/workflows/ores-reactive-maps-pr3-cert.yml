@@ -1,0 +1,107 @@
+name: certify ores-reactive-maps PR 3
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-reactive-maps-pr3-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_REPO: ORESoftware/ores-reactive-maps
+  SOURCE_PR: '3'
+  SOURCE_HEAD: 4cc5e4c2c8edda6ef2173be7f2929ed23d3308f4
+  SOURCE_BASE: 4ecb8aeb020b10ddd49c76e5085cd537c8fa756b
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Configure authenticated source access
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch immutable source PR head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init source
+          git -C source remote add origin "https://github.com/${SOURCE_REPO}.git"
+          git -C source fetch --no-tags origin "+refs/pull/${SOURCE_PR}/head:refs/remotes/origin/pr-${SOURCE_PR}-head" "$SOURCE_BASE"
+          actual_head="$(git -C source rev-parse "refs/remotes/origin/pr-${SOURCE_PR}-head")"
+          printf 'expected PR head: %s\nactual PR head:   %s\n' "$SOURCE_HEAD" "$actual_head"
+          test "$actual_head" = "$SOURCE_HEAD"
+          git -C source checkout --detach "$SOURCE_HEAD"
+          actual_base="$(git -C source merge-base HEAD "$SOURCE_BASE")"
+          printf 'expected base: %s\nactual base:   %s\n' "$SOURCE_BASE" "$actual_base"
+          test "$actual_base" = "$SOURCE_BASE"
+          changed="$(git -C source diff --name-only "$SOURCE_BASE"..HEAD | sort | tr '\n' ' ')"
+          expected='src/typescript/package.json src/typescript/src/index.ts src/typescript/test/index.test.ts src/typescript/test/types.ts src/typescript/tsconfig.test.json '
+          printf 'changed files: %s\n' "$changed"
+          test "$changed" = "$expected"
+          git -C source diff --check "$SOURCE_BASE"..HEAD
+          test -z "$(git -C source status --porcelain)"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+          cache-dependency-path: source/src/go/go.mod
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '27.3'
+          gleam-version: '1.15.4'
+          rebar3-version: '3'
+
+      - name: TypeScript exact-head gate
+        working-directory: source/src/typescript
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --ignore-scripts
+          npm test
+          npm run build
+
+      - name: Go regression gate
+        working-directory: source/src/go
+        shell: bash
+        run: go test -race ./...
+
+      - name: Rust regression gate
+        working-directory: source/src/rust
+        shell: bash
+        run: cargo test --all-targets
+
+      - name: Gleam regression gate
+        working-directory: source/src/gleam
+        shell: bash
+        run: gleam test
+
+      - name: Verify immutable source after tests
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
+          test -z "$(git status --porcelain)"
+          git diff --check "$SOURCE_BASE"..HEAD
