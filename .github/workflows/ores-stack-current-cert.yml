@@ -1,0 +1,91 @@
+name: ores-stack current exact-head certification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-stack-current-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ppr-http-214
+            sha: '55cd3a6adaf840561c8ff50059bfd606d5398171'
+            mode: ppr-http
+          - name: graphql-sync-212
+            sha: '88daef5fe650653e4172f5d0dd4b98c2f79b0903'
+            mode: graphql-sync
+    name: ${{ matrix.name }}
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Configure authenticated GitHub source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact ores-stack head
+        shell: bash
+        env:
+          ORES_STACK_SHA: ${{ matrix.sha }}
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --depth=1 origin "$ORES_STACK_SHA"
+          git -C ores-stack checkout --detach FETCH_HEAD
+          test "$(git -C ores-stack rev-parse HEAD)" = "$ORES_STACK_SHA"
+
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt
+
+      - name: Bootstrap repository lock evidence
+        shell: bash
+        working-directory: ores-stack
+        run: bash scripts/bootstrap-cargo-lock.sh ensure
+
+      - name: Certify PPR HTTP framing primitive
+        if: matrix.mode == 'ppr-http'
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2024 --check crates/ores-stack-ppr-http/src/lib.rs crates/ores-stack-ppr-http/src/lib_strict.rs
+          cargo check --locked -p ores-stack-ppr-http --all-targets
+          cargo test --locked -p ores-stack-ppr-http -- --nocapture
+          git diff --check
+
+      - name: Certify GraphQL sync generator
+        if: matrix.mode == 'graphql-sync'
+        shell: bash
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2024 --check crates/ores-stack-cli/src/rpc_cli.rs crates/ores-stack-cli/src/rpc_cli/graphql_codegen.rs
+          cargo check --locked -p ores-stack-cli --all-targets
+          cargo test --locked -p ores-stack-cli graphql -- --nocapture
+          git diff --check
