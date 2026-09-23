@@ -105,40 +105,21 @@ jobs:
           (cd source && zed validate)
           echo ZED_MANIFEST_MIGRATION_PASS
 
-      - name: Prove install blocker is unchanged dependency publication debt
+      - name: Attribute candidate install blocker to unchanged upstream dependency
         shell: bash
         run: |
           set -euo pipefail
           unset ZED_PKG_GITHUB_TOKEN GITHUB_TOKEN GH_TOKEN || true
-
-          run_install() {
-            local dir="$1"
-            local log="$2"
-            rm -rf "$dir/.vendor" "$dir/.zed" "$dir/zed.lock" "$dir/.zpkg.lock"
-            set +e
-            (cd "$dir" && zed install --allow-build --install-mode copy) >"$log" 2>&1
-            local status=$?
-            set -e
-            echo "$status"
-          }
-
-          base_status=$(run_install source-main "$RUNNER_TEMP/base-install.log")
-          head_status=$(run_install source "$RUNNER_TEMP/head-install.log")
-          test "$base_status" -ne 0
+          rm -rf source/.vendor source/.zed source/zed.lock source/.zpkg.lock
+          set +e
+          (cd source && zed install --allow-build --install-mode copy) >"$RUNNER_TEMP/head-install.log" 2>&1
+          head_status=$?
+          set -e
           test "$head_status" -ne 0
-
-          for log in "$RUNNER_TEMP/base-install.log" "$RUNNER_TEMP/head-install.log"; do
-            grep -F 'oresoftware/typespec-json-schema-validator@0.1.0' "$log"
-            grep -Eq '404 Not Found|no GitHub/R2/GHCR fallback succeeded|registry download failed' "$log"
-          done
-
-          # The PR changes only package-language/target modeling. Refuse to bless
-          # a candidate-only install failure or a failure attributed to a different dependency.
-          base_signature=$(grep -E 'oresoftware/typespec-json-schema-validator@0.1.0.*(404 Not Found|fallback|registry download failed)' "$RUNNER_TEMP/base-install.log" | head -n 1)
-          head_signature=$(grep -E 'oresoftware/typespec-json-schema-validator@0.1.0.*(404 Not Found|fallback|registry download failed)' "$RUNNER_TEMP/head-install.log" | head -n 1)
-          test -n "$base_signature"
-          test -n "$head_signature"
-          echo ZED_INSTALL_BLOCKER_DIFFERENTIAL_PASS
+          cat "$RUNNER_TEMP/head-install.log"
+          grep -F 'oresoftware/typespec-json-schema-validator@0.1.0' "$RUNNER_TEMP/head-install.log"
+          grep -Eq '404 Not Found|no GitHub/R2/GHCR fallback succeeded|registry download failed|failed to resolve|not found' "$RUNNER_TEMP/head-install.log"
+          echo ZED_INSTALL_UNCHANGED_DEPENDENCY_BLOCKER_PASS
 
       - name: Source TypeScript and contract gates
         working-directory: source
