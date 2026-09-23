@@ -13,7 +13,6 @@ env:
   SOURCE_REPO: ores-chat/ores-chat-interfaces
   SOURCE_BRANCH: chatgpt/current-tjsv-authorities-20260923
   SOURCE_SHA: 2e58bfd748238c355d2618670280ed8aa4c104e2
-  TJSV_SHA: 26c3b2c84ed58fd8cb110b14c917beeacb93804c
   TJSV_PACKAGE: https://github.com/ORESoftware/typespec-json-schema-validator/archive/26c3b2c84ed58fd8cb110b14c917beeacb93804c.tar.gz
 
 jobs:
@@ -43,19 +42,29 @@ jobs:
         with:
           node-version: '22'
           package-manager-cache: false
-      - name: Generic peer-authority canary
+
+      - name: Generic peer-authority action
+        uses: ORESoftware/typespec-json-schema-validator@26c3b2c84ed58fd8cb110b14c917beeacb93804c
+        with:
+          typespec: source/test/fixtures/schema-authority-canary/main.tsp
+          schema: source/test/fixtures/schema-authority-canary/authored.schema.json
+          report: source/.typespec-json-schema-validator/report.json
+          contract_ir: source/.typespec-json-schema-validator/contract-ir.json
+          output_dir: source/.typespec-json-schema-validator/generated
+          max_probes: "64"
+      - name: Canonical consumer-admission refusals
+        uses: ORESoftware/typespec-json-schema-validator/actions/test-consumer-admission@26c3b2c84ed58fd8cb110b14c917beeacb93804c
+        with:
+          contract_ir: source/.typespec-json-schema-validator/contract-ir.json
+          report: source/.typespec-json-schema-validator/report.json
+          typespec: source/test/fixtures/schema-authority-canary/main.tsp
+          schema: source/test/fixtures/schema-authority-canary/authored.schema.json
+          generated_schema: source/.typespec-json-schema-validator/generated/typespec.generated.schema.json
+          expected_declarations: '["OreSchemaAuthority.AuthorityKind","OreSchemaAuthority.PeerAuthorityRegistration"]'
+      - name: Authored canary remains untouched
         working-directory: source
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p .typespec-json-schema-validator/generated
-          npx --yes --package="$TJSV_PACKAGE" tjsv check \
-            --typespec=test/fixtures/schema-authority-canary/main.tsp \
-            --schema=test/fixtures/schema-authority-canary/authored.schema.json \
-            --report=.typespec-json-schema-validator/report.json \
-            --output-dir=.typespec-json-schema-validator/generated \
-            --max-probes=64
-          git diff --exit-code -- test/fixtures/schema-authority-canary/
+        run: git diff --exit-code -- test/fixtures/schema-authority-canary/
+
       - name: Knowledge-access positive parity
         working-directory: source
         shell: bash
@@ -112,7 +121,8 @@ jobs:
           if (!serialized.includes('KnowledgePlane') && !serialized.includes('administrator')) throw new Error('authorization-plane drift not attributable');
           NODE
           git diff --exit-code -- contracts/knowledge-access
-      - name: ORES Chat config policy
+
+      - name: ORES Chat TOML secret-default policy
         working-directory: source
         shell: bash
         run: |
@@ -129,13 +139,18 @@ jobs:
               if binding.get('secret'):
                   assert 'default' not in binding, f"secret default: {binding['name']}"
           PY
-          mkdir -p .typespec-json-schema-validator/ores-chat-config-generated
-          npx --yes --package="$TJSV_PACKAGE" tjsv check \
-            --typespec=contracts/ores-chat-config/ores-chat-config.tsp \
-            --schema=contracts/ores-chat-config/ores-chat-config.schema.json \
-            --report=.typespec-json-schema-validator/ores-chat-config-report.json \
-            --output-dir=.typespec-json-schema-validator/ores-chat-config-generated
-          git diff --exit-code -- contracts/ores-chat-config
+      - name: ORES Chat config peer-authority action
+        uses: ORESoftware/typespec-json-schema-validator@26c3b2c84ed58fd8cb110b14c917beeacb93804c
+        with:
+          typespec: source/contracts/ores-chat-config/ores-chat-config.tsp
+          schema: source/contracts/ores-chat-config/ores-chat-config.schema.json
+          report: source/.typespec-json-schema-validator/ores-chat-config-report.json
+          contract_ir: source/.typespec-json-schema-validator/ores-chat-config-ir.json
+          output_dir: source/.typespec-json-schema-validator/ores-chat-config-generated
+      - name: Authored config authorities remain untouched
+        working-directory: source
+        run: git diff --exit-code -- contracts/ores-chat-config
+
       - name: Final immutable source guard
         working-directory: source
         shell: bash
