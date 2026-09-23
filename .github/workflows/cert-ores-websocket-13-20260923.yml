@@ -15,7 +15,6 @@ env:
   SOURCE_SHA: 7e080a1e0c5f4eb7d471b4bfd59e2869f4ae6cc3
   SOURCE_MAIN_SHA: 37ff2dc38878dc6e85accb562ec5c07652853c65
   ZED_CLI_SHA: 344d432a6f94d4b1cfa02228ec36623c7484177a
-  EXPECTED_BLOCKER: oresoftware/typespec-json-schema-validator@0.1.0
 
 jobs:
   certify:
@@ -63,8 +62,8 @@ jobs:
           base = tomllib.loads(Path('source-main/.zpkg.toml').read_text())
           head = tomllib.loads(Path('source/.zpkg.toml').read_text())
           name = 'oresoftware/typespec-json-schema-validator'
-          assert base['dependencies'][name] == head['dependencies'][name], (base['dependencies'][name], head['dependencies'][name])
-          assert head['dependencies'][name] == '^0.1.0', head['dependencies'][name]
+          assert base['dependencies'][name] == head['dependencies'][name]
+          assert head['dependencies'][name] == '^0.1.0'
           PY
 
       - name: Install Rust 1.88
@@ -95,6 +94,26 @@ jobs:
           set -euo pipefail
           cargo install --git https://github.com/zed-pkg/zed-cli --rev "$ZED_CLI_SHA" --locked zed-cli
 
+      - name: Validate manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd source-main && zed validate)
+          (cd source && zed validate)
+
+      - name: Prove public GitHub fallback install
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          unset ZED_PKG_GITHUB_TOKEN || true
+          rm -rf .vendor .zed zed.lock
+          zed install --allow-build --install-mode copy
+          zed validate --require-lock
+          test -x .vendor/.zed/.bin/tjsv || test -x .zed/.bin/tjsv
+          zed run tjsv --help >/dev/null
+          echo ZED_GITHUB_FALLBACK_INSTALL_PASS
+
       - name: Source TypeScript and contract gates
         working-directory: source
         shell: bash
@@ -105,48 +124,6 @@ jobs:
           test -f node_modules/@oresoftware/f2e/clients/nodejs/build/Release/flags2env.node
           npm run check
           sh conformance/check.sh
-
-      - name: Validate base and candidate manifests
-        shell: bash
-        run: |
-          set -euo pipefail
-          (cd source-main && zed validate)
-          (cd source && zed validate)
-
-      - name: Differential zed install proof
-        shell: bash
-        run: |
-          set -uo pipefail
-          (cd source-main && unset ZED_PKG_GITHUB_TOKEN || true; zed install --allow-build --install-mode copy) >base-install.log 2>&1
-          base_status=$?
-          (cd source && unset ZED_PKG_GITHUB_TOKEN || true; zed install --allow-build --install-mode copy) >head-install.log 2>&1
-          head_status=$?
-          set -e
-          echo "base_status=$base_status head_status=$head_status"
-          cat base-install.log
-          cat head-install.log
-
-          if [ "$head_status" -eq 0 ]; then
-            (cd source && zed validate --require-lock)
-            echo ZED_INSTALL_HEAD_PASS
-            exit 0
-          fi
-
-          # The candidate may only inherit the known package-distribution blocker
-          # when the exact pinned main commit exhibits the same blocker.
-          test "$base_status" -ne 0
-          grep -F "$EXPECTED_BLOCKER" base-install.log
-          grep -F "$EXPECTED_BLOCKER" head-install.log
-          grep -Eq '404|not found|Not Found|failed to resolve|could not resolve|unable to resolve' base-install.log
-          grep -Eq '404|not found|Not Found|failed to resolve|could not resolve|unable to resolve' head-install.log
-
-          # Reject evidence that points at a different package as the terminal blocker.
-          base_terminal=$(grep -Ei 'failed to resolve|could not resolve|unable to resolve|not found|Not Found' base-install.log | tail -n 1 || true)
-          head_terminal=$(grep -Ei 'failed to resolve|could not resolve|unable to resolve|not found|Not Found' head-install.log | tail -n 1 || true)
-          printf 'base terminal: %s\nhead terminal: %s\n' "$base_terminal" "$head_terminal"
-          echo "$base_terminal" | grep -F 'typespec-json-schema-validator'
-          echo "$head_terminal" | grep -F 'typespec-json-schema-validator'
-          echo ZED_INSTALL_PREEXISTING_DEPENDENCY_BLOCKER_CONFIRMED
 
       - name: Final immutable source guard
         if: ${{ always() }}
