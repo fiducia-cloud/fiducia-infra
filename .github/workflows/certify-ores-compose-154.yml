@@ -1,0 +1,129 @@
+name: certify ores-compose #154 service environment isolation
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/certify-ores-compose-154.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    if: github.head_ref == 'test/ores-compose-154-service-env-cert-20260923'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      EXPECTED_SHA: f45c907a46878b93a35b207e1cee79687a83461c
+      EXPECTED_BASE_SHA: fb6d0b2aeb7d87c598e006bed050162b55e0c9f0
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Checkout exact ores-compose candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.EXPECTED_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: ores-compose
+          persist-credentials: false
+          fetch-depth: 128
+
+      - name: Assert exact five-file review surface
+        working-directory: ores-compose
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          git cat-file -e "$EXPECTED_BASE_SHA^{commit}"
+          actual="$(git diff --name-only "$EXPECTED_BASE_SHA"..HEAD | sort | tr '\n' ' ')"
+          expected='contracts/json-schema/contract.schema.json contracts/typespec/main.tsp src/config_loader.rs src/local_up_process.rs src/service_environment.rs '
+          test "$actual" = "$expected"
+          git diff --check "$EXPECTED_BASE_SHA"..HEAD
+
+      - name: Configure private Cargo Git reads
+        working-directory: ores-compose
+        env:
+          GH_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+        run: gh auth setup-git
+
+      - name: Install Rust 1.98.1
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rustup toolchain install 1.98.1 --profile minimal --component rustfmt,clippy
+          rustup default 1.98.1
+          rustc --version | grep -F 'rustc 1.98.1'
+
+      - name: Changed-file rustfmt
+        working-directory: ores-compose
+        run: rustfmt --edition 2024 --check src/config_loader.rs src/local_up_process.rs src/service_environment.rs
+
+      - name: Locked all-target compile
+        working-directory: ores-compose
+        env:
+          CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+        run: cargo check --locked --all-targets --all-features
+
+      - name: Full Rust tests
+        working-directory: ores-compose
+        env:
+          CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+        run: cargo test --locked --all-targets --all-features
+
+      - name: Candidate-file Clippy diagnostics
+        working-directory: ores-compose
+        env:
+          CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cargo clippy --locked --all-targets --all-features --message-format=json -- -D warnings > "$RUNNER_TEMP/clippy.json" || true
+          python3 - <<'PY'
+          import json, os, sys
+          owned={"src/config_loader.rs","src/local_up_process.rs","src/service_environment.rs"}
+          failures=[]
+          for line in open(os.environ['RUNNER_TEMP']+'/clippy.json', encoding='utf-8'):
+              try: row=json.loads(line)
+              except Exception: continue
+              m=row.get('message') or {}
+              if m.get('level') not in ('error','warning'): continue
+              for span in m.get('spans') or []:
+                  if span.get('is_primary') and span.get('file_name') in owned:
+                      failures.append((span.get('file_name'), m.get('message')))
+          if failures:
+              for f,msg in failures: print(f'{f}: {msg}', file=sys.stderr)
+              raise SystemExit(1)
+          print('no candidate-file clippy diagnostics')
+          PY
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.9.0'
+
+      - name: Compare independent TypeSpec and JSON Schema authorities
+        working-directory: ores-compose
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p target
+          npx --yes \
+            --package=https://github.com/ORESoftware/typespec-json-schema-validator/archive/db0f1e66b2a65cad43c909aa558ae00c6a91578c.tar.gz \
+            tjsv check \
+            --typespec=contracts/typespec/main.tsp \
+            --schema=contracts/json-schema/contract.schema.json \
+            --instances=contracts/instances \
+            --report=target/compose-contract-parity.json \
+            --quiet
+
+      - name: Assert tracked source remained immutable
+        if: always()
+        working-directory: ores-compose
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain --untracked-files=no)"
+          echo ORES_COMPOSE_154_CERT_PASS
