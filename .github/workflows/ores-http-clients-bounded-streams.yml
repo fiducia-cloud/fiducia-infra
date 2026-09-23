@@ -1,0 +1,119 @@
+name: ores-http-clients bounded-stream certification
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/ores-http-clients-bounded-streams.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact ores-http-clients main head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ORESoftware/ores-http-clients
+          ref: 9e6c758c1a78c5015dcb9091a05345a1748d14ac
+          path: source
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Structural conformance
+        working-directory: source
+        run: sh scripts/check.sh
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22.22.1"
+
+      - name: TypeScript baseline
+        working-directory: source/src/ts
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          npm test
+
+      - name: Characterize typed no-content behavior
+        working-directory: source/src/ts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE' | tee /tmp/no-content.txt
+          import { OresHttpClients } from './dist/src/index.js';
+          const clients = new OresHttpClients({
+            baseUrl: 'https://example.test',
+            fetch: async () => new Response(null, { status: 204 }),
+          });
+          const outcomes = {};
+          try {
+            outcomes.bytes = (await clients.files.getAsset('empty')).data.byteLength;
+          } catch (error) {
+            outcomes.bytes = `${error?.constructor?.name}: ${error?.message}`;
+          }
+          try {
+            outcomes.legacy_rest_json = await clients.rest.request('empty');
+          } catch (error) {
+            outcomes.legacy_rest_json = `${error?.constructor?.name}: ${error?.message}`;
+          }
+          try {
+            outcomes.typed_json = await clients.rest.requestJson('GET', 'empty');
+          } catch (error) {
+            outcomes.typed_json = `${error?.constructor?.name}: ${error?.message}`;
+          }
+          console.log(JSON.stringify(outcomes, null, 2));
+          NODE
+          {
+            echo '### TypeScript no-content characterization'
+            echo '```json'
+            cat /tmp/no-content.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Prove maxResponseBytes stops chunked bodies while reading
+        working-directory: source/src/ts
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { OresHttpClients, ResponseTooLargeError } from './dist/src/index.js';
+
+          let pulls = 0;
+          let cancelled = false;
+          const totalChunks = 100;
+          const chunk = Uint8Array.of(1, 2, 3, 4);
+          const clients = new OresHttpClients({
+            baseUrl: 'https://example.test',
+            maxResponseBytes: 8,
+            fetch: async () => new Response(new ReadableStream({
+              pull(controller) {
+                pulls += 1;
+                if (pulls <= totalChunks) controller.enqueue(chunk);
+                else controller.close();
+              },
+              cancel() {
+                cancelled = true;
+              },
+            }), {
+              status: 200,
+              headers: { 'content-type': 'application/octet-stream' },
+            }),
+          });
+
+          await assert.rejects(
+            () => clients.files.getAsset('chunked.bin'),
+            ResponseTooLargeError,
+          );
+          assert.ok(
+            pulls <= 3,
+            `maxResponseBytes was enforced only after consuming ${pulls} chunks`,
+          );
+          assert.equal(cancelled, true, 'oversized response body was not cancelled early');
+          NODE
