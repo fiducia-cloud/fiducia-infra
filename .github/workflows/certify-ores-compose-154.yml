@@ -1,0 +1,152 @@
+name: certify ores-compose 154 exact head
+
+on:
+  push:
+    branches:
+      - test/ores-compose-154-cert-20260922
+    paths:
+      - .github/workflows/certify-ores-compose-154.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      SOURCE_REPO: ORESoftware/ores-compose
+      SOURCE_BRANCH: feat/service-environment-isolation
+      SOURCE_SHA: f45c907a46878b93a35b207e1cee79687a83461c
+      SOURCE_BASE_SHA: fb6d0b2aeb7d87c598e006bed050162b55e0c9f0
+    steps:
+      - name: Require scoped source credential
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+
+      - name: Checkout exact ores-compose candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact source head, current main, and five-file review surface
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git cat-file -e "$SOURCE_BASE_SHA^{commit}"
+          test "$(git merge-base "$SOURCE_SHA" "$SOURCE_BASE_SHA")" = "$SOURCE_BASE_SHA"
+          cat > /tmp/expected-files <<'EOF'
+          contracts/json-schema/contract.schema.json
+          contracts/typespec/main.tsp
+          src/config_loader.rs
+          src/local_up_process.rs
+          src/service_environment.rs
+          EOF
+          git diff --name-only "$SOURCE_BASE_SHA".."$SOURCE_SHA" | sort > /tmp/actual-files
+          sort -o /tmp/expected-files /tmp/expected-files
+          diff -u /tmp/expected-files /tmp/actual-files
+          git diff --check "$SOURCE_BASE_SHA".."$SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          remote_head=$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)
+          remote_main=$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)
+          test "$remote_head" = "$SOURCE_SHA"
+          test "$remote_main" = "$SOURCE_BASE_SHA"
+
+      - name: Configure private Cargo Git reads
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -Eeuo pipefail
+          gh auth setup-git
+
+      - name: Install reviewed Rust toolchain
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rustup toolchain install 1.98.1 --profile minimal --component rustfmt,clippy --no-self-update
+          rustup default 1.98.1
+          rustc --version | grep -F 'rustc 1.98.1'
+
+      - name: Install Node for contract parity
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.9.0'
+
+      - name: Format and locked compile
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cargo fmt --all -- --check
+          cargo check --locked --all-targets --all-features
+
+      - name: Full Rust regression suite
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cargo test --locked --all-targets --all-features -- --nocapture
+
+      - name: Strict Clippy
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cargo clippy --locked --all-targets --all-features -- -D warnings
+
+      - name: Compare independent TypeSpec and JSON Schema authorities
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p target
+          npx --yes \
+            --package=https://github.com/ORESoftware/typespec-json-schema-validator/archive/db0f1e66b2a65cad43c909aa558ae00c6a91578c.tar.gz \
+            tjsv check \
+            --typespec=contracts/typespec/main.tsp \
+            --schema=contracts/json-schema/contract.schema.json \
+            --instances=contracts/instances \
+            --report=target/compose-contract-parity.json \
+            --quiet
+          test -s target/compose-contract-parity.json
+
+      - name: Assert executor environment-isolation authority is present
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -Fq 'parse_compose_service_environment_policies' src/local_up_process.rs
+          grep -Fq 'resolve_service_environment' src/local_up_process.rs
+          test "$(grep -c '\.env_clear()' src/local_up_process.rs)" -ge 3
+          grep -Fq 'ORES_COMPOSE_ENV_PREFIX' src/service_environment.rs
+          grep -Fq 'secret_env' contracts/typespec/main.tsp
+          grep -Fq 'secret_env' contracts/json-schema/contract.schema.json
+
+      - name: Final immutable-source decision
+        if: always()
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          remote_head=$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)
+          remote_main=$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)
+          test "$remote_head" = "$SOURCE_SHA"
+          test "$remote_main" = "$SOURCE_BASE_SHA"
+          echo ORES_COMPOSE_154_EXACT_HEAD_PASS
