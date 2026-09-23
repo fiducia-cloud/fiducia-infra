@@ -62,9 +62,9 @@ jobs:
           from pathlib import Path
           base = tomllib.loads(Path('source-main/.zpkg.toml').read_text())
           head = tomllib.loads(Path('source/.zpkg.toml').read_text())
-          name = 'typespec-json-schema-validator'
+          name = 'oresoftware/typespec-json-schema-validator'
           assert base['dependencies'][name] == head['dependencies'][name], (base['dependencies'][name], head['dependencies'][name])
-          assert head['dependencies'][name] == {'scope': 'oresoftware', 'version': '0.1.0'}
+          assert head['dependencies'][name] == '^0.1.0', head['dependencies'][name]
           PY
 
       - name: Install Rust 1.88
