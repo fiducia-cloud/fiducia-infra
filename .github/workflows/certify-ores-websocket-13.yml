@@ -57,7 +57,7 @@ jobs:
           test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
           test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
 
-      - name: Install pinned Zed CLI
+      - name: Install pinned Zed CLI with GitHub tag-archive fallback
         shell: bash
         env:
           ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
@@ -65,7 +65,7 @@ jobs:
           set -euo pipefail
           echo "::add-mask::$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
-          cargo install --git https://github.com/zed-pkg/zed-cli --rev 344d432a6f94d4b1cfa02228ec36623c7484177a --locked zed-cli
+          cargo install --git https://github.com/zed-pkg/zed-cli --rev a1c5b7a3c72b957944b76911fcbc723dd9c16541 --locked zed-cli
 
       - name: Validate and materialize Zed package
         shell: bash
