@@ -12,8 +12,8 @@ permissions:
 env:
   SOURCE_REPO: ORESoftware/ores-websocket
   SOURCE_BRANCH: fix/zpkg-universal-language-20260922
-  SOURCE_SHA: 9c0391cf4e62921d557aec86eecedbdbd54ce8dd
-  SOURCE_MAIN_SHA: 8cceeaf7142c469bc7ef55c16dc51ae0f9aeb43e
+  SOURCE_SHA: 25d50454895f2b0df2efcd50255bc888720a6662
+  SOURCE_MAIN_SHA: a30bb1462459785bba7fc1b71f1e30221f48f224
   ZED_CLI_SHA: 344d432a6f94d4b1cfa02228ec36623c7484177a
 
 jobs:
