@@ -12,7 +12,7 @@ permissions:
 env:
   SOURCE_REPO: ORESoftware/ores-stack
   SOURCE_BRANCH: feat/stack-dev-build-deploy-ppr-20260923
-  SOURCE_SHA: 178c31b3343245a93098ec73b3c07ea44c4b3772
+  SOURCE_SHA: 5223e4b012aa17352e9f30c00bcd8885b74e8650
   SOURCE_MAIN_SHA: d46c07e0f91c2dbda9b2fee64bdd82f6d52fc1ef
 
 jobs:
