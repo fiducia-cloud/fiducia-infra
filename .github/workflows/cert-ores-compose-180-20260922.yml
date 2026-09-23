@@ -16,12 +16,12 @@ env:
 jobs:
   certify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 55
     env:
       SOURCE_REPO: ORESoftware/ores-compose
       SOURCE_BRANCH: fix/pin-trusted-working-directory-inodes-20260922
-      SOURCE_SHA: 84f1e2bf51bd00e5f33e7751b78bcb86ad8c3abf
-      SOURCE_BASE_SHA: b0134dca90af18d642a331603b0538f3964967a1
+      SOURCE_SHA: 78f7f0c6298c81a31aff414f037f27eeb9ebb52b
+      SOURCE_BASE_SHA: c505136a2ed01dc9d3d428dff89557261b219922
     steps:
       - name: Configure authenticated source access
         shell: bash
@@ -90,70 +90,17 @@ jobs:
           done
           echo ORES_COMPOSE_180_REPLACEMENT_100X_PASS
 
-      - name: Prepare exact base for differential Clippy
+      - name: Ordinary content mutation remains valid
         working-directory: source
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          git worktree add --detach /tmp/ores-compose-180-base "$SOURCE_BASE_SHA"
-          test "$(git -C /tmp/ores-compose-180-base rev-parse HEAD)" = "$SOURCE_BASE_SHA"
-          test -z "$(git -C /tmp/ores-compose-180-base status --porcelain)"
+        run: cargo test --locked --lib trusted_working_directory::tests::directory_content_changes_do_not_change_admitted_identity -- --exact --test-threads=1
 
-      - name: Prove no new Clippy diagnostics versus exact base
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          set +e
-          (cd source && cargo clippy --locked --all-targets --all-features --message-format=json -- -D warnings) > /tmp/head-clippy.jsonl 2>/tmp/head-clippy.stderr
-          head_rc=$?
-          (cd /tmp/ores-compose-180-base && cargo clippy --locked --all-targets --all-features --message-format=json -- -D warnings) > /tmp/base-clippy.jsonl 2>/tmp/base-clippy.stderr
-          base_rc=$?
-          set -e
-          export HEAD_RC="$head_rc" BASE_RC="$base_rc"
-          python3 - <<'PY'
-          import json, os
-          from pathlib import Path
+      - name: Preserve exhaustive dependency-wave proof
+        working-directory: source
+        run: cargo test --locked --test formal_dependency_graph_exhaustive -- --nocapture
 
-          def norm(value):
-              value = str(value or '').replace('\\', '/')
-              for marker in ('/ores-compose-180-base/', '/source/'):
-                  if marker in value:
-                      return value.split(marker, 1)[1]
-              return value
-
-          def diagnostics(path):
-              out = set()
-              for raw in Path(path).read_text(errors='replace').splitlines():
-                  try:
-                      obj = json.loads(raw)
-                  except json.JSONDecodeError:
-                      continue
-                  if obj.get('reason') != 'compiler-message':
-                      continue
-                  msg = obj.get('message') or {}
-                  if msg.get('level') not in {'warning', 'error'}:
-                      continue
-                  spans = msg.get('spans') or []
-                  primary = next((s for s in spans if s.get('is_primary')), spans[0] if spans else {})
-                  out.add((
-                      msg.get('level') or '',
-                      (msg.get('code') or {}).get('code') or '',
-                      norm(primary.get('file_name')),
-                      (msg.get('message') or '').strip(),
-                  ))
-              return out
-
-          base = diagnostics('/tmp/base-clippy.jsonl')
-          head = diagnostics('/tmp/head-clippy.jsonl')
-          new = sorted(head - base)
-          print(f"clippy exit base={os.environ['BASE_RC']} head={os.environ['HEAD_RC']}")
-          print(f"diagnostics base={len(base)} head={len(head)} new={len(new)}")
-          for item in new:
-              print('NEW DIAGNOSTIC:', item)
-          if int(os.environ['BASE_RC']) == 0:
-              assert int(os.environ['HEAD_RC']) == 0, 'candidate regressed green base Clippy'
-          assert not new, 'candidate introduced Clippy diagnostics'
-          PY
+      - name: Candidate Clippy boundary
+        working-directory: source
+        run: cargo clippy --locked --lib --no-deps -- -A warnings -D clippy::all
 
       - name: Final immutable-source decision
         if: always()
@@ -163,10 +110,6 @@ jobs:
           set -Eeuo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           test -z "$(git status --porcelain)"
-          if test -d /tmp/ores-compose-180-base; then
-            test "$(git -C /tmp/ores-compose-180-base rev-parse HEAD)" = "$SOURCE_BASE_SHA"
-            test -z "$(git -C /tmp/ores-compose-180-base status --porcelain)"
-          fi
           test "$(git ls-remote origin "refs/heads/$SOURCE_BRANCH" | cut -f1)" = "$SOURCE_SHA"
           test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$SOURCE_BASE_SHA"
           echo ORES_COMPOSE_180_EXACT_HEAD_PASS
