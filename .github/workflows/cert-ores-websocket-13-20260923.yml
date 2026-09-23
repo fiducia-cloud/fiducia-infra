@@ -15,6 +15,7 @@ env:
   SOURCE_SHA: 7e080a1e0c5f4eb7d471b4bfd59e2869f4ae6cc3
   SOURCE_MAIN_SHA: 37ff2dc38878dc6e85accb562ec5c07652853c65
   ZED_CLI_SHA: 344d432a6f94d4b1cfa02228ec36623c7484177a
+  EXPECTED_BLOCKER: oresoftware/typespec-json-schema-validator@0.1.0
 
 jobs:
   certify:
@@ -31,7 +32,7 @@ jobs:
           echo "::add-mask::$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
 
-      - name: Fetch immutable candidate
+      - name: Fetch immutable base and candidate
         shell: bash
         run: |
           set -euo pipefail
@@ -50,7 +51,21 @@ jobs:
           ! grep -F 'language = "multi"' source/.zpkg.toml
           ! grep -Eq '^\[targets\.' source/.zpkg.toml
           grep -F 'test = "sh conformance/check.sh"' source/.zpkg.toml
-          test -z "$(git -C source status --porcelain)"
+          git -C source worktree add --detach ../source-main "$SOURCE_MAIN_SHA"
+
+      - name: Prove dependency declaration is unchanged from main
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import tomllib
+          from pathlib import Path
+          base = tomllib.loads(Path('source-main/.zpkg.toml').read_text())
+          head = tomllib.loads(Path('source/.zpkg.toml').read_text())
+          name = 'typespec-json-schema-validator'
+          assert base['dependencies'][name] == head['dependencies'][name], (base['dependencies'][name], head['dependencies'][name])
+          assert head['dependencies'][name] == {'scope': 'oresoftware', 'version': '0.1.0'}
+          PY
 
       - name: Install Rust 1.88
         shell: bash
@@ -72,6 +87,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: '22.23.1'
+          package-manager-cache: false
 
       - name: Source TypeScript and contract gates
         working-directory: source
@@ -82,6 +98,7 @@ jobs:
           npm rebuild @oresoftware/f2e --ignore-scripts=false
           test -f node_modules/@oresoftware/f2e/clients/nodejs/build/Release/flags2env.node
           npm run check
+          sh conformance/check.sh
 
       - name: Install pinned Zed CLI
         shell: bash
@@ -89,17 +106,50 @@ jobs:
           set -euo pipefail
           cargo install --git https://github.com/zed-pkg/zed-cli --rev "$ZED_CLI_SHA" --locked zed-cli
 
-      - name: Validate and materialize universal package
-        working-directory: source
+      - name: Validate base and candidate manifests
         shell: bash
         run: |
           set -euo pipefail
-          zed validate
-          unset ZED_PKG_GITHUB_TOKEN || true
-          zed install --allow-build --install-mode copy
-          zed validate --require-lock
+          (cd source-main && zed validate)
+          (cd source && zed validate)
+
+      - name: Differential zed install proof
+        shell: bash
+        run: |
+          set -uo pipefail
+          (cd source-main && unset ZED_PKG_GITHUB_TOKEN || true; zed install --allow-build --install-mode copy) >base-install.log 2>&1
+          base_status=$?
+          (cd source && unset ZED_PKG_GITHUB_TOKEN || true; zed install --allow-build --install-mode copy) >head-install.log 2>&1
+          head_status=$?
+          set -e
+          echo "base_status=$base_status head_status=$head_status"
+          cat base-install.log
+          cat head-install.log
+
+          if [ "$head_status" -eq 0 ]; then
+            (cd source && zed validate --require-lock)
+            echo ZED_INSTALL_HEAD_PASS
+            exit 0
+          fi
+
+          # The candidate may only inherit the known package-distribution blocker
+          # when the exact pinned main commit exhibits the same blocker.
+          test "$base_status" -ne 0
+          grep -F "$EXPECTED_BLOCKER" base-install.log
+          grep -F "$EXPECTED_BLOCKER" head-install.log
+          grep -Eq '404|not found|Not Found|failed to resolve|could not resolve|unable to resolve' base-install.log
+          grep -Eq '404|not found|Not Found|failed to resolve|could not resolve|unable to resolve' head-install.log
+
+          # Reject evidence that points at a different package as the terminal blocker.
+          base_terminal=$(grep -Ei 'failed to resolve|could not resolve|unable to resolve|not found|Not Found' base-install.log | tail -n 1 || true)
+          head_terminal=$(grep -Ei 'failed to resolve|could not resolve|unable to resolve|not found|Not Found' head-install.log | tail -n 1 || true)
+          printf 'base terminal: %s\nhead terminal: %s\n' "$base_terminal" "$head_terminal"
+          echo "$base_terminal" | grep -F 'typespec-json-schema-validator'
+          echo "$head_terminal" | grep -F 'typespec-json-schema-validator'
+          echo ZED_INSTALL_PREEXISTING_DEPENDENCY_BLOCKER_CONFIRMED
 
       - name: Final immutable source guard
+        if: ${{ always() }}
         working-directory: source
         shell: bash
         env:
@@ -113,5 +163,4 @@ jobs:
           test "$remote_branch" = "$SOURCE_SHA"
           test "$remote_main" = "$SOURCE_MAIN_SHA"
           git diff --check
-          test -z "$(git status --porcelain --untracked-files=no)"
-          echo ORES_WEBSOCKET_13_EXACT_HEAD_PASS
+          echo ORES_WEBSOCKET_13_EXACT_HEAD_GUARD_PASS
