@@ -1,0 +1,66 @@
+name: ores-compose #154 base test
+
+on:
+  push:
+    branches:
+      - test/ores-compose-154-service-env-cert-20260922
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+  COMPOSE_BASE: 'fb6d0b2aeb7d87c598e006bed050162b55e0c9f0'
+
+jobs:
+  baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Configure authenticated source access
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Checkout exact ores-compose base
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-compose-base
+          git -C ores-compose-base remote add origin https://github.com/ORESoftware/ores-compose.git
+          git -C ores-compose-base fetch --depth 1 origin "$COMPOSE_BASE"
+          git -C ores-compose-base checkout --detach FETCH_HEAD
+          test "$(git -C ores-compose-base rev-parse HEAD)" = "$COMPOSE_BASE"
+          test -z "$(git -C ores-compose-base status --porcelain)"
+
+      - name: Install Rust 1.98.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.98.1 --profile minimal --no-self-update
+          rustup default 1.98.1
+          rustc --version | grep -F 'rustc 1.98.1'
+
+      - name: Full base Rust tests
+        working-directory: ores-compose-base
+        shell: bash
+        run: cargo test --locked --all-targets --all-features
+
+      - name: Verify base remained immutable
+        if: always()
+        working-directory: ores-compose-base
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$COMPOSE_BASE"
+          test -z "$(git status --porcelain)"
