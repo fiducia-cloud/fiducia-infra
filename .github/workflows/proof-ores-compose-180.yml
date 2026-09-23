@@ -1,0 +1,111 @@
+name: proof ores-compose 180 exact head
+
+on:
+  push:
+    branches:
+      - proof/ores-compose-180-exact-20260922
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_REPO: ORESoftware/ores-compose
+  SOURCE_BRANCH: fix/pin-trusted-working-directory-inodes-20260922
+  SOURCE_SHA: 84f1e2bf51bd00e5f33e7751b78bcb86ad8c3abf
+  BASE_SHA: b0134dca90af18d642a331603b0538f3964967a1
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Configure scoped source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact source and bind review surface
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -Eeuo pipefail
+          git clone --filter=blob:none https://github.com/ORESoftware/ores-compose.git ores-compose
+          cd ores-compose
+          git checkout --detach "$SOURCE_SHA"
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git cat-file -e "$BASE_SHA^{commit}"
+          test "$(git merge-base "$SOURCE_SHA" "$BASE_SHA")" = "$BASE_SHA"
+          mapfile -t changed < <(git diff --name-only "$BASE_SHA" "$SOURCE_SHA")
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = 'src/trusted_working_directory.rs'
+          git diff --check "$BASE_SHA" "$SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+          remote_head=$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)
+          remote_main=$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)
+          test "$remote_head" = "$SOURCE_SHA"
+          test "$remote_main" = "$BASE_SHA"
+
+      - name: Install Rust 1.98.1
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rustup toolchain install 1.98.1 --profile minimal --component rustfmt,clippy --no-self-update
+          rustup default 1.98.1
+          rustc --version | grep -F 'rustc 1.98.1'
+
+      - name: Rustfmt changed source
+        shell: bash
+        working-directory: ores-compose
+        run: rustfmt --edition 2024 --check src/trusted_working_directory.rs
+
+      - name: Locked all-target all-feature compile
+        shell: bash
+        working-directory: ores-compose
+        run: cargo check --locked --all-targets --all-features
+
+      - name: Trusted-working-directory tests
+        shell: bash
+        working-directory: ores-compose
+        run: cargo test --locked --lib trusted_working_directory::tests:: -- --nocapture --test-threads=1
+
+      - name: Repeat replacement invariant 100 times
+        shell: bash
+        working-directory: ores-compose
+        run: |
+          set -Eeuo pipefail
+          for i in $(seq 1 100); do
+            cargo test --locked --lib trusted_working_directory::tests::replacement_after_admission_is_detected -- --exact --test-threads=1 >/tmp/replacement.log 2>&1 || { cat /tmp/replacement.log; exit 1; }
+          done
+          echo ORES_COMPOSE_180_REPLACEMENT_100X_PASS
+
+      - name: Full test suite
+        shell: bash
+        working-directory: ores-compose
+        run: cargo test --locked --all-targets --all-features --no-fail-fast
+
+      - name: Strict library Clippy
+        shell: bash
+        working-directory: ores-compose
+        run: cargo clippy --locked --lib --no-deps -- -D warnings
+
+      - name: Final exact-source guard
+        shell: bash
+        working-directory: ores-compose
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+          remote_head=$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)
+          remote_main=$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)
+          test "$remote_head" = "$SOURCE_SHA"
+          test "$remote_main" = "$BASE_SHA"
+          echo ORES_COMPOSE_180_EXACT_HEAD_PASS
