@@ -1,0 +1,92 @@
+name: repair ores-websocket Rust 1.88 formatting baseline
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/repair-ores-websocket-rustfmt-20260923.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_REPO: ORESoftware/ores-websocket
+  SOURCE_BRANCH: fix/rustfmt-baseline-1-88-20260923
+  SOURCE_BASE: 8cceeaf7142c469bc7ef55c16dc51ae0f9aeb43e
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Configure authenticated source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch guarded repair branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init source
+          git -C source remote add origin "https://github.com/$SOURCE_REPO.git"
+          git -C source fetch --depth=20 origin main "$SOURCE_BRANCH"
+          test "$(git -C source rev-parse origin/main)" = "$SOURCE_BASE"
+          test "$(git -C source rev-parse origin/$SOURCE_BRANCH)" = "$SOURCE_BASE"
+          git -C source checkout -B "$SOURCE_BRANCH" "$SOURCE_BASE"
+          test -z "$(git -C source status --porcelain)"
+
+      - name: Install Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --component rustfmt,clippy --no-self-update
+          rustup default 1.88.0
+
+      - name: Apply rustfmt and confine delta
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          mapfile -t changed < <(git diff --name-only | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" -eq 3
+          test "${changed[0]}" = "src/axum_support.rs"
+          test "${changed[1]}" = "src/lib.rs"
+          test "${changed[2]}" = "src/runtime_config.rs"
+          git diff --check
+          cargo fmt --all -- --check
+
+      - name: Prove formatted baseline
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --all-features
+          cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Commit and fast-forward guarded source branch
+        working-directory: source
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          remote_main=$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)
+          remote_branch=$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)
+          test "$remote_main" = "$SOURCE_BASE"
+          test "$remote_branch" = "$SOURCE_BASE"
+          git config user.name ORESoftware
+          git config user.email 11139560+ORESoftware@users.noreply.github.com
+          git add src/axum_support.rs src/lib.rs src/runtime_config.rs
+          git commit -m 'style(rust): normalize Rust 1.88 formatting'
+          git push origin "HEAD:refs/heads/$SOURCE_BRANCH"
+          test -z "$(git status --porcelain)"
+          echo ORES_WEBSOCKET_RUSTFMT_REPAIR_PUSHED
