@@ -1,0 +1,96 @@
+name: certify ores-websocket 16 contract parity
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/cert-ores-websocket-16-contract-parity-20260923.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_REPO: ORESoftware/ores-websocket
+  SOURCE_BRANCH: fix/websocket-contract-declaration-parity-20260923
+  SOURCE_SHA: 2bc4577030e48f20a4442f6c44fcb2d607c5959a
+  SOURCE_MAIN_SHA: a30bb1462459785bba7fc1b71f1e30221f48f224
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Configure authenticated source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch immutable candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init source
+          git -C source remote add origin "https://github.com/$SOURCE_REPO.git"
+          git -C source fetch --depth=40 origin main "$SOURCE_BRANCH"
+          test "$(git -C source rev-parse origin/main)" = "$SOURCE_MAIN_SHA"
+          test "$(git -C source rev-parse origin/$SOURCE_BRANCH)" = "$SOURCE_SHA"
+          git -C source checkout --detach "$SOURCE_SHA"
+          test "$(git -C source merge-base HEAD "$SOURCE_MAIN_SHA")" = "$SOURCE_MAIN_SHA"
+          mapfile -t changed < <(git -C source diff --name-only "$SOURCE_MAIN_SHA" "$SOURCE_SHA" | sort)
+          test "${#changed[@]}" -eq 2
+          test "${changed[0]}" = "contracts/ores-websocket-v1.schema.json"
+          test "${changed[1]}" = "contracts/ores-websocket-v1.tsp"
+          git -C source diff --check "$SOURCE_MAIN_SHA" "$SOURCE_SHA"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22.23.1'
+          package-manager-cache: false
+
+      - name: Bootstrap reviewed native dependency only
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --ignore-scripts --no-audit --no-fund
+          npm rebuild @oresoftware/f2e --ignore-scripts=false --no-audit --no-fund
+          test -s node_modules/@oresoftware/f2e/clients/nodejs/build/Release/flags2env.node
+
+      - name: Run websocket build tests and contract parity
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run check
+          node <<'NODE'
+          const fs = require('node:fs');
+          const report = JSON.parse(fs.readFileSync('artifacts/schema-parity.json', 'utf8'));
+          if (!Array.isArray(report.findings) || report.findings.length !== 0) {
+            throw new Error(`expected zero parity findings; got ${report.findings?.length}`);
+          }
+          const text = JSON.stringify(report);
+          if (text.includes('instance-verdict-divergence') || text.includes('STOPPED_FOR_EVALUATION')) {
+            throw new Error('retained parity report contains a divergence or stopped evaluation');
+          }
+          console.log('ORES_WEBSOCKET_16_PARITY_REPORT_ZERO_FINDINGS');
+          NODE
+
+      - name: Final immutable source guard
+        working-directory: source
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=no)"
+          echo ORES_WEBSOCKET_16_EXACT_HEAD_PASS
