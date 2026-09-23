@@ -1,0 +1,115 @@
+name: certify ores-websocket 13 exact head
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/cert-ores-websocket-13-20260923.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_REPO: ORESoftware/ores-websocket
+  SOURCE_BRANCH: fix/zpkg-universal-language-20260922
+  SOURCE_SHA: 9c0391cf4e62921d557aec86eecedbdbd54ce8dd
+  SOURCE_MAIN_SHA: 8cceeaf7142c469bc7ef55c16dc51ae0f9aeb43e
+  ZED_CLI_SHA: 344d432a6f94d4b1cfa02228ec36623c7484177a
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - name: Configure authenticated source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch immutable candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init source
+          git -C source remote add origin "https://github.com/$SOURCE_REPO.git"
+          git -C source fetch --depth=50 origin main "$SOURCE_BRANCH"
+          test "$(git -C source rev-parse origin/main)" = "$SOURCE_MAIN_SHA"
+          test "$(git -C source rev-parse origin/$SOURCE_BRANCH)" = "$SOURCE_SHA"
+          git -C source checkout --detach "$SOURCE_SHA"
+          test "$(git -C source merge-base HEAD "$SOURCE_MAIN_SHA")" = "$SOURCE_MAIN_SHA"
+          mapfile -t changed < <(git -C source diff --name-only "$SOURCE_MAIN_SHA" "$SOURCE_SHA")
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = ".zpkg.toml"
+          git -C source diff --check "$SOURCE_MAIN_SHA" "$SOURCE_SHA"
+          grep -F 'language = "universal"' source/.zpkg.toml
+          ! grep -F 'language = "multi"' source/.zpkg.toml
+          ! grep -Eq '^\[targets\.' source/.zpkg.toml
+          grep -F 'test = "sh conformance/check.sh"' source/.zpkg.toml
+          test -z "$(git -C source status --porcelain)"
+
+      - name: Install Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --component rustfmt,clippy --no-self-update
+          rustup default 1.88.0
+          rustc --version | grep -F 'rustc 1.88.0'
+
+      - name: Source Rust gates
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo test --all-features
+          cargo clippy --all-targets --all-features -- -D warnings
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22.9.0'
+
+      - name: Source TypeScript and contract gates
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --ignore-scripts
+          npm run check
+
+      - name: Install pinned Zed CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo install --git https://github.com/zed-pkg/zed-cli --rev "$ZED_CLI_SHA" --locked zed-cli
+
+      - name: Validate and materialize universal package
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          zed validate
+          unset ZED_PKG_GITHUB_TOKEN || true
+          zed install --allow-build --install-mode copy
+          zed validate --require-lock
+
+      - name: Final immutable source guard
+        working-directory: source
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          remote_branch=$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)
+          remote_main=$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)
+          test "$remote_branch" = "$SOURCE_SHA"
+          test "$remote_main" = "$SOURCE_MAIN_SHA"
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=no)"
+          echo ORES_WEBSOCKET_13_EXACT_HEAD_PASS
