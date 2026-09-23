@@ -1,0 +1,151 @@
+name: certify ores-chat interfaces 27 exact head
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/cert-ores-chat-interfaces-27-20260923.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_REPO: ores-chat/ores-chat-interfaces
+  SOURCE_BRANCH: chatgpt/current-tjsv-authorities-20260923
+  SOURCE_SHA: 2e58bfd748238c355d2618670280ed8aa4c104e2
+  TJSV_SHA: 26c3b2c84ed58fd8cb110b14c917beeacb93804c
+  TJSV_PACKAGE: https://github.com/ORESoftware/typespec-json-schema-validator/archive/26c3b2c84ed58fd8cb110b14c917beeacb93804c.tar.gz
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Configure authenticated source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Fetch immutable source candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init source
+          git -C source remote add origin "https://github.com/$SOURCE_REPO.git"
+          git -C source fetch --depth=1 origin "$SOURCE_BRANCH"
+          test "$(git -C source rev-parse FETCH_HEAD)" = "$SOURCE_SHA"
+          git -C source checkout --detach "$SOURCE_SHA"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Generic peer-authority canary
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .typespec-json-schema-validator/generated
+          npx --yes --package="$TJSV_PACKAGE" tjsv check \
+            --typespec=test/fixtures/schema-authority-canary/main.tsp \
+            --schema=test/fixtures/schema-authority-canary/authored.schema.json \
+            --report=.typespec-json-schema-validator/report.json \
+            --output-dir=.typespec-json-schema-validator/generated \
+            --max-probes=64
+          git diff --exit-code -- test/fixtures/schema-authority-canary/
+      - name: Knowledge-access positive parity
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p target/tjsv/positive
+          npx --yes --package="$TJSV_PACKAGE" tjsv check \
+            --typespec=contracts/knowledge-access/main.tsp \
+            --schema=contracts/knowledge-access/authored.schema.json \
+            --instances=contracts/knowledge-access/instances \
+            --report=target/tjsv/positive/report.json \
+            --sarif=target/tjsv/positive/report.sarif \
+            --output-dir=target/tjsv/positive/generated-schema-b \
+            --max-probes=128 \
+            --int64-strategy=number \
+            --seal-object-schemas=true
+      - name: Knowledge-access negative drift proof
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p target/tjsv/drift
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          source = Path('contracts/knowledge-access/authored.schema.json')
+          target = Path('target/tjsv/drift/authored.schema.json')
+          document = json.loads(source.read_text())
+          values = document['$defs']['KnowledgePlane']['enum']
+          assert values == ['public', 'customer', 'internal', 'administrator']
+          document['$defs']['KnowledgePlane']['enum'] = ['public', 'customer', 'internal']
+          target.write_text(json.dumps(document, indent=2) + '\n')
+          PY
+          set +e
+          npx --yes --package="$TJSV_PACKAGE" tjsv check \
+            --typespec=contracts/knowledge-access/main.tsp \
+            --schema=target/tjsv/drift/authored.schema.json \
+            --instances=contracts/knowledge-access/instances \
+            --report=target/tjsv/drift/report.json \
+            --sarif=target/tjsv/drift/report.sarif \
+            --output-dir=target/tjsv/drift/generated-schema-b \
+            --max-probes=128 \
+            --int64-strategy=number \
+            --seal-object-schemas=true \
+            --quiet
+          status=$?
+          set -e
+          test "$status" -eq 2
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const report = JSON.parse(fs.readFileSync('target/tjsv/drift/report.json', 'utf8'));
+          if (report.status !== 'stopped_for_evaluation') throw new Error(`expected stopped_for_evaluation, got ${report.status}`);
+          const serialized = JSON.stringify(report.findings ?? []);
+          if (!serialized.includes('KnowledgePlane') && !serialized.includes('administrator')) throw new Error('authorization-plane drift not attributable');
+          NODE
+          git diff --exit-code -- contracts/knowledge-access
+      - name: ORES Chat config policy
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib, tomllib
+          doc = tomllib.loads(pathlib.Path('examples/.ores-chat.toml').read_text())
+          assert doc['version'] == 1
+          assert doc['strict'] is True
+          assert doc['flags2env']['contract'] == '.cli-flags.toml'
+          assert doc['flags2env']['require_audit'] is True
+          assert doc['flags2env']['precedence'] == 'argv-over-env'
+          for binding in doc['env']:
+              if binding.get('secret'):
+                  assert 'default' not in binding, f"secret default: {binding['name']}"
+          PY
+          mkdir -p .typespec-json-schema-validator/ores-chat-config-generated
+          npx --yes --package="$TJSV_PACKAGE" tjsv check \
+            --typespec=contracts/ores-chat-config/ores-chat-config.tsp \
+            --schema=contracts/ores-chat-config/ores-chat-config.schema.json \
+            --report=.typespec-json-schema-validator/ores-chat-config-report.json \
+            --output-dir=.typespec-json-schema-validator/ores-chat-config-generated
+          git diff --exit-code -- contracts/ores-chat-config
+      - name: Final immutable source guard
+        working-directory: source
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=no)"
+          echo ORES_CHAT_INTERFACES_27_EXACT_HEAD_PASS
