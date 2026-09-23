@@ -1,0 +1,172 @@
+name: certify ores-compose 180 exact head
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cert-ores-compose-180-20260922.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      SOURCE_REPO: ORESoftware/ores-compose
+      SOURCE_BRANCH: fix/pin-trusted-working-directory-inodes-20260922
+      SOURCE_SHA: 84f1e2bf51bd00e5f33e7751b78bcb86ad8c3abf
+      SOURCE_BASE_SHA: b0134dca90af18d642a331603b0538f3964967a1
+    steps:
+      - name: Configure authenticated source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Checkout exact candidate and bind source evidence
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -Eeuo pipefail
+          git clone --filter=blob:none "https://github.com/${SOURCE_REPO}.git" source
+          git -C source checkout --detach "$SOURCE_SHA"
+          test "$(git -C source rev-parse HEAD)" = "$SOURCE_SHA"
+          git -C source cat-file -e "$SOURCE_BASE_SHA^{commit}"
+          test "$(git -C source merge-base "$SOURCE_SHA" "$SOURCE_BASE_SHA")" = "$SOURCE_BASE_SHA"
+          test "$(git -C source diff --name-only "$SOURCE_BASE_SHA".."$SOURCE_SHA" | tr '\n' ' ')" = 'src/trusted_working_directory.rs '
+          git -C source diff --check "$SOURCE_BASE_SHA".."$SOURCE_SHA"
+          test -z "$(git -C source status --porcelain)"
+          remote_head=$(git -C source ls-remote origin "refs/heads/${SOURCE_BRANCH}" | cut -f1)
+          remote_main=$(git -C source ls-remote origin refs/heads/main | cut -f1)
+          test "$remote_head" = "$SOURCE_SHA"
+          test "$remote_main" = "$SOURCE_BASE_SHA"
+
+      - name: Install reviewed Rust toolchain
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rustup toolchain install 1.98.1 --profile minimal --component rustfmt,clippy --no-self-update
+          rustup default 1.98.1
+          rustc --version | grep -F 'rustc 1.98.1'
+
+      - name: Format changed source
+        working-directory: source
+        run: rustfmt --edition 2024 --check src/trusted_working_directory.rs
+
+      - name: Locked all-target all-feature compile
+        working-directory: source
+        run: cargo check --locked --all-targets --all-features
+
+      - name: Trusted-working-directory unit tests
+        working-directory: source
+        run: cargo test --locked --lib trusted_working_directory::tests -- --nocapture --test-threads=1
+
+      - name: Trusted-working-directory integration regressions
+        working-directory: source
+        run: cargo test --locked --test trusted_working_directory_regressions -- --nocapture --test-threads=1
+
+      - name: Repeat inode-replacement invariant 100 times
+        working-directory: source
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for i in $(seq 1 100); do
+            cargo test --locked --lib trusted_working_directory::tests::replacement_after_admission_is_detected -- --exact --test-threads=1 >/tmp/compose-180-repeat.log 2>&1 || {
+              echo "replacement invariant failed at iteration $i" >&2
+              cat /tmp/compose-180-repeat.log >&2
+              exit 1
+            }
+          done
+          echo ORES_COMPOSE_180_REPLACEMENT_100X_PASS
+
+      - name: Prepare exact base for differential Clippy
+        working-directory: source
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git worktree add --detach /tmp/ores-compose-180-base "$SOURCE_BASE_SHA"
+          test "$(git -C /tmp/ores-compose-180-base rev-parse HEAD)" = "$SOURCE_BASE_SHA"
+          test -z "$(git -C /tmp/ores-compose-180-base status --porcelain)"
+
+      - name: Prove no new Clippy diagnostics versus exact base
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +e
+          (cd source && cargo clippy --locked --all-targets --all-features --message-format=json -- -D warnings) > /tmp/head-clippy.jsonl 2>/tmp/head-clippy.stderr
+          head_rc=$?
+          (cd /tmp/ores-compose-180-base && cargo clippy --locked --all-targets --all-features --message-format=json -- -D warnings) > /tmp/base-clippy.jsonl 2>/tmp/base-clippy.stderr
+          base_rc=$?
+          set -e
+          export HEAD_RC="$head_rc" BASE_RC="$base_rc"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          def norm(value):
+              value = str(value or '').replace('\\', '/')
+              for marker in ('/ores-compose-180-base/', '/source/'):
+                  if marker in value:
+                      return value.split(marker, 1)[1]
+              return value
+
+          def diagnostics(path):
+              out = set()
+              for raw in Path(path).read_text(errors='replace').splitlines():
+                  try:
+                      obj = json.loads(raw)
+                  except json.JSONDecodeError:
+                      continue
+                  if obj.get('reason') != 'compiler-message':
+                      continue
+                  msg = obj.get('message') or {}
+                  if msg.get('level') not in {'warning', 'error'}:
+                      continue
+                  spans = msg.get('spans') or []
+                  primary = next((s for s in spans if s.get('is_primary')), spans[0] if spans else {})
+                  out.add((
+                      msg.get('level') or '',
+                      (msg.get('code') or {}).get('code') or '',
+                      norm(primary.get('file_name')),
+                      (msg.get('message') or '').strip(),
+                  ))
+              return out
+
+          base = diagnostics('/tmp/base-clippy.jsonl')
+          head = diagnostics('/tmp/head-clippy.jsonl')
+          new = sorted(head - base)
+          print(f"clippy exit base={os.environ['BASE_RC']} head={os.environ['HEAD_RC']}")
+          print(f"diagnostics base={len(base)} head={len(head)} new={len(new)}")
+          for item in new:
+              print('NEW DIAGNOSTIC:', item)
+          if int(os.environ['BASE_RC']) == 0:
+              assert int(os.environ['HEAD_RC']) == 0, 'candidate regressed green base Clippy'
+          assert not new, 'candidate introduced Clippy diagnostics'
+          PY
+
+      - name: Final immutable-source decision
+        if: always()
+        working-directory: source
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+          if test -d /tmp/ores-compose-180-base; then
+            test "$(git -C /tmp/ores-compose-180-base rev-parse HEAD)" = "$SOURCE_BASE_SHA"
+            test -z "$(git -C /tmp/ores-compose-180-base status --porcelain)"
+          fi
+          test "$(git ls-remote origin "refs/heads/$SOURCE_BRANCH" | cut -f1)" = "$SOURCE_SHA"
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$SOURCE_BASE_SHA"
+          echo ORES_COMPOSE_180_EXACT_HEAD_PASS
