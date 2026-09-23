@@ -18,6 +18,7 @@ jobs:
       SOURCE_BRANCH: fix/zpkg-universal-language-20260922
       SOURCE_SHA: 7e080a1e0c5f4eb7d471b4bfd59e2869f4ae6cc3
       SOURCE_MAIN_SHA: 37ff2dc38878dc6e85accb562ec5c07652853c65
+      CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
     steps:
       - name: Require scoped source credential
         shell: bash
@@ -65,14 +66,17 @@ jobs:
           echo "::add-mask::$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
           cargo install --git https://github.com/zed-pkg/zed-cli --rev 344d432a6f94d4b1cfa02228ec36623c7484177a --locked zed-cli
-          git config --global --unset-all url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf || true
 
       - name: Validate and materialize Zed package
         shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+          ZED_PKG_GITHUB_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+          GITHUB_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
         run: |
           set -euo pipefail
+          echo "::add-mask::$ORE_SOURCE_PAT"
           zed validate
-          unset ZED_PKG_GITHUB_TOKEN || true
           zed install --allow-build --install-mode copy
           zed validate --require-lock
 
