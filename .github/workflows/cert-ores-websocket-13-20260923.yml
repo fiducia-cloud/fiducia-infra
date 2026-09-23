@@ -71,14 +71,16 @@ jobs:
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
-          node-version: '22.13.1'
+          node-version: '22.23.1'
 
       - name: Source TypeScript and contract gates
         working-directory: source
         shell: bash
         run: |
           set -euo pipefail
-          npm install --no-audit --no-fund
+          npm install --ignore-scripts --no-audit --no-fund
+          npm rebuild @oresoftware/f2e --ignore-scripts=false
+          test -f node_modules/@oresoftware/f2e/clients/nodejs/build/Release/flags2env.node
           npm run check
 
       - name: Install pinned Zed CLI
