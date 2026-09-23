@@ -1,0 +1,89 @@
+name: ores-stack-278-governance-cert
+
+on:
+  push:
+    branches: [ci/ores-http-clients-certification]
+    paths:
+      - '.github/workflows/ores-stack-278-governance-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_REPO: ORESoftware/ores-stack
+  SOURCE_SHA: a673b93cb728c5d9c23d9ea59c0baffc9705f36e
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+
+jobs:
+  exact-head:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: source
+          persist-credentials: false
+
+      - name: Prove exact immutable source head
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+
+      - name: Configure private Git dependency auth
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Install Rust 1.88
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.88.0'
+          components: rustfmt,clippy
+
+      - name: Bootstrap lock authority
+        working-directory: source
+        run: bash scripts/bootstrap-cargo-lock.sh ensure
+
+      - name: Rust CLI governance checks
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo check --locked -p ores-stack-cli --all-targets
+          cargo test --locked -p ores-stack-cli --all-targets
+          cargo clippy --locked -p ores-stack-cli --all-targets -- -D warnings
+
+      - name: Install Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: source/package-lock.json
+
+      - name: Install contract toolchain
+        working-directory: source
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run independent TypeSpec/JSON Schema parity suite
+        working-directory: source
+        run: npm run check:contracts
+
+      - name: Source immutability and diff hygiene
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --porcelain)"
