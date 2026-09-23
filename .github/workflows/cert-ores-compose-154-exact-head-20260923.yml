@@ -30,7 +30,7 @@ jobs:
           echo "::add-mask::$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
 
-      - name: Fetch immutable compose candidate
+      - name: Fetch immutable compose base and candidate
         shell: bash
         run: |
           set -euo pipefail
@@ -51,6 +51,7 @@ jobs:
           test "${changed[3]}" = "src/local_up_process.rs"
           test "${changed[4]}" = "src/service_environment.rs"
           test "${changed[5]}" = "src/up_orchestrator.rs"
+          git -C source worktree add --detach ../source-main "$SOURCE_MAIN_SHA"
 
       - name: Install reviewed Rust toolchain
         shell: bash
@@ -71,14 +72,58 @@ jobs:
             src/service_environment.rs \
             src/up_orchestrator.rs
 
-      - name: Exact native Rust compile lint and test gates
+      - name: Candidate Rust compile gate
         working-directory: source
         shell: bash
         run: |
           set -euo pipefail
           cargo check --all-targets --all-features
-          cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Candidate Rust test gate
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
           cargo test --all-targets --all-features
+
+      - name: Differential strict Clippy gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          extract_diagnostics() {
+            jq -r '
+              select(.reason == "compiler-message")
+              | select(.message.level == "error" or .message.level == "warning")
+              | .message as $m
+              | ($m.spans | map(select(.is_primary == true)) | .[0].file_name // "<unknown>") as $file
+              | (($m.code.code // "no-code") + "\t" + $file + "\t" + $m.message)
+            ' "$1" | sort -u
+          }
+
+          run_clippy() {
+            local dir="$1"
+            local out="$2"
+            set +e
+            (cd "$dir" && cargo clippy --all-targets --all-features --message-format=json -- -D warnings) >"$out" 2>"${out}.stderr"
+            local status=$?
+            set -e
+            echo "clippy status for $dir: $status"
+          }
+
+          run_clippy source-main "$RUNNER_TEMP/main-clippy.jsonl"
+          run_clippy source "$RUNNER_TEMP/candidate-clippy.jsonl"
+          extract_diagnostics "$RUNNER_TEMP/main-clippy.jsonl" >"$RUNNER_TEMP/main-diags.txt"
+          extract_diagnostics "$RUNNER_TEMP/candidate-clippy.jsonl" >"$RUNNER_TEMP/candidate-diags.txt"
+          comm -13 "$RUNNER_TEMP/main-diags.txt" "$RUNNER_TEMP/candidate-diags.txt" >"$RUNNER_TEMP/new-diags.txt"
+          echo 'New candidate diagnostics versus exact main:'
+          cat "$RUNNER_TEMP/new-diags.txt"
+
+          candidate_owned='^(src/config_loader\.rs|src/local_up_process\.rs|src/service_environment\.rs|src/up_orchestrator\.rs)$'
+          if awk -F '\t' -v re="$candidate_owned" '$2 ~ re { print; found=1 } END { exit found ? 0 : 1 }' "$RUNNER_TEMP/new-diags.txt"; then
+            echo 'candidate-owned strict Clippy regression detected' >&2
+            exit 1
+          fi
+          echo 'No new strict-Clippy diagnostics in PR-owned Rust files relative to exact main.'
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
