@@ -18,7 +18,7 @@ env:
 jobs:
   repair:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
       - name: Configure authenticated forge access
         shell: bash
@@ -41,6 +41,24 @@ jobs:
           git -C source checkout --detach "$SOURCE_SHA"
           test -z "$(git -C source status --porcelain --untracked-files=all)"
 
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22.16.0'
+          package-manager-cache: false
+
+      - name: Reproduce tagged package build inputs
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          node_root="$(dirname "$(dirname "$(command -v node)")")"
+          test -f "$node_root/include/node/node.h"
+          export npm_config_nodedir="$node_root"
+          npm ci --ignore-scripts
+          npm rebuild @oresoftware/f2e --foreground-scripts
+          node ./bin/typespec-json-schema-validator.mjs doctor --quiet
+          test -z "$(git status --porcelain --untracked-files=no)"
+
       - name: Install Rust 1.88 and pinned Zed CLI
         shell: bash
         run: |
@@ -56,14 +74,20 @@ jobs:
         run: |
           set -euo pipefail
           zed validate --manifest .zpkg.toml --lock .zpkg.lock --require-lock
-          artifact="$RUNNER_TEMP/tjsv-0.1.0.tar.gz"
-          zed pack --out "$artifact"
+          out_dir="$RUNNER_TEMP/tjsv-pack"
+          rm -rf "$out_dir"
+          mkdir -p "$out_dir"
+          zed pack --out "$out_dir"
+          artifact="$(find "$out_dir" -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
+          test -n "$artifact"
           test -s "$artifact"
           actual="$(sha256sum "$artifact" | awk '{print $1}')"
+          echo "artifact=$artifact"
           echo "artifact sha256=$actual"
           test "$actual" = "$EXPECTED_SHA256"
           tar -tzf "$artifact" >/dev/null
-          test -z "$(git status --porcelain --untracked-files=all)"
+          cp "$artifact" "$RUNNER_TEMP/tjsv-0.1.0.tar.gz"
+          test -z "$(git status --porcelain --untracked-files=no)"
 
       - name: Publish exact bytes as GitHub release fallback assets
         shell: bash
