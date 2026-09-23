@@ -63,25 +63,28 @@ jobs:
           rustup component add rustfmt clippy
           rustc --version | grep -F 'rustc 1.98.1'
 
+      # Check only the files changed by #154. Plain rustfmt follows module
+      # declarations and can fail on unrelated baseline formatting drift in
+      # unchanged modules, which is not evidence about this PR's review delta.
       - name: Format config_loader.rs
         working-directory: ores-compose
         shell: bash
-        run: rustfmt --edition 2021 --check src/config_loader.rs
+        run: rustfmt --edition 2021 --check --config skip_children=true src/config_loader.rs
 
       - name: Format local_up_process.rs
         working-directory: ores-compose
         shell: bash
-        run: rustfmt --edition 2021 --check src/local_up_process.rs
+        run: rustfmt --edition 2021 --check --config skip_children=true src/local_up_process.rs
 
       - name: Format service_environment.rs
         working-directory: ores-compose
         shell: bash
-        run: rustfmt --edition 2021 --check src/service_environment.rs
+        run: rustfmt --edition 2021 --check --config skip_children=true src/service_environment.rs
 
       - name: Format up_orchestrator.rs
         working-directory: ores-compose
         shell: bash
-        run: rustfmt --edition 2021 --check src/up_orchestrator.rs
+        run: rustfmt --edition 2021 --check --config skip_children=true src/up_orchestrator.rs
 
       - name: Verify locked metadata
         working-directory: ores-compose
