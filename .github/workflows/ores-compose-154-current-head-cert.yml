@@ -13,7 +13,7 @@ permissions:
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
   COMPOSE_BASE: 'fb6d0b2aeb7d87c598e006bed050162b55e0c9f0'
-  COMPOSE_HEAD: 'f45c907a46878b93a35b207e1cee79687a83461c'
+  COMPOSE_HEAD: 'da06fc34404ac6b3e42590d6cdfc5ab55cfea59f'
 
 jobs:
   certify:
