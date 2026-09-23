@@ -1,0 +1,113 @@
+name: ores-compose #154 service-env certification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-compose-154-current-head-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+  COMPOSE_BASE: 'fb6d0b2aeb7d87c598e006bed050162b55e0c9f0'
+  COMPOSE_HEAD: 'f45c907a46878b93a35b207e1cee79687a83461c'
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Configure authenticated source access
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact ores-compose PR payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-compose
+          git -C ores-compose remote add origin https://github.com/ORESoftware/ores-compose.git
+          git -C ores-compose fetch --no-tags origin \
+            '+refs/pull/154/head:refs/remotes/origin/pr-154-head'
+          actual_head="$(git -C ores-compose rev-parse refs/remotes/origin/pr-154-head)"
+          printf 'expected PR head: %s\nactual PR head:   %s\n' "$COMPOSE_HEAD" "$actual_head"
+          test "$actual_head" = "$COMPOSE_HEAD"
+          git -C ores-compose checkout --detach refs/remotes/origin/pr-154-head
+          git -C ores-compose cat-file -e "$COMPOSE_BASE^{commit}"
+          changed="$(git -C ores-compose diff --name-only "$COMPOSE_BASE"..HEAD | sort | tr '\n' ' ')"
+          expected='contracts/json-schema/contract.schema.json contracts/typespec/main.tsp src/config_loader.rs src/local_up_process.rs src/service_environment.rs '
+          printf 'changed files: %s\n' "$changed"
+          test "$changed" = "$expected"
+          git -C ores-compose diff --check "$COMPOSE_BASE"..HEAD
+          test -z "$(git -C ores-compose status --porcelain)"
+
+      - name: Install Rust 1.98.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.98.1 --profile minimal --no-self-update
+          rustup default 1.98.1
+          rustup component add rustfmt clippy
+          rustc --version | grep -F 'rustc 1.98.1'
+
+      - name: Formatting and locked metadata
+        working-directory: ores-compose
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo metadata --locked --format-version 1 --no-deps >/dev/null
+
+      - name: Locked all-target all-feature compile
+        working-directory: ores-compose
+        shell: bash
+        run: cargo check --locked --all-targets --all-features
+
+      - name: Full Rust tests
+        working-directory: ores-compose
+        shell: bash
+        run: cargo test --locked --all-targets --all-features
+
+      - name: Strict Clippy
+        working-directory: ores-compose
+        shell: bash
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+
+      - name: Compare independent TypeSpec and JSON Schema authorities
+        working-directory: ores-compose
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p target
+          npx --yes \
+            --package=https://github.com/ORESoftware/typespec-json-schema-validator/archive/db0f1e66b2a65cad43c909aa558ae00c6a91578c.tar.gz \
+            tjsv check \
+            --typespec=contracts/typespec/main.tsp \
+            --schema=contracts/json-schema/contract.schema.json \
+            --instances=contracts/instances \
+            --report=target/compose-contract-parity.json \
+            --quiet
+
+      - name: Verify exact source remained immutable
+        if: always()
+        working-directory: ores-compose
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$COMPOSE_HEAD"
+          test -z "$(git status --porcelain)"
+          git diff --check "$COMPOSE_BASE"..HEAD
+          echo ORES_COMPOSE_154_CERT_PASS
