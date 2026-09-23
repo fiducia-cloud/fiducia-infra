@@ -1,0 +1,69 @@
+name: inspect ores-websocket contract evidence
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/inspect-ores-websocket-contracts-20260923.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_REPO: ORESoftware/ores-websocket
+  SOURCE_BRANCH: fix/ci-flags2env-native-bootstrap-20260923
+  SOURCE_SHA: 48c66152a6a7ce0b35ff30a00eea9a3d66e49928
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Fetch immutable source
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+          git init source
+          git -C source remote add origin "https://github.com/$SOURCE_REPO.git"
+          git -C source fetch --depth=1 origin "$SOURCE_BRANCH"
+          test "$(git -C source rev-parse FETCH_HEAD)" = "$SOURCE_SHA"
+          git -C source checkout --detach "$SOURCE_SHA"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22.23.1'
+          package-manager-cache: false
+
+      - name: Install with only reviewed native rebuild
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --ignore-scripts --no-audit --no-fund
+          npm rebuild @oresoftware/f2e --ignore-scripts=false --no-audit --no-fund
+          test -s node_modules/@oresoftware/f2e/clients/nodejs/build/Release/flags2env.node
+
+      - name: Emit official TypeSpec JSON Schema comparison evidence
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/generated
+          status=0
+          ./node_modules/.bin/tjsv check \
+            --typespec=./contracts/ores-websocket-v1.tsp \
+            --schema=./contracts/ores-websocket-v1.schema.json \
+            --instances=./contracts/instances \
+            --output-dir=./artifacts/generated \
+            --bundle-id=websocket.generated.schema.json \
+            --report=./artifacts/schema-parity.json || status=$?
+          test "$status" -eq 2
+          echo '=== GENERATED SCHEMA ==='
+          cat artifacts/generated/websocket.generated.schema.json
+          echo '=== PARITY FINDINGS ==='
+          node -e 'const r=require("./artifacts/schema-parity.json"); console.log(JSON.stringify(r.findings,null,2))'
