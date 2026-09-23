@@ -13,7 +13,7 @@ permissions:
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
   COMPOSE_BASE: 'fb6d0b2aeb7d87c598e006bed050162b55e0c9f0'
-  COMPOSE_HEAD: 'da06fc34404ac6b3e42590d6cdfc5ab55cfea59f'
+  COMPOSE_HEAD: '14b10f64ef6e77430ce60fc8a2df9f5bea41ccbf'
 
 jobs:
   certify:
@@ -48,7 +48,7 @@ jobs:
           git -C ores-compose checkout --detach refs/remotes/origin/pr-154-head
           git -C ores-compose cat-file -e "$COMPOSE_BASE^{commit}"
           changed="$(git -C ores-compose diff --name-only "$COMPOSE_BASE"..HEAD | sort | tr '\n' ' ')"
-          expected='contracts/json-schema/contract.schema.json contracts/typespec/main.tsp src/config_loader.rs src/local_up_process.rs src/service_environment.rs '
+          expected='contracts/json-schema/contract.schema.json contracts/typespec/main.tsp src/config_loader.rs src/local_up_process.rs src/service_environment.rs src/up_orchestrator.rs '
           printf 'changed files: %s\n' "$changed"
           test "$changed" = "$expected"
           git -C ores-compose diff --check "$COMPOSE_BASE"..HEAD
@@ -77,6 +77,11 @@ jobs:
         working-directory: ores-compose
         shell: bash
         run: rustfmt --edition 2021 --check src/service_environment.rs
+
+      - name: Format up_orchestrator.rs
+        working-directory: ores-compose
+        shell: bash
+        run: rustfmt --edition 2021 --check src/up_orchestrator.rs
 
       - name: Verify locked metadata
         working-directory: ores-compose
