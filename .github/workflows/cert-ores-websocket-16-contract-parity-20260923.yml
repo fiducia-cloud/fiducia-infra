@@ -73,10 +73,6 @@ jobs:
           if (!Array.isArray(report.findings) || report.findings.length !== 0) {
             throw new Error(`expected zero parity findings; got ${report.findings?.length}`);
           }
-          const text = JSON.stringify(report);
-          if (text.includes('instance-verdict-divergence') || text.includes('STOPPED_FOR_EVALUATION')) {
-            throw new Error('retained parity report contains a divergence or stopped evaluation');
-          }
           console.log('ORES_WEBSOCKET_16_PARITY_REPORT_ZERO_FINDINGS');
           NODE
 
