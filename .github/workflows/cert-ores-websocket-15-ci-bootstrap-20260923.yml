@@ -12,8 +12,8 @@ permissions:
 env:
   SOURCE_REPO: ORESoftware/ores-websocket
   SOURCE_BRANCH: fix/ci-flags2env-native-bootstrap-20260923
-  SOURCE_SHA: 48c66152a6a7ce0b35ff30a00eea9a3d66e49928
-  SOURCE_MAIN_SHA: a30bb1462459785bba7fc1b71f1e30221f48f224
+  SOURCE_SHA: 3484aa6a5558aacc4911e4c2cf76090dfb07601f
+  SOURCE_MAIN_SHA: a61d260b6ae584900b25f59d14607383df0fc853
 
 jobs:
   certify:
