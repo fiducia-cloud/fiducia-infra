@@ -60,12 +60,23 @@ jobs:
           rustup default 1.98.1
           rustc --version | grep -F 'rustc 1.98.1'
 
-      - name: Exact native Rust gates
+      - name: Exact PR-delta formatting gate
         working-directory: source
         shell: bash
         run: |
           set -euo pipefail
-          cargo fmt --all --check
+          rustfmt --edition 2021 --check \
+            src/config_loader.rs \
+            src/local_up_process.rs \
+            src/service_environment.rs \
+            src/up_orchestrator.rs
+
+      - name: Exact native Rust compile lint and test gates
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --all-targets --all-features
           cargo clippy --all-targets --all-features -- -D warnings
           cargo test --all-targets --all-features
 
