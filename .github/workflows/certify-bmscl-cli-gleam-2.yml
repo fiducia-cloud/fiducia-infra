@@ -1,0 +1,65 @@
+name: certify bmscl-cli-gleam 2
+
+on:
+  push:
+    branches:
+      - proof/bmscl-cli-gleam-2-20260923
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      SOURCE_REPO: beamscale/bmscl-cli-gleam
+      SOURCE_BRANCH: feat/verify-compile-parity-20260923
+      SOURCE_SHA: b389f1ea382fdac0d418089929e36f735e3c3558
+      SOURCE_MAIN_SHA: a22a2e4b8b407554ed9f71a70e4d27baa9f309ce
+    steps:
+      - name: Checkout exact source head
+        uses: actions/checkout@v4
+        with:
+          repository: beamscale/bmscl-cli-gleam
+          ref: b389f1ea382fdac0d418089929e36f735e3c3558
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Guard exact source and review delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(git ls-remote https://github.com/${SOURCE_REPO}.git refs/heads/${SOURCE_BRANCH} | cut -f1)" = "$SOURCE_SHA"
+          test "$(git ls-remote https://github.com/${SOURCE_REPO}.git refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
+          git cat-file -e "$SOURCE_MAIN_SHA^{commit}"
+          changed="$(git diff --name-only "$SOURCE_MAIN_SHA" "$SOURCE_SHA")"
+          test "$changed" = "src/bmscl_cli.gleam"
+          git diff --check "$SOURCE_MAIN_SHA" "$SOURCE_SHA"
+
+      - name: Install OTP 27, Gleam 1.15.0, and rebar3 3.24
+        uses: erlef/setup-beam@v1.24.1
+        with:
+          otp-version: '27'
+          gleam-version: '1.15.0'
+          rebar3-version: '3.24'
+
+      - name: Download dependencies
+        run: gleam deps download
+
+      - name: Check formatting
+        run: gleam format --check src
+
+      - name: Check project
+        run: gleam check
+
+      - name: Final immutable source guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(git ls-remote https://github.com/${SOURCE_REPO}.git refs/heads/${SOURCE_BRANCH} | cut -f1)" = "$SOURCE_SHA"
+          test "$(git ls-remote https://github.com/${SOURCE_REPO}.git refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
+          git diff --check "$SOURCE_MAIN_SHA" "$SOURCE_SHA"
