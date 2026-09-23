@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 55
     steps:
-      - name: Configure authenticated source access
+      - name: Verify source-access credential
         shell: bash
         env:
           ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
@@ -29,7 +29,6 @@ jobs:
           set -euo pipefail
           test -n "$ORE_SOURCE_PAT"
           echo "::add-mask::$ORE_SOURCE_PAT"
-          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
 
       - name: Fetch immutable base and candidate
         shell: bash
@@ -94,19 +93,25 @@ jobs:
           set -euo pipefail
           cargo install --git https://github.com/zed-pkg/zed-cli --rev "$ZED_CLI_SHA" --locked zed-cli
 
-      - name: Validate manifests
+      - name: Prove manifest migration
         shell: bash
         run: |
           set -euo pipefail
-          (cd source-main && zed validate)
+          set +e
+          base_output=$(cd source-main && zed validate 2>&1)
+          base_status=$?
+          set -e
+          test "$base_status" -ne 0
+          grep -F 'unknown language `multi`' <<<"$base_output"
           (cd source && zed validate)
+          echo ZED_MANIFEST_MIGRATION_PASS
 
       - name: Prove public GitHub fallback install
         working-directory: source
         shell: bash
         run: |
           set -euo pipefail
-          unset ZED_PKG_GITHUB_TOKEN || true
+          unset ZED_PKG_GITHUB_TOKEN GITHUB_TOKEN GH_TOKEN || true
           rm -rf .vendor .zed zed.lock
           zed install --allow-build --install-mode copy
           zed validate --require-lock
