@@ -18,6 +18,9 @@ jobs:
       SOURCE_BRANCH: fix/zpkg-universal-language-20260922
       SOURCE_SHA: 7e080a1e0c5f4eb7d471b4bfd59e2869f4ae6cc3
       SOURCE_MAIN_SHA: 37ff2dc38878dc6e85accb562ec5c07652853c65
+      TJSV_REPO: ORESoftware/typespec-json-schema-validator
+      TJSV_SHA: 26c3b2c84ed58fd8cb110b14c917beeacb93804c
+      ZED_CLI_REVISION: 69fce161e456d758459cab5d3a6441f599769bfa
       CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
     steps:
       - name: Require scoped source credential
@@ -57,7 +60,7 @@ jobs:
           test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
           test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
 
-      - name: Install pinned Zed CLI with GitHub tag-archive fallback
+      - name: Install certified Zed CLI
         shell: bash
         env:
           ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
@@ -65,20 +68,61 @@ jobs:
           set -euo pipefail
           echo "::add-mask::$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
-          cargo install --git https://github.com/zed-pkg/zed-cli --rev a1c5b7a3c72b957944b76911fcbc723dd9c16541 --locked zed-cli
+          cargo install --git https://github.com/zed-pkg/zed-cli --rev "$ZED_CLI_REVISION" --locked zed-cli
+          test "$(zed --version | awk '{print $2}')" = "0.3.0"
 
-      - name: Validate and materialize Zed package
+      - name: Prepare exact validator source override
         shell: bash
         env:
           ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
-          ZED_PKG_GITHUB_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
-          GITHUB_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
         run: |
           set -euo pipefail
           echo "::add-mask::$ORE_SOURCE_PAT"
+          override_dir="$RUNNER_TEMP/tjsv-source"
+          rm -rf "$override_dir"
+          git init "$override_dir"
+          git -C "$override_dir" remote add origin "https://github.com/${TJSV_REPO}.git"
+          git -C "$override_dir" fetch --depth 1 origin "$TJSV_SHA"
+          git -C "$override_dir" checkout --detach FETCH_HEAD
+          test "$(git -C "$override_dir" rev-parse HEAD)" = "$TJSV_SHA"
+          python3 - "$override_dir/.zpkg.toml" <<'PY'
+          import sys, tomllib
+          with open(sys.argv[1], 'rb') as f:
+              package = tomllib.load(f)['package']
+          assert package['org'] == 'oresoftware'
+          assert package['name'] == 'typespec-json-schema-validator'
+          assert package['version'] == '0.1.0'
+          PY
+
+      - name: Validate and materialize Zed package with pinned source graph
+        shell: bash
+        env:
+          ZED_TJSV_OVERRIDE: ${{ runner.temp }}/tjsv-source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          zed validate
+          cp .zpkg.toml "$RUNNER_TEMP/ores-websocket.zpkg.toml"
+          cleanup() {
+            cp "$RUNNER_TEMP/ores-websocket.zpkg.toml" .zpkg.toml
+            git reset --hard "$SOURCE_SHA" >/dev/null
+            git clean -ffd -- .zed .vendor zed_modules >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          cat >> .zpkg.toml <<'EOF'
+
+          [overrides.path]
+          "oresoftware/typespec-json-schema-validator" = "$ZED_TJSV_OVERRIDE"
+          EOF
           zed validate
           zed install --allow-build --install-mode copy
           zed validate --require-lock
+          test -e .vendor/.zed || test -e zed_modules || test -e .zed
+          cleanup
+          trap - EXIT
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          zed validate
 
       - name: Rust 1.88 source checks
         shell: bash
@@ -94,6 +138,7 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.9.0
+
       - name: TypeScript checks
         shell: bash
         run: |
