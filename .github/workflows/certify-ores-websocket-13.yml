@@ -16,8 +16,8 @@ jobs:
     env:
       SOURCE_REPO: ORESoftware/ores-websocket
       SOURCE_BRANCH: fix/zpkg-universal-language-20260922
-      SOURCE_SHA: 9c0391cf4e62921d557aec86eecedbdbd54ce8dd
-      SOURCE_MAIN_SHA: 8cceeaf7142c469bc7ef55c16dc51ae0f9aeb43e
+      SOURCE_SHA: 7e080a1e0c5f4eb7d471b4bfd59e2869f4ae6cc3
+      SOURCE_MAIN_SHA: 37ff2dc38878dc6e85accb562ec5c07652853c65
     steps:
       - name: Require scoped source credential
         shell: bash
@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: ORESoftware/ores-websocket
-          ref: 9c0391cf4e62921d557aec86eecedbdbd54ce8dd
+          ref: 7e080a1e0c5f4eb7d471b4bfd59e2869f4ae6cc3
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 0
