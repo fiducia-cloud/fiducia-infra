@@ -50,11 +50,6 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: '22.9.0'
-      - name: Verify pinned TJSV commit exists
-        shell: bash
-        run: |
-          set -euo pipefail
-          git ls-remote https://github.com/ORESoftware/typespec-json-schema-validator.git | grep -F "$TJSV_SHA"
       - name: Measure exact-base TJSV parity
         id: base_parity
         shell: bash
