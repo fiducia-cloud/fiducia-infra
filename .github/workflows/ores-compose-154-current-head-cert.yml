@@ -195,7 +195,7 @@ jobs:
           mkdir -p target
           set +e
           npx --yes \
-            --package=https://github.com/ORESoftware/typespec-json-schema-validator/archive/db0f1e66b2a65cad43c909aa558ae00c6a91578c.tar.gz \
+            --package=https://github.com/ORESoftware/typespec-json-schema-validator/archive/c55b2af26e0770bb947a80be016f0364dc46d6a3.tar.gz \
             tjsv check \
             --typespec=contracts/typespec/main.tsp \
             --schema=contracts/json-schema/contract.schema.json \
