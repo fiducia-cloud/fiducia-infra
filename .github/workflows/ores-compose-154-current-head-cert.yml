@@ -13,7 +13,7 @@ permissions:
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
   COMPOSE_BASE: 'fb6d0b2aeb7d87c598e006bed050162b55e0c9f0'
-  COMPOSE_HEAD: '14b10f64ef6e77430ce60fc8a2df9f5bea41ccbf'
+  COMPOSE_HEAD: 'd1afaa536cbd77681caf5729ed6aec501d5745ba'
 
 jobs:
   certify:
@@ -63,9 +63,6 @@ jobs:
           rustup component add rustfmt clippy
           rustc --version | grep -F 'rustc 1.98.1'
 
-      # Check only the files changed by #154. Plain rustfmt follows module
-      # declarations and can fail on unrelated baseline formatting drift in
-      # unchanged modules, which is not evidence about this PR's review delta.
       - name: Format config_loader.rs
         working-directory: ores-compose
         shell: bash
