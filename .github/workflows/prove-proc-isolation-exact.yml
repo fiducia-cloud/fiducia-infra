@@ -1,0 +1,208 @@
+name: proc isolation exact proof
+
+on:
+  push:
+    branches:
+      - proof/ores-proc-isolation-2-linux-20260924
+    paths:
+      - .github/workflows/prove-proc-isolation-exact.yml
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_REPO: ORESoftware/ores-proc-isolation-cli
+  SOURCE_BRANCH: fix/post-merge-proof-hardening
+  SOURCE_SHA: f59d7e4e5367305e235c86d55c68de2aa77b0dbe
+
+jobs:
+  linux-boundary:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Require scoped source credential
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+
+      - name: Check out exact source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ORESoftware/ores-proc-isolation-cli
+          ref: f59d7e4e5367305e235c86d55c68de2aa77b0dbe
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Guard immutable source
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          remote_sha=$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)
+          test "$remote_sha" = "$SOURCE_SHA"
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.88.0
+          components: rustfmt,clippy
+
+      - name: Install Linux helpers
+        shell: bash
+        run: |
+          set -euo pipefail
+          export NEEDRESTART_MODE=a
+          sudo -E apt-get update
+          sudo -E apt-get install -y apparmor-profiles apparmor-utils bubblewrap slirp4netns iproute2 iptables util-linux curl shellcheck
+          if [[ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || printf '0')" == '1' ]]; then
+            profile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+            test -f "$profile"
+            sudo install -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
+            sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          fi
+
+      - name: Static checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all --check
+          shellcheck scripts/linux/*.sh
+          cargo check --all-targets
+          cargo test --all-targets
+          cargo clippy --all-targets -- -D warnings
+          cargo build --quiet --examples --bins
+
+      - name: Apply direct slirp candidate only in proof workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/linux/ores-proc-isolate.sh')
+          s = p.read_text()
+          old = '''"$NSENTER" --preserve-credentials -U --target="$child_pid" "$SLIRP" \\
+            --configure \\
+            --mtu=65520 \\
+            --disable-host-loopback \\
+            --enable-sandbox \\
+            --enable-seccomp \\
+            --netns-type=path \\
+            --ready-fd=6 \\
+            "/proc/$child_pid/ns/net" tap0 \\
+            6>"$READY_FIFO" &'''
+          new = '''"$SLIRP" \\
+            --configure \\
+            --mtu=65520 \\
+            --disable-host-loopback \\
+            --enable-sandbox \\
+            --enable-seccomp \\
+            --userns-path="/proc/$child_pid/ns/user" \\
+            --netns-type=path \\
+            --ready-fd=6 \\
+            "/proc/$child_pid/ns/net" tap0 \\
+            6>"$READY_FIFO" &'''
+          if old not in s:
+              raise SystemExit('expected owning-userns slirp invocation not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          shellcheck scripts/linux/*.sh
+          git diff --check
+
+      - name: Write strict boundary policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/ores-pi-proof.yaml <<'YAML'
+          version: 1
+          defaults:
+            group: no-net
+          groups:
+            no-net:
+              network:
+                mode: none
+            external:
+              network:
+                mode: external
+                deny_loopback: true
+                deny_private_networks: true
+          processes:
+            true:
+              group: no-net
+              command: [/usr/bin/true]
+            passwd:
+              group: no-net
+              command: [/usr/bin/cat, /etc/passwd]
+            internet:
+              group: external
+              command: [/usr/bin/curl, --ipv4, --fail, --silent, --show-error, --head, https://example.com]
+            curl-flex:
+              group: external
+              command: [/usr/bin/curl, --fail, --silent, --show-error]
+          YAML
+          target/debug/ores-proc-isolation check --config /tmp/ores-pi-proof.yaml
+
+      - name: Prove no-network and filesystem boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --ipv4 --fail --silent --show-error --head https://example.com >/dev/null
+          target/debug/ores-proc-isolation run true --config /tmp/ores-pi-proof.yaml
+          if target/debug/ores-proc-isolation run passwd --config /tmp/ores-pi-proof.yaml; then
+            echo 'sandbox unexpectedly read /etc/passwd' >&2
+            exit 1
+          fi
+
+      - name: Prove isolated Internet egress
+        shell: bash
+        run: |
+          set -euo pipefail
+          target/debug/ores-proc-isolation run internet --config /tmp/ores-pi-proof.yaml
+
+      - name: Prove host loopback denial
+        shell: bash
+        run: |
+          set -euo pipefail
+          target/debug/examples/loopback_fixture 127.0.0.1:18080 >/tmp/loopback.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          sleep 1
+          curl --fail --silent http://127.0.0.1:18080 >/dev/null
+          if target/debug/ores-proc-isolation run curl-flex --config /tmp/ores-pi-proof.yaml -- http://127.0.0.1:18080; then
+            echo 'sandbox unexpectedly reached host loopback' >&2
+            exit 1
+          fi
+
+      - name: Prove host interface denial
+        shell: bash
+        run: |
+          set -euo pipefail
+          host_ip=$(ip -o -4 addr show scope global | awk 'NR==1 {split($4,a,"/"); print a[1]}')
+          test -n "$host_ip"
+          target/debug/examples/loopback_fixture 0.0.0.0:18081 >/tmp/host.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          sleep 1
+          curl --fail --silent "http://${host_ip}:18081" >/dev/null
+          if target/debug/ores-proc-isolation run curl-flex --config /tmp/ores-pi-proof.yaml -- "http://${host_ip}:18081"; then
+            echo "sandbox unexpectedly reached host interface $host_ip" >&2
+            exit 1
+          fi
+
+      - name: Reconfirm source branch remained immutable
+        if: always()
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          remote_sha=$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)
+          test "$remote_sha" = "$SOURCE_SHA"
