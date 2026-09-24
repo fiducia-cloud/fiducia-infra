@@ -111,6 +111,24 @@ jobs:
           cargo check --locked -p ores-stack-cli --all-targets
           cargo check --locked -p ores-stack-cli --all-targets --all-features
 
+      - name: Remove carrier-only Git authentication before deterministic tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r key; do
+            value="$(git config --global --get-all "$key" | head -n 1 || true)"
+            if [[ "$value" == 'https://github.com/' ]]; then
+              git config --global --unset-all "$key" || true
+            fi
+          done < <(git config --global --name-only --get-regexp '^url\..*\.insteadOf$' || true)
+          if git config --global --get-regexp '^url\..*\.insteadOf$' >/tmp/remaining-url-rewrites 2>/dev/null; then
+            if grep -Fq 'https://github.com/' /tmp/remaining-url-rewrites; then
+              echo 'carrier GitHub URL rewrite survived cleanup' >&2
+              exit 1
+            fi
+          fi
+          rm -f /tmp/remaining-url-rewrites
+
       - name: Run CLI tests
         working-directory: ores-stack
         shell: bash
@@ -123,6 +141,16 @@ jobs:
         working-directory: ores-stack
         shell: bash
         run: cargo clippy --locked -p ores-stack-cli --all-targets --all-features -- -D warnings
+
+      - name: Restore authenticated Git access for contract tooling
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
 
       - name: Install TypeSpec/TJSV dependencies
         working-directory: ores-stack
