@@ -143,27 +143,49 @@ jobs:
           print('no new full-suite failures beyond exact base')
           PY
 
-      - name: Strict Clippy has no head-introduced diagnostics
+      - name: Strict Clippy introduces no diagnostics beyond exact base
         working-directory: ores-compose
         shell: bash
         run: |
           set -euo pipefail
+          git worktree add --detach /tmp/ores-compose-base "$COMPOSE_BASE"
+
           set +e
-          cargo clippy --locked --all-targets --all-features -- -D warnings 2>&1 | tee /tmp/ores-compose-head-clippy.log
-          status=${PIPESTATUS[0]}
+          (cd /tmp/ores-compose-base && cargo clippy --locked --all-targets --all-features -- -D warnings) \
+            2>&1 | tee /tmp/ores-compose-base-clippy.log
+          base_status=${PIPESTATUS[0]}
+          cargo clippy --locked --all-targets --all-features -- -D warnings \
+            2>&1 | tee /tmp/ores-compose-head-clippy.log
+          head_status=${PIPESTATUS[0]}
           set -e
-          if [[ "$status" -eq 0 ]]; then
+
+          printf 'base clippy status: %s\nhead clippy status: %s\n' "$base_status" "$head_status"
+          if [[ "$head_status" -eq 0 ]]; then
             exit 0
           fi
-          # The exact base independently emits this one library-only warning/error.
-          # machine.rs is excluded by the exact changed-file guard above, so accept
-          # only that inherited diagnostic and reject every other strict-Clippy error.
-          grep -Fq 'error: unused import: `JobState`' /tmp/ores-compose-head-clippy.log
-          grep -Fq 'src/machine.rs:6:65' /tmp/ores-compose-head-clippy.log
-          error_count="$(grep -c '^error:' /tmp/ores-compose-head-clippy.log || true)"
-          test "$error_count" -eq 2
-          grep -Fq 'error: could not compile `ores-compose` (lib) due to 1 previous error' /tmp/ores-compose-head-clippy.log
-          echo 'strict Clippy differs from green only by the exact-base machine.rs unused import'
+
+          python3 - <<'PY'
+          from collections import Counter
+          from pathlib import Path
+          import re, sys
+
+          def diagnostics(path):
+              text = Path(path).read_text()
+              pairs = re.findall(r'^error: (.+?)\n\s*--> ([^:\n]+):\d+:\d+', text, re.M)
+              return Counter((message.strip(), source.strip()) for message, source in pairs)
+
+          base = diagnostics('/tmp/ores-compose-base-clippy.log')
+          head = diagnostics('/tmp/ores-compose-head-clippy.log')
+          new = head - base
+          print(f'exact-base clippy diagnostics: {sum(base.values())}')
+          print(f'head clippy diagnostics: {sum(head.values())}')
+          if new:
+              print('head-introduced strict-Clippy diagnostics:', file=sys.stderr)
+              for (message, source), count in sorted(new.items()):
+                  print(f'  {count}x {source}: {message}', file=sys.stderr)
+              sys.exit(1)
+          print('no strict-Clippy diagnostics beyond exact base')
+          PY
 
       - name: Compare independent TypeSpec and JSON Schema authorities
         working-directory: ores-compose
