@@ -72,6 +72,7 @@ jobs:
           test "$(zed --version | awk '{print $2}')" = "0.3.0"
           git config --global --unset-all "$rewrite" || true
 
+      # Re-run after TJSV #202 merged the Zed-hoisted launcher compatibility fix.
       - name: Prove anonymous public GitHub fallback install
         shell: bash
         env:
