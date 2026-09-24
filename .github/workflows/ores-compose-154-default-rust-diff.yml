@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  COMPOSE_HEAD: fafea34be8d8ff768231c88bd77d545bc79185ce
+  COMPOSE_HEAD: 48bb3a014d4d53b26160936761ea146a8f6722f9
   COMPOSE_BASE: fb6d0b2aeb7d87c598e006bed050162b55e0c9f0
 
 jobs:
@@ -23,7 +23,7 @@ jobs:
           - name: base
             sha: fb6d0b2aeb7d87c598e006bed050162b55e0c9f0
           - name: head
-            sha: fafea34be8d8ff768231c88bd77d545bc79185ce
+            sha: 48bb3a014d4d53b26160936761ea146a8f6722f9
     name: default-rust-${{ matrix.revision.name }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
