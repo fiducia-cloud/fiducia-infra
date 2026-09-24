@@ -82,7 +82,22 @@ jobs:
           echo "::add-mask::$ORE_SOURCE_PAT"
           rm -rf .vendor .zed zed_modules .zpkg.lock
           zed validate
+          set +e
           zed install --allow-build --install-mode copy
+          install_status=$?
+          set -e
+          echo '--- copied Zed tree ---'
+          find .vendor/.zed -maxdepth 5 -print 2>/dev/null | sort | head -n 400 || true
+          echo '--- tjsv launcher ---'
+          if [[ -e .vendor/.zed/.bin/tjsv ]]; then
+            ls -la .vendor/.zed/.bin/tjsv
+            sed -n '1,120p' .vendor/.zed/.bin/tjsv || true
+          fi
+          echo '--- package src candidates ---'
+          find .vendor/.zed -type f \( -path '*/src/cli.mjs' -o -path '*/src/config-cli.mjs' \) -print 2>/dev/null | sort || true
+          if [[ "$install_status" -ne 0 ]]; then
+            exit "$install_status"
+          fi
           zed validate --require-lock
           test -x .vendor/.zed/.bin/tjsv || test -x .zed/.bin/tjsv || test -x zed_modules/.bin/tjsv
           zed run tjsv --help >/dev/null
