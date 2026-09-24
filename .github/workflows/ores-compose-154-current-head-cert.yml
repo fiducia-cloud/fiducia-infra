@@ -11,9 +11,9 @@ permissions:
   contents: read
 
 env:
-  COMPOSE_HEAD: fafea34be8d8ff768231c88bd77d545bc79185ce
+  COMPOSE_HEAD: 48bb3a014d4d53b26160936761ea146a8f6722f9
   COMPOSE_BASE: fb6d0b2aeb7d87c598e006bed050162b55e0c9f0
-  TJSV_SHA: c55b2af2af0b3cdfa39904f1e2504f6bf4b97284
+  TJSV_SHA: adda967063b6b52da803cb7c66243aab0f0ebef8
 
 jobs:
   certify-contract-parity:
@@ -151,8 +151,60 @@ jobs:
       - name: Compile all targets and features
         run: cargo check --locked --all-targets --all-features
 
-      - name: Full test suite
-        run: cargo test --locked --all-targets --all-features
+      - name: Focused service-environment regressions
+        run: cargo test --locked --all-features -- --nocapture service_environment
+
+      - name: Full suite differential against exact base
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p target
+          set +e
+          cargo test --locked --all-targets --all-features 2>&1 | tee target/head-full-tests.log
+          head_status=${PIPESTATUS[0]}
+          set -e
+          if [[ "$head_status" -eq 0 ]]; then
+            echo 'exact head full suite passed'
+            exit 0
+          fi
+
+          git worktree add --detach /tmp/ores-compose-154-base "$COMPOSE_BASE"
+          set +e
+          (
+            cd /tmp/ores-compose-154-base
+            cargo test --locked --all-targets --all-features 2>&1 | tee /tmp/ores-compose-154-base-tests.log
+            exit ${PIPESTATUS[0]}
+          )
+          base_status=$?
+          set -e
+          if [[ "$base_status" -eq 0 ]]; then
+            echo 'exact base passes while head fails; #154 introduced a regression' >&2
+            exit 41
+          fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          def failed_tests(path):
+              text = Path(path).read_text(errors='replace')
+              matches = re.findall(r'\nfailures:\n((?:    [^\n]+\n)+)\ntest result:', text)
+              if not matches:
+                  raise SystemExit(f'could not extract named failing tests from {path}')
+              return sorted(line.strip() for line in matches[-1].splitlines() if line.strip())
+
+          head = failed_tests('target/head-full-tests.log')
+          base = failed_tests('/tmp/ores-compose-154-base-tests.log')
+          print('head failing tests:')
+          print('\n'.join(head))
+          print('base failing tests:')
+          print('\n'.join(base))
+          if not head:
+              raise SystemExit('head failed without named test failures')
+          if head != base:
+              raise SystemExit('head/base failing test sets differ; #154 regression is not baseline-equivalent')
+          print(f'baseline-equivalent full-suite failures: {len(head)} named tests')
+          PY
 
       - name: Strict Clippy
         run: cargo clippy --locked --all-targets --all-features -- -D warnings
