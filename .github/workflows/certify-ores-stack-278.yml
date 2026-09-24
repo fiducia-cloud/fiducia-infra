@@ -64,10 +64,30 @@ jobs:
           git reset --hard "$SOURCE_SHA" >/dev/null
           git clean -ffd >/dev/null
           test -z "$(git status --porcelain --untracked-files=all)"
+      - name: Configure scoped Cargo git authentication
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+          git config --global net.git-fetch-with-cli true
       - name: Check CLI with locked graph
         run: cargo check -p ores-stack-cli --all-targets --locked
       - name: Test CLI with locked graph
         run: cargo test -p ores-stack-cli --locked
+      - name: Remove Cargo git authentication
+        if: always()
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global --unset-all url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf || true
+          git config --global --unset-all net.git-fetch-with-cli || true
       - name: Install contract tooling
         run: npm ci
       - name: Check TypeSpec and JSON Schema governance parity
