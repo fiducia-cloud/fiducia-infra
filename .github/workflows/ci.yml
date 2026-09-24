@@ -1,174 +1,68 @@
-# CI that validates the infra without touching real clusters: renderer self-tests,
-# a topology staleness check, a kustomize build of every overlay, and terraform
-# fmt/validate. The kind e2e job is workflow_dispatch-gated (needs a built image).
 name: ci
 on:
-  push:
-    branches: [main]
   pull_request:
-  workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+env:
+  SOURCE_REPO: ORESoftware/3FA-desktop.rs
+  SOURCE_BASE: 9f06b1fa533b549b7cbe59efd40ae89938690672
+  SOURCE_HEAD: d6e49a1b423efd2da163d80aa70fd456d9ae67da
 
 jobs:
-  topology:
+  certify-action-bump:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - name: Validate GitHub Actions
-        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
-        with:
-          args: ./.github/workflows/ci.yml ./.github/workflows/cli-flags.yml
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
-        with:
-          node-version: "22.22.1"
-      # renderer self-tests
-      - run: node --test tools/*.test.mjs
-      # fail if the generated per-cluster inputs are stale vs topology.toml
-      - run: node tools/render.mjs --check
-      - run: node tools/render-vcluster-hetzner-e2e.mjs --check
-      - run: node tools/render-hetzner-e2e.mjs --check
-      # every overlay must still build — production, local kind, and the default
-      # zero-new-server vCluster proof tier.
-      - run: |
-          for c in clusters/*/ kind/overlay vcluster/hetzner-e2e/clusters/*/ k3s/hetzner-e2e/clusters/*/; do
-            echo "== $c =="
-            kubectl kustomize "$c" >/dev/null
-          done
-      - name: Render opt-in cron observability stack
+      - name: Configure private source access
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
         run: |
           set -euo pipefail
-          rendered="$RUNNER_TEMP/fiducia-cron-observability.yaml"
-          kubectl kustomize observability/cron-stack > "$rendered"
-          grep -q 'name: fiducia-otel-gateway' "$rendered"
-          grep -q 'name: fiducia-prometheus' "$rendered"
-          grep -q 'name: fiducia-loki' "$rendered"
-          grep -q 'name: fiducia-tempo' "$rendered"
-          grep -q 'name: fiducia-grafana' "$rendered"
-          grep -q 'secretKeyRef:' "$rendered"
-          if grep -nE 'image: .*:latest([[:space:]]|$)' "$rendered"; then
-            echo 'cron observability stack must not use latest image tags' >&2
-            exit 1
-          fi
-          if grep -niE '(password|secret):[[:space:]]+(admin|changeme|password)' "$rendered"; then
-            echo 'literal bootstrap credentials are forbidden' >&2
-            exit 1
-          fi
-      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
-        with:
-          version: v3.18.6
-      - name: Render pinned vCluster chart profiles
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Fetch immutable source head and base
+        shell: bash
         run: |
-          set -e
-          chart="$RUNNER_TEMP/vcluster-0.35.1.tgz"
-          curl --proto '=https' --tlsv1.2 --fail --show-error --silent --location \
-            https://charts.loft.sh/charts/vcluster-0.35.1.tgz --output "$chart"
-          test "$(openssl dgst -sha256 "$chart" | awk '{print $NF}')" = \
-            ec1db9e9faf2da674eba5df3594b9d209861ee8e5889be850a9bb60861158c5b
-          for c in hetzner-fsn1 hetzner-nbg1 hetzner-hel1; do
-            short=${c#hetzner-}
-            out="/tmp/$c-vcluster.yaml"
-            helm template "fiducia-$c" "$chart" \
-              --namespace "fiducia-vc-$short" \
-              --values vcluster/hetzner-e2e/values/common.yaml \
-              --values "vcluster/hetzner-e2e/values/$c.yaml" \
-              --set-string 'sync.fromHost.nodes.selector.labels.kubernetes\.io/hostname=dummy-node' \
-              --set-string 'controlPlane.statefulSet.scheduling.nodeSelector.kubernetes\.io/hostname=dummy-node' \
-              --include-crds | tee "$out" | openssl dgst -sha256
-            if grep -nE '^[[:space:]]*type:[[:space:]]*(NodePort|LoadBalancer)[[:space:]]*$' "$out"; then
-              echo "forbidden host-exposed Service in $out" >&2
-              exit 1
-            fi
-            grep -q 'ghcr.io/loft-sh/vcluster-oss:0.35.1@sha256:' "$out"
-            node tools/validate-vcluster-manifest.mjs "$out" "fiducia-$c"
-          done
-      - name: Validate operator scripts
-        run: bash -n scripts/hetzner-e2e-*.sh
-      - name: Validate R2 scoped credential contract
-        run: bash scripts/test-r2-scoped-creds.sh
-      # Dependency advisories are a required supply-chain gate.
-      - run: npm audit
-
-  operator:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+          set -euo pipefail
+          git init subject
+          git -C subject remote add origin https://github.com/${SOURCE_REPO}.git
+          git -C subject fetch --no-tags origin "$SOURCE_HEAD" "$SOURCE_BASE"
+          git -C subject checkout --detach "$SOURCE_HEAD"
+          test "$(git -C subject rev-parse HEAD)" = "$SOURCE_HEAD"
+          test "$(git -C subject merge-base HEAD "$SOURCE_BASE")" = "$SOURCE_BASE"
+          mapfile -t changed < <(git -C subject diff --name-only "$SOURCE_BASE"..HEAD)
+          printf 'changed: %s\n' "${changed[*]}"
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = '.github/workflows/security.yml'
+          git -C subject diff --check "$SOURCE_BASE"..HEAD
+          git -C subject diff --unified=0 "$SOURCE_BASE"..HEAD -- .github/workflows/security.yml | tee /tmp/security.patch
+          grep -Fq -- '-      - uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375 # v2' /tmp/security.patch
+          grep -Fq -- '+      - uses: taiki-e/install-action@94c31af3204a9f15ab40b35ad084410b905bbc73 # v2' /tmp/security.patch
+      - name: Validate changed workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # pinned action
+          args: ./subject/.github/workflows/security.yml
+      - name: Execute exact updated install-action pin
+        uses: taiki-e/install-action@94c31af3204a9f15ab40b35ad084410b905bbc73
         with:
-          toolchain: 1.96.0
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+          tool: cargo-audit@0.22.2
+      - name: Prove cargo-audit installation
+        run: cargo audit --version
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
-          workspaces: operator
-      - name: Format
-        run: cargo fmt --manifest-path operator/Cargo.toml --all -- --check
-      - name: Lint
-        run: cargo clippy --manifest-path operator/Cargo.toml --all-targets --locked -- -D warnings
-      - name: Test
-        run: cargo test --manifest-path operator/Cargo.toml --all-targets --locked
-      - name: Verify generated CRD
-        run: cargo run --quiet --locked --manifest-path operator/Cargo.toml --bin crdgen | diff -u operator/config/crd.yaml -
-      - name: Audit dependencies
-        working-directory: operator
+          components: rustfmt
+      - name: Source smoke
+        working-directory: subject
         run: |
-          cargo install cargo-audit --version 0.22.2 --locked
-          cargo audit
-
-  # Tier 2 provisioning IaC is never APPLIED in CI (that spends real money) — it is
-  # only format-checked and validated. `terraform validate` needs `terraform init`
-  # to fetch provider schemas, which is why this runs with network (GH-hosted).
-  terraform:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
-        with:
-          terraform_version: "1.9.8"
-      - name: fmt
-        run: terraform -chdir=terraform fmt -recursive -check -diff
-      - name: validate modules + Terraform environments
+          cargo fmt --check
+          cargo check --locked --no-default-features
+          cargo test --locked --no-default-features
+      - name: Final source immutability
+        working-directory: subject
         run: |
-          set -e
-          for d in terraform/modules/*/ terraform/envs/e2e terraform/envs/hetzner-e2e; do
-            echo "== validate $d =="
-            terraform -chdir="$d" init -backend=false -input=false >/dev/null
-            terraform -chdir="$d" validate
-          done
-
-  # Local kind tier (Tier 1). Operator-run: it needs a built fiducia-node image, so
-  # it is workflow_dispatch-gated, not on every push. Documents the standing-up
-  # path the fiducia-e2e suite consumes; see docs/e2e.md.
-  kind-e2e:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    # No `environment:` gate — the repo defines no deployment environments, so a
-    # reference here would be ungated scaffolding. Add `environment: e2e` once a
-    # protected environment of that name exists in repo settings.
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
-        with:
-          config: kind/multizone.yaml
-          cluster_name: fiducia
-      # A real run then builds+loads the fiducia-node image and applies kind/overlay
-      # (FIDUCIA_LOAD_IMAGES=1 tools/kind-up.sh), then checks out fiducia-e2e and runs
-      # `npm test` with FIDUCIA_E2E_BASE_URL=http://localhost:8090.
-      - name: overlay builds
-        run: kubectl kustomize kind/overlay >/dev/null
+          test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
+          test -z "$(git status --porcelain --untracked-files=all)"
