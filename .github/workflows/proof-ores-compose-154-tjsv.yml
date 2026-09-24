@@ -12,7 +12,7 @@ permissions:
 env:
   SOURCE_REPO: ORESoftware/ores-compose
   SOURCE_BRANCH: feat/service-environment-isolation
-  SOURCE_HEAD: d1afaa536cbd77681caf5729ed6aec501d5745ba
+  SOURCE_HEAD: 9a0a3a98db0c266dc2a16ae2b1897521d5a9ca79
   SOURCE_BASE: fb6d0b2aeb7d87c598e006bed050162b55e0c9f0
   TJSV_SHA: c55b2af2af0b3cdfa39904f1e2504f6bf4b97284
 
