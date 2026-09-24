@@ -14,7 +14,7 @@ env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
   STACK_PR: '283'
   STACK_BASE: 'a673b93cb728c5d9c23d9ea59c0baffc9705f36e'
-  STACK_HEAD: 'f7e5031053d33593cf6f179d8236fcaf1b4a94f9'
+  STACK_HEAD: '08876351bc9ba33fcc68d2f67d27df7e4503a193'
 
 jobs:
   certify:
@@ -94,24 +94,9 @@ jobs:
         working-directory: ores-stack
         run: npm ci
 
-      - name: Existing contract suite
+      - name: Contract suite including governance v2
         working-directory: ores-stack
         run: npm run check:contracts
-
-      - name: Governance v2 TypeSpec / JSON Schema parity
-        working-directory: ores-stack
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p .ores-stack
-          npx --no-install tjsv check \
-            --typespec=contracts/governance/ores-stack-governance-v2.tsp \
-            --schema=contracts/governance/ores-stack-governance-v2.schema.json \
-            --report=.ores-stack/governance-v2-schema-parity.json
-          npx --no-install tjsv check \
-            --typespec=contracts/governance/ores-stack-mutation-receipt.tsp \
-            --schema=contracts/governance/ores-stack-mutation-receipt.schema.json \
-            --report=.ores-stack/mutation-receipt-schema-parity.json
 
       - name: Upload certification evidence
         if: always()
