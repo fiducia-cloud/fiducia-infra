@@ -1,0 +1,126 @@
+name: ores-stack #278 governance certification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-stack-278-governance-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+  STACK_PR: '278'
+  STACK_BASE: 'd46c07e0f91c2dbda9b2fee64bdd82f6d52fc1ef'
+  STACK_HEAD: 'a673b93cb728c5d9c23d9ea59c0baffc9705f36e'
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Configure authenticated source access
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch immutable PR head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --no-tags origin "+refs/pull/${STACK_PR}/head:refs/remotes/origin/pr-${STACK_PR}-head"
+          actual_head="$(git -C ores-stack rev-parse refs/remotes/origin/pr-${STACK_PR}-head)"
+          printf 'expected head: %s\nactual head:   %s\n' "$STACK_HEAD" "$actual_head"
+          test "$actual_head" = "$STACK_HEAD"
+          git -C ores-stack checkout --detach "$actual_head"
+          git -C ores-stack cat-file -e "$STACK_BASE^{commit}"
+          test "$(git -C ores-stack merge-base HEAD "$STACK_BASE")" = "$STACK_BASE"
+          git -C ores-stack diff --check "$STACK_BASE"..HEAD
+          test -z "$(git -C ores-stack status --porcelain)"
+
+      - name: Install Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+
+      - name: Locked metadata and all-target compile
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo metadata --locked --format-version 1 --no-deps >/dev/null
+          cargo check --locked -p ores-stack-cli --all-targets
+          cargo check --locked -p ores-stack-cli --all-targets --all-features
+
+      - name: Remove carrier-only Git authentication before deterministic tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r key; do
+            value="$(git config --global --get-all "$key" | head -n 1 || true)"
+            if [[ "$value" == 'https://github.com/' ]]; then
+              git config --global --unset-all "$key" || true
+            fi
+          done < <(git config --global --name-only --get-regexp '^url\..*\.insteadOf$' || true)
+          ! git config --global --get-regexp '^url\..*\.insteadOf$' | grep -F 'https://github.com/'
+
+      - name: Run exact #278 CLI tests
+        working-directory: ores-stack
+        env:
+          CARGO_NET_OFFLINE: 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked -p ores-stack-cli --all-targets
+          cargo test --locked -p ores-stack-cli --all-targets --all-features
+
+      - name: Report workspace rustfmt drift without mutating evidence
+        working-directory: ores-stack
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          mapfile -t changed < <(git diff --name-only)
+          reviewed=()
+          baseline=()
+          for path in "${changed[@]}"; do
+            if git diff --name-only "$STACK_BASE..$STACK_HEAD" -- "$path" | grep -Fxq "$path"; then
+              reviewed+=("$path")
+            else
+              baseline+=("$path")
+            fi
+          done
+          printf 'reviewed-delta rustfmt drift (%s):\n' "${#reviewed[@]}"
+          printf '  %s\n' "${reviewed[@]:-<none>}"
+          printf 'baseline-only rustfmt drift (%s):\n' "${#baseline[@]}"
+          printf '  %s\n' "${baseline[@]:-<none>}"
+          if (( ${#changed[@]} > 0 )); then
+            git restore --source="$STACK_HEAD" -- "${changed[@]}"
+          fi
+
+      - name: Verify exact source remained immutable
+        if: always()
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$STACK_HEAD"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          git diff --check "$STACK_BASE"..HEAD
