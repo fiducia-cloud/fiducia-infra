@@ -14,7 +14,7 @@ env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
   STACK_PR: '283'
   STACK_BASE: 'a673b93cb728c5d9c23d9ea59c0baffc9705f36e'
-  STACK_HEAD: '7d215c037af7545f2bc7fc71b4c698ccfb26c31c'
+  STACK_HEAD: '89f07ba15d869dd565564637ea6dd6418237bde1'
 
 jobs:
   certify:
