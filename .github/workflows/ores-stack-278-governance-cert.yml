@@ -1,4 +1,4 @@
-name: ores-stack #283 governance certification
+name: ores-stack #278 targeted repair
 
 on:
   pull_request:
@@ -12,21 +12,20 @@ permissions:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-  STACK_PR: '283'
-  STACK_BASE: 'a673b93cb728c5d9c23d9ea59c0baffc9705f36e'
-  STACK_HEAD: '5756f81ebc34983fe557569a83f2a93c3ef4d8b3'
-  STACK_BRANCH: 'feat/governance-v2-scaffold-admission-20260923'
+  STACK_PR: '278'
+  STACK_HEAD: 'a673b93cb728c5d9c23d9ea59c0baffc9705f36e'
+  STACK_BRANCH: 'feat/cli-contract-governance-v1-20260922'
 
 jobs:
-  certify:
+  repair:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
 
-      - name: Configure authenticated ores-stack source access
+      - name: Configure authenticated source access
         env:
           ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
         shell: bash
@@ -36,38 +35,19 @@ jobs:
           echo "::add-mask::$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
 
-      - name: Fetch immutable PR head
+      - name: Fetch exact source head
         shell: bash
         run: |
           set -euo pipefail
-          git init ores-stack
-          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
-          git -C ores-stack fetch --no-tags origin "+refs/pull/${STACK_PR}/head:refs/remotes/origin/pr-${STACK_PR}-head"
-          actual_head="$(git -C ores-stack rev-parse "refs/remotes/origin/pr-${STACK_PR}-head")"
-          printf 'expected head: %s\nactual head:   %s\n' "$STACK_HEAD" "$actual_head"
-          test "$actual_head" = "$STACK_HEAD"
-          git -C ores-stack checkout --detach "$actual_head"
-          git -C ores-stack cat-file -e "$STACK_BASE^{commit}"
-          actual_base="$(git -C ores-stack merge-base HEAD "$STACK_BASE")"
-          printf 'expected base: %s\nactual base:   %s\n' "$STACK_BASE" "$actual_base"
-          test "$actual_base" = "$STACK_BASE"
-          git -C ores-stack diff --check "$STACK_BASE"..HEAD
-          test -z "$(git -C ores-stack status --porcelain)"
+          git clone --no-checkout https://github.com/ORESoftware/ores-stack.git source
+          git -C source fetch --no-tags origin "+refs/pull/${STACK_PR}/head:refs/remotes/origin/pr-${STACK_PR}-head"
+          actual="$(git -C source rev-parse refs/remotes/origin/pr-${STACK_PR}-head)"
+          printf 'expected: %s\nactual:   %s\n' "$STACK_HEAD" "$actual"
+          test "$actual" = "$STACK_HEAD"
+          git -C source checkout --detach "$actual"
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: 22
-
-      - name: Install Rust 1.88
-        shell: bash
-        run: |
-          set -euo pipefail
-          rustup toolchain install 1.88.0 --profile minimal --no-self-update
-          rustup default 1.88.0
-          rustup component add rustfmt clippy
-
-      - name: Apply exact deterministic repair and create local candidate
-        working-directory: ores-stack
+      - name: Apply the two deterministic repairs
+        working-directory: source
         shell: bash
         run: |
           set -euo pipefail
@@ -82,7 +62,7 @@ jobs:
           new = '''            let value: toml::Value = toml::from_str(text)
                 .map_err(|error| format!("parse Cargo.toml: {error}"))?;'''
           if text.count(old) != 1:
-              raise SystemExit(f'expected one Cargo.toml parser site, found {text.count(old)}')
+              raise SystemExit(f'expected exactly one Cargo.toml parser site, found {text.count(old)}')
           contract.write_text(text.replace(old, new, 1))
 
           stack = Path('crates/ores-stack-cli/src/stack_cli_hardened.rs')
@@ -102,13 +82,52 @@ jobs:
         };
         if let Err(error) = publish_result {'''
           if text.count(old) != 1:
-              raise SystemExit(f'expected one staged publish site, found {text.count(old)}')
+              raise SystemExit(f'expected exactly one staged publish site, found {text.count(old)}')
           stack.write_text(text.replace(old, new, 1))
           PY
-          rustfmt --edition 2024 crates/ores-stack-cli/src/contract_cli.rs crates/ores-stack-cli/src/stack_cli_hardened.rs
           git diff --check
           mapfile -t changed < <(git diff --name-only | sort)
           printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" -eq 2
+          test "${changed[0]}" = 'crates/ores-stack-cli/src/contract_cli.rs'
+          test "${changed[1]}" = 'crates/ores-stack-cli/src/stack_cli_hardened.rs'
+
+      - name: Install Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt
+
+      - name: Format only repaired files
+        working-directory: source
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2024 crates/ores-stack-cli/src/contract_cli.rs crates/ores-stack-cli/src/stack_cli_hardened.rs
+          git diff --check
+
+      - name: Prove both formerly failing tests
+        working-directory: source
+        run: |
+          set -euo pipefail
+          cargo test --locked -p ores-stack-cli --bin ores-stack contract_cli::tests::web_governance_admits_disjoint_authority_and_commands -- --exact
+          cargo test --locked -p ores-stack-cli --bin ores-stack stack_cli_hardened::tests::publication_rolls_back_when_a_later_destination_collides -- --exact
+
+      - name: Run complete CLI tests
+        working-directory: source
+        run: |
+          set -euo pipefail
+          cargo test --locked -p ores-stack-cli --all-targets
+          cargo test --locked -p ores-stack-cli --all-targets --all-features
+
+      - name: Commit and push only the proven repair
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$STACK_HEAD"
+          mapfile -t changed < <(git diff --name-only | sort)
           test "${#changed[@]}" -eq 2
           test "${changed[0]}" = 'crates/ores-stack-cli/src/contract_cli.rs'
           test "${changed[1]}" = 'crates/ores-stack-cli/src/stack_cli_hardened.rs'
@@ -116,145 +135,4 @@ jobs:
           git config user.email 'oresoftware@users.noreply.github.com'
           git add -- "${changed[@]}"
           git commit -m 'fix(governance): repair document parsing and publish collision guard'
-          repaired_head="$(git rev-parse HEAD)"
-          echo "REPAIRED_HEAD=$repaired_head" >> "$GITHUB_ENV"
-          printf 'local repaired candidate: %s\n' "$repaired_head"
-
-      - name: Verify workspace rustfmt introduces no candidate drift
-        working-directory: ores-stack
-        shell: bash
-        run: |
-          set -euo pipefail
-          cargo fmt --all
-          mapfile -t fmt_changed < <(git diff --name-only)
-          reviewed_fmt_drift=()
-          baseline_fmt_drift=()
-          for path in "${fmt_changed[@]}"; do
-            if git diff --name-only "$STACK_BASE..$REPAIRED_HEAD" -- "$path" | grep -Fxq "$path"; then
-              reviewed_fmt_drift+=("$path")
-            else
-              baseline_fmt_drift+=("$path")
-            fi
-          done
-          printf 'workspace rustfmt baseline-only drift:\n'
-          printf '  %s\n' "${baseline_fmt_drift[@]:-<none>}"
-          printf 'workspace rustfmt candidate drift:\n'
-          printf '  %s\n' "${reviewed_fmt_drift[@]:-<none>}"
-          if (( ${#reviewed_fmt_drift[@]} > 0 )); then
-            echo 'repaired #283 Rust delta is not workspace-rustfmt clean' >&2
-            git diff -- "${reviewed_fmt_drift[@]}"
-            exit 1
-          fi
-          if (( ${#fmt_changed[@]} > 0 )); then
-            git restore --source="$REPAIRED_HEAD" -- "${fmt_changed[@]}"
-          fi
-          test -z "$(git status --porcelain)"
-
-      - name: Locked metadata
-        working-directory: ores-stack
-        shell: bash
-        run: cargo metadata --locked --format-version 1 --no-deps >/dev/null
-
-      - name: Compile governance CLI
-        working-directory: ores-stack
-        shell: bash
-        run: |
-          set -euo pipefail
-          cargo check --locked -p ores-stack-cli --all-targets
-          cargo check --locked -p ores-stack-cli --all-targets --all-features
-
-      - name: Remove carrier-only Git authentication before deterministic tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          while IFS= read -r key; do
-            value="$(git config --global --get-all "$key" | head -n 1 || true)"
-            if [[ "$value" == 'https://github.com/' ]]; then
-              git config --global --unset-all "$key" || true
-            fi
-          done < <(git config --global --name-only --get-regexp '^url\..*\.insteadOf$' || true)
-          if git config --global --get-regexp '^url\..*\.insteadOf$' >/tmp/remaining-url-rewrites 2>/dev/null; then
-            if grep -Fq 'https://github.com/' /tmp/remaining-url-rewrites; then
-              echo 'carrier GitHub URL rewrite survived cleanup' >&2
-              exit 1
-            fi
-          fi
-          rm -f /tmp/remaining-url-rewrites
-
-      - name: Run CLI tests
-        working-directory: ores-stack
-        shell: bash
-        run: |
-          set -euo pipefail
-          cargo test --locked -p ores-stack-cli --all-targets
-          cargo test --locked -p ores-stack-cli --all-targets --all-features
-
-      - name: Push proven repair to source branch
-        working-directory: ores-stack
-        env:
-          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$REPAIRED_HEAD"
-          test -z "$(git status --porcelain)"
-          echo "::add-mask::$ORE_SOURCE_PAT"
-          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
-          git push origin "$REPAIRED_HEAD:refs/heads/$STACK_BRANCH"
-
-      - name: Strict Clippy
-        working-directory: ores-stack
-        shell: bash
-        run: cargo clippy --locked -p ores-stack-cli --all-targets --all-features -- -D warnings
-
-      - name: Restore authenticated Git access for contract tooling
-        env:
-          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "$ORE_SOURCE_PAT"
-          echo "::add-mask::$ORE_SOURCE_PAT"
-          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
-
-      - name: Install TypeSpec/TJSV dependencies
-        working-directory: ores-stack
-        run: npm install --ignore-scripts --no-audit --no-fund
-
-      - name: Contract suite discovers and validates every peer pair
-        working-directory: ores-stack
-        shell: bash
-        run: |
-          set -euo pipefail
-          node --check scripts/check-contracts.mjs
-          npm run check:contracts
-
-      - name: Conformance corpus and evidence boundary
-        working-directory: ores-stack
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p .ores-stack
-          node --check conformance/check.mjs
-          node conformance/check.mjs | tee .ores-stack/conformance-check.json
-
-      - name: Verify repaired source tree remained immutable after candidate commit
-        if: always()
-        working-directory: ores-stack
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$REPAIRED_HEAD"
-          test -z "$(git status --porcelain --untracked-files=all)"
-          git diff --check "$STACK_BASE"..HEAD
-
-      - name: Upload certification evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: ores-stack-283-governance-${{ env.STACK_HEAD }}
-          if-no-files-found: ignore
-          include-hidden-files: true
-          path: |
-            ores-stack/.ores-stack/*-schema-parity.json
-            ores-stack/.ores-stack/conformance-check.json
+          git push origin "HEAD:refs/heads/${STACK_BRANCH}"
