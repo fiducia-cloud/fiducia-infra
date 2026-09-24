@@ -1,0 +1,125 @@
+name: ores-stack #283 governance certification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-stack-283-governance-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+  STACK_PR: '283'
+  STACK_BASE: 'a673b93cb728c5d9c23d9ea59c0baffc9705f36e'
+  STACK_HEAD: 'f7e5031053d33593cf6f179d8236fcaf1b4a94f9'
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Configure authenticated ores-stack source access
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch immutable PR head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --no-tags origin "+refs/pull/${STACK_PR}/head:refs/remotes/origin/pr-${STACK_PR}-head"
+          actual_head="$(git -C ores-stack rev-parse "refs/remotes/origin/pr-${STACK_PR}-head")"
+          printf 'expected head: %s\nactual head:   %s\n' "$STACK_HEAD" "$actual_head"
+          test "$actual_head" = "$STACK_HEAD"
+          git -C ores-stack checkout --detach "$actual_head"
+          git -C ores-stack cat-file -e "$STACK_BASE^{commit}"
+          actual_base="$(git -C ores-stack merge-base HEAD "$STACK_BASE")"
+          printf 'expected base: %s\nactual base:   %s\n' "$STACK_BASE" "$actual_base"
+          test "$actual_base" = "$STACK_BASE"
+          git -C ores-stack diff --check "$STACK_BASE"..HEAD
+          test -z "$(git -C ores-stack status --porcelain)"
+
+      - name: Install Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+
+      - name: Formatting and locked metadata
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo metadata --locked --format-version 1 --no-deps >/dev/null
+
+      - name: Compile governance CLI
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --locked -p ores-stack-cli --all-targets
+          cargo check --locked -p ores-stack-cli --all-targets --all-features
+
+      - name: Run CLI tests
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked -p ores-stack-cli --all-targets
+          cargo test --locked -p ores-stack-cli --all-targets --all-features
+
+      - name: Strict Clippy
+        working-directory: ores-stack
+        shell: bash
+        run: cargo clippy --locked -p ores-stack-cli --all-targets --all-features -- -D warnings
+
+      - name: Install TypeSpec/TJSV dependencies
+        working-directory: ores-stack
+        run: npm ci
+
+      - name: Existing contract suite
+        working-directory: ores-stack
+        run: npm run check:contracts
+
+      - name: Governance v2 TypeSpec / JSON Schema parity
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ores-stack
+          npx --no-install tjsv check \
+            --typespec=contracts/governance/ores-stack-governance-v2.tsp \
+            --schema=contracts/governance/ores-stack-governance-v2.schema.json \
+            --report=.ores-stack/governance-v2-schema-parity.json
+          npx --no-install tjsv check \
+            --typespec=contracts/governance/ores-stack-mutation-receipt.tsp \
+            --schema=contracts/governance/ores-stack-mutation-receipt.schema.json \
+            --report=.ores-stack/mutation-receipt-schema-parity.json
+
+      - name: Upload certification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ores-stack-283-governance-${{ env.STACK_HEAD }}
+          if-no-files-found: ignore
+          path: |
+            ores-stack/.ores-stack/governance-schema-parity.json
+            ores-stack/.ores-stack/governance-v2-schema-parity.json
+            ores-stack/.ores-stack/mutation-receipt-schema-parity.json
