@@ -66,47 +66,85 @@ jobs:
           rustup default 1.88.0
           rustup component add rustfmt clippy
 
-      - name: Repair source Rust formatting when confined to the reviewed delta
-        id: rustfmt_repair
+      - name: Classify rustfmt drift
+        id: rustfmt_classify
         working-directory: ores-stack
         shell: bash
         run: |
           set -euo pipefail
           cargo fmt --all
           mapfile -d '' changed < <(git diff --name-only -z)
-          if (( ${#changed[@]} == 0 )); then
-            echo 'pushed=false' >> "$GITHUB_OUTPUT"
-            exit 0
+          reviewed=()
+          baseline=()
+
+          for path in "${changed[@]}"; do
+            if [[ "$path" == *.rs ]] && git diff --name-only "$STACK_BASE..$STACK_HEAD" -- "$path" | grep -Fxq "$path"; then
+              reviewed+=("$path")
+            else
+              baseline+=("$path")
+            fi
+          done
+
+          printf 'rustfmt reviewed-delta drift:\n'
+          printf '  %s\n' "${reviewed[@]:-<none>}"
+          printf 'rustfmt baseline/out-of-delta drift:\n'
+          printf '  %s\n' "${baseline[@]:-<none>}"
+
+          if (( ${#baseline[@]} > 0 )); then
+            git restore --source="$STACK_HEAD" -- "${baseline[@]}"
+            echo 'baseline_drift=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'baseline_drift=false' >> "$GITHUB_OUTPUT"
           fi
 
-          printf 'rustfmt changed:\n'
-          printf '  %s\n' "${changed[@]}"
-          for path in "${changed[@]}"; do
+          if (( ${#reviewed[@]} > 0 )); then
+            echo 'reviewed_drift=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'reviewed_drift=false' >> "$GITHUB_OUTPUT"
+          fi
+
+          for path in $(git diff --name-only); do
             [[ "$path" == *.rs ]] || {
-              echo "refusing rustfmt repair outside Rust source: $path" >&2
+              echo "unexpected non-Rust mutation after classification: $path" >&2
               exit 1
             }
             git diff --name-only "$STACK_BASE..$STACK_HEAD" -- "$path" | grep -Fxq "$path" || {
-              echo "refusing rustfmt repair outside reviewed #${STACK_PR} delta: $path" >&2
+              echo "unexpected out-of-delta mutation after classification: $path" >&2
               exit 1
             }
           done
-
-          remote_head="$(git ls-remote origin "refs/heads/${STACK_BRANCH}" | awk '{print $1}')"
-          test "$remote_head" = "$STACK_HEAD"
           git diff --check
+
+      - name: Repair reviewed rustfmt drift on source branch
+        id: rustfmt_repair
+        if: steps.rustfmt_classify.outputs.reviewed_drift == 'true'
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote origin "refs/heads/${STACK_BRANCH}" | awk '{print $1}')"
+          printf 'expected remote head: %s\nactual remote head:   %s\n' "$STACK_HEAD" "$remote_head"
+          test "$remote_head" = "$STACK_HEAD"
           git config user.name 'ORESoftware CI certification'
           git config user.email 'noreply@oresoftware.com'
-          git add -- "${changed[@]}"
+          git add -- '*.rs' ':**/*.rs'
+          git diff --cached --check
           git commit -m 'style(governance): rustfmt exact #283 head'
           git push origin HEAD:"refs/heads/${STACK_BRANCH}"
           echo 'pushed=true' >> "$GITHUB_OUTPUT"
 
-      - name: Stop after a source repair so evidence is repinned
+      - name: Stop after source repair so exact-head evidence is repinned
         if: steps.rustfmt_repair.outputs.pushed == 'true'
         shell: bash
         run: |
           echo 'source branch was safely rustfmt-repaired; repin STACK_HEAD to the new immutable SHA and rerun certification' >&2
+          exit 1
+
+      - name: Base stack rustfmt drift blocks whole-workspace certification
+        if: steps.rustfmt_classify.outputs.reviewed_drift != 'true' && steps.rustfmt_classify.outputs.baseline_drift == 'true'
+        shell: bash
+        run: |
+          echo 'cargo fmt changes only files outside #283; repair/certify the stacked base before treating #283 as green' >&2
           exit 1
 
       - name: Formatting and locked metadata
