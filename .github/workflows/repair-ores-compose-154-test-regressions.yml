@@ -1,3 +1,4 @@
+# Exact-source repair lane for ores-compose#154 candidate-owned test regressions.
 name: repair ores-compose 154 candidate tests
 
 on:
