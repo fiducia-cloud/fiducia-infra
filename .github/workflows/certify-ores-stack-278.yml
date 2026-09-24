@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - proof/ores-stack-278-governance-20260924
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/certify-ores-stack-278.yml'
   workflow_dispatch:
 
 permissions:
