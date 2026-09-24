@@ -71,10 +71,10 @@ jobs:
           set -euo pipefail
           cargo fmt --all --check
           shellcheck scripts/linux/*.sh
-          cargo check --locked --all-targets
-          cargo test --locked --all-targets
-          cargo clippy --locked --all-targets -- -D warnings
-          cargo build --quiet --locked --examples --bins
+          cargo check --all-targets
+          cargo test --all-targets
+          cargo clippy --all-targets -- -D warnings
+          cargo build --quiet --examples --bins
 
       - name: Write strict boundary policy
         shell: bash
