@@ -65,18 +65,38 @@ jobs:
           rustup default 1.88.0
           rustup component add rustfmt clippy
 
-      - name: Format reviewed Rust delta
+      - name: Verify workspace rustfmt introduces no reviewed-delta drift
         working-directory: ores-stack
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t changed_rs < <(git diff --name-only "$STACK_BASE..$STACK_HEAD" -- '*.rs')
-          test "${#changed_rs[@]}" -gt 0
-          printf 'reviewed Rust files:\n'
-          printf '  %s\n' "${changed_rs[@]}"
-          for path in "${changed_rs[@]}"; do
-            rustfmt --edition 2021 --check --config skip_children=true "$path"
+          cargo fmt --all
+          mapfile -t fmt_changed < <(git diff --name-only)
+          reviewed_fmt_drift=()
+          baseline_fmt_drift=()
+          for path in "${fmt_changed[@]}"; do
+            if git diff --name-only "$STACK_BASE..$STACK_HEAD" -- "$path" | grep -Fxq "$path"; then
+              reviewed_fmt_drift+=("$path")
+            else
+              baseline_fmt_drift+=("$path")
+            fi
           done
+
+          printf 'workspace rustfmt baseline-only drift:\n'
+          printf '  %s\n' "${baseline_fmt_drift[@]:-<none>}"
+          printf 'workspace rustfmt reviewed-delta drift:\n'
+          printf '  %s\n' "${reviewed_fmt_drift[@]:-<none>}"
+
+          if (( ${#reviewed_fmt_drift[@]} > 0 )); then
+            echo 'reviewed #283 Rust delta is not workspace-rustfmt clean' >&2
+            git diff -- "${reviewed_fmt_drift[@]}"
+            exit 1
+          fi
+
+          if (( ${#fmt_changed[@]} > 0 )); then
+            git restore --source="$STACK_HEAD" -- "${fmt_changed[@]}"
+          fi
+          test -z "$(git status --porcelain)"
 
       - name: Locked metadata
         working-directory: ores-stack
