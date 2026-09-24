@@ -73,21 +73,19 @@ jobs:
         shell: bash
         env:
           ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+          ZED_PKG_GITHUB_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
           ZED_PKG_REGISTRY: http://127.0.0.1:9
           ZED_PKG_SOURCE_FALLBACK: 'true'
           ZED_PKG_SOURCE_FALLBACK_ALLOW_LOOPBACK: 'true'
         run: |
           set -euo pipefail
           echo "::add-mask::$ORE_SOURCE_PAT"
-          rewrite="url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf"
-          git config --global "$rewrite" "https://github.com/"
           rm -rf .vendor .zed zed_modules .zpkg.lock
           zed validate
           zed install --allow-build --install-mode copy
           zed validate --require-lock
           test -x .vendor/.zed/.bin/tjsv || test -x .zed/.bin/tjsv || test -x zed_modules/.bin/tjsv
           zed run tjsv --help >/dev/null
-          git config --global --unset-all "$rewrite" || true
           echo ZED_PACKAGE_MATERIALIZATION_PASS
 
       - name: Rust 1.88 source checks
