@@ -14,7 +14,7 @@ env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
   STACK_PR: '283'
   STACK_BASE: 'a673b93cb728c5d9c23d9ea59c0baffc9705f36e'
-  STACK_HEAD: '96609ce95ccb20d373e0e96c054907be973e7ec8'
+  STACK_HEAD: '13b3d46dcd9851ac4634896b8e08571a4b32fba0'
 
 jobs:
   certify:
@@ -56,8 +56,6 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: ores-stack/package-lock.json
 
       - name: Install Rust 1.88
         shell: bash
@@ -98,7 +96,7 @@ jobs:
 
       - name: Install TypeSpec/TJSV dependencies
         working-directory: ores-stack
-        run: npm ci
+        run: npm install --ignore-scripts --no-audit --no-fund
 
       - name: Contract suite discovers every peer pair
         working-directory: ores-stack
