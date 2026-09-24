@@ -12,7 +12,7 @@ permissions:
 env:
   SOURCE_REPO: ORESoftware/3FA-desktop.rs
   SOURCE_BASE: b712cf9d6d023bec1822c1acb4ac3be226e24e03
-  SOURCE_HEAD: f3c6240b69fa8ffa0740158c678269690a6fd63f
+  SOURCE_HEAD: 3412122429354311a6bac507792fac277252b8b0
 
 jobs:
   ubuntu:
@@ -40,11 +40,10 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
           git cat-file -e "${SOURCE_BASE}^{commit}"
-          mapfile -t changed < <(git diff --name-only "$SOURCE_BASE" "$SOURCE_HEAD" | sort)
-          printf '%s\n' "${changed[@]}"
-          test "${#changed[@]}" -eq 2
-          test "${changed[0]}" = 'src/auth/passcode.rs'
-          test "${changed[1]}" = 'src/auth/voice.rs'
+          changed="$(git diff --name-only "$SOURCE_BASE" "$SOURCE_HEAD" | sort)"
+          printf '%s\n' "$changed"
+          expected="$(printf '%s\n' 'src/auth/passcode.rs' 'src/auth/voice.rs')"
+          test "$changed" = "$expected"
           git diff --check "$SOURCE_BASE" "$SOURCE_HEAD"
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
@@ -73,7 +72,9 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
-          test -z "$(git status --porcelain)"
+          status="$(git status --porcelain)"
+          printf '%s' "$status"
+          test -z "$status"
 
   macos:
     runs-on: macos-15
@@ -99,10 +100,11 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
-          mapfile -t changed < <(git diff --name-only "$SOURCE_BASE" "$SOURCE_HEAD" | sort)
-          test "${#changed[@]}" -eq 2
-          test "${changed[0]}" = 'src/auth/passcode.rs'
-          test "${changed[1]}" = 'src/auth/voice.rs'
+          git cat-file -e "${SOURCE_BASE}^{commit}"
+          changed="$(git diff --name-only "$SOURCE_BASE" "$SOURCE_HEAD" | sort)"
+          printf '%s\n' "$changed"
+          expected="$(printf '%s\n' 'src/auth/passcode.rs' 'src/auth/voice.rs')"
+          test "$changed" = "$expected"
           git diff --check "$SOURCE_BASE" "$SOURCE_HEAD"
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
@@ -121,4 +123,6 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
-          test -z "$(git status --porcelain)"
+          status="$(git status --porcelain)"
+          printf '%s' "$status"
+          test -z "$status"
