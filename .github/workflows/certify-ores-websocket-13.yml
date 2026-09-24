@@ -77,6 +77,7 @@ jobs:
         env:
           ZED_PKG_REGISTRY: http://127.0.0.1:9
           ZED_PKG_SOURCE_FALLBACK: 'true'
+          ZED_PKG_SOURCE_FALLBACK_ALLOW_LOOPBACK: 'true'
         run: |
           set -euo pipefail
           unset ZED_PKG_GITHUB_TOKEN GITHUB_TOKEN GH_TOKEN ZED_PKG_TOKEN
