@@ -1,0 +1,50 @@
+name: diagnose ores-stack 278 rustfmt
+
+on:
+  push:
+    branches:
+      - proof/ores-stack-278-governance-20260924
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  SOURCE_SHA: a673b93cb728c5d9c23d9ea59c0baffc9705f36e
+
+jobs:
+  rustfmt-diff:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out immutable source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ORESoftware/ores-stack
+          ref: a673b93cb728c5d9c23d9ea59c0baffc9705f36e
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.88.0
+          components: rustfmt
+      - name: Produce exact rustfmt patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          cargo fmt --all
+          git diff --no-ext-diff -- crates/ores-stack-cli/src/contract_cli.rs crates/ores-stack-cli/src/entry.rs > /tmp/rustfmt.patch
+          test -s /tmp/rustfmt.patch
+          {
+            printf 'Rust 1.88 `cargo fmt --all` patch for immutable `ORESoftware/ores-stack#278@%s`:\n\n```diff\n' "$SOURCE_SHA"
+            cat /tmp/rustfmt.patch
+            printf '\n```\n'
+          } > /tmp/comment.md
+          test "$(wc -c </tmp/comment.md)" -lt 60000
+      - name: Publish formatter diagnostic to carrier PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: gh api repos/fiducia-cloud/fiducia-infra/issues/159/comments --method POST -f body="$(cat /tmp/comment.md)"
