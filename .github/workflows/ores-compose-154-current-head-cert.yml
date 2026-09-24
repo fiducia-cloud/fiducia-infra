@@ -193,6 +193,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p target
+          set +e
           npx --yes \
             --package=https://github.com/ORESoftware/typespec-json-schema-validator/archive/db0f1e66b2a65cad43c909aa558ae00c6a91578c.tar.gz \
             tjsv check \
@@ -200,15 +201,27 @@ jobs:
             --schema=contracts/json-schema/contract.schema.json \
             --instances=contracts/instances \
             --report=target/compose-contract-parity.json \
-            --quiet
+            2>&1 | tee /tmp/ores-compose-tjsv.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [[ -f target/compose-contract-parity.json ]]; then
+            echo '--- TJSV parity report ---'
+            cat target/compose-contract-parity.json
+          fi
+          if [[ "$status" -ne 0 ]]; then
+            echo "TJSV failed with status $status" >&2
+            exit "$status"
+          fi
 
-      - name: Verify exact source remained immutable
+      - name: Verify exact tracked source remained immutable
         if: always()
         working-directory: ores-compose
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$COMPOSE_HEAD"
-          test -z "$(git status --porcelain)"
+          test -z "$(git status --porcelain --untracked-files=no)"
+          git diff --exit-code
+          git diff --cached --exit-code
           git diff --check "$COMPOSE_BASE"..HEAD
           echo ORES_COMPOSE_154_CERT_PASS
