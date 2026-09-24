@@ -1,0 +1,71 @@
+name: certify tjsv 202 zed hoist
+
+on:
+  push:
+    branches:
+      - proof/tjsv-202-zed-hoist-20260924
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      SOURCE_REPO: ORESoftware/typespec-json-schema-validator
+      SOURCE_BRANCH: fix/zed-hoisted-bin-relative-imports
+      SOURCE_SHA: 01ac1c1fdb598398408ccc329136fa45bff50b68
+    steps:
+      - name: Checkout exact source head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ORESoftware/typespec-json-schema-validator
+          ref: 01ac1c1fdb598398408ccc329136fa45bff50b68
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Verify immutable source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(git ls-remote "https://github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
+          git diff --check "${SOURCE_SHA}^" "$SOURCE_SHA"
+
+      - name: Set up Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.13.1
+          cache: npm
+
+      - name: Install locked dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+
+      - name: Prove Zed-hoisted launchers
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test ./test/unit/zed-hoisted-bin.test.mjs
+
+      - name: Run package checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run check
+          npm test
+          node ./bin/typespec-json-schema-validator.mjs doctor --quiet
+
+      - name: Final source guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          git reset --hard "$SOURCE_SHA" >/dev/null
+          git clean -ffd >/dev/null
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          test "$(git ls-remote "https://github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
