@@ -81,11 +81,14 @@ jobs:
       - name: Compile default features
         run: cargo check --locked --all-targets
 
+      # Run lint independently of the known baseline unit-test failures so the
+      # differential records whether #154 adds warning debt on either revision.
+      - name: Strict Clippy default features
+        continue-on-error: true
+        run: cargo clippy --locked --all-targets -- -D warnings
+
       - name: Test default features
         run: cargo test --locked --all-targets
-
-      - name: Strict Clippy default features
-        run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Reconfirm immutable revision
         if: always()
