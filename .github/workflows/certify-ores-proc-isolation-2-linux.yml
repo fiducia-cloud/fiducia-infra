@@ -1,6 +1,7 @@
 name: certify ores proc isolation 2 linux
 
 on:
+  workflow_call:
   push:
     branches:
       - proof/ores-proc-isolation-2-linux-20260924
