@@ -1,0 +1,124 @@
+name: proof 3fa argon2 0.6
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/proof-3fa-argon2-06.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_REPO: ORESoftware/3FA-desktop.rs
+  SOURCE_BASE: b712cf9d6d023bec1822c1acb4ac3be226e24e03
+  SOURCE_HEAD: f3c6240b69fa8ffa0740158c678269690a6fd63f
+
+jobs:
+  ubuntu:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Require scoped source credential
+        shell: bash
+        env:
+          SOURCE_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$SOURCE_TOKEN"
+      - name: Checkout exact source head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ env.SOURCE_HEAD }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prove exact head and reviewed scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
+          git cat-file -e "${SOURCE_BASE}^{commit}"
+          mapfile -t changed < <(git diff --name-only "$SOURCE_BASE" "$SOURCE_HEAD" | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" -eq 2
+          test "${changed[0]}" = 'src/auth/passcode.rs'
+          test "${changed[1]}" = 'src/auth/voice.rs'
+          git diff --check "$SOURCE_BASE" "$SOURCE_HEAD"
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
+      - name: Formal lifecycle and session models
+        run: |
+          python3 formal/session_model.py
+          python3 formal/app_lifecycle_model.py
+          printf '%s\n' '{"op":"replay","events":[{"op":"unlock"},{"op":"advance","seconds":90},{"op":"poll"}]}' | python3 formal/session_model.py --json-stdin
+      - name: Format
+        run: cargo fmt --check
+      - name: Headless compile and tests
+        run: |
+          cargo check --locked --no-default-features
+          cargo test --locked --no-default-features
+      - name: Interface provenance
+        run: |
+          python3 scripts/check_vendored_interfaces.py
+          cargo test --locked --no-default-features --test interface_pin
+      - name: Strict clippy headless
+        run: cargo clippy --locked --no-default-features --all-targets -- -D warnings
+      - name: Final source immutability
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
+          test -z "$(git status --porcelain)"
+
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Require scoped source credential
+        shell: bash
+        env:
+          SOURCE_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$SOURCE_TOKEN"
+      - name: Checkout exact source head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ env.SOURCE_HEAD }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prove exact head and reviewed scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
+          mapfile -t changed < <(git diff --name-only "$SOURCE_BASE" "$SOURCE_HEAD" | sort)
+          test "${#changed[@]}" -eq 2
+          test "${changed[0]}" = 'src/auth/passcode.rs'
+          test "${changed[1]}" = 'src/auth/voice.rs'
+          git diff --check "$SOURCE_BASE" "$SOURCE_HEAD"
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
+      - name: Format
+        run: cargo fmt --check
+      - name: GUI compile, clippy, and tests
+        run: |
+          cargo check --locked
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+      - name: Final source immutability
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
+          test -z "$(git status --porcelain)"
