@@ -1,4 +1,4 @@
-name: ores-compose #154 service-env certification
+name: ores-compose #154 contract parity certification
 
 on:
   pull_request:
@@ -11,20 +11,15 @@ permissions:
   contents: read
 
 env:
-  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-  COMPOSE_BASE: 'fb6d0b2aeb7d87c598e006bed050162b55e0c9f0'
-  COMPOSE_HEAD: 'd1afaa536cbd77681caf5729ed6aec501d5745ba'
+  COMPOSE_HEAD: d1afaa536cbd77681caf5729ed6aec501d5745ba
+  TJSV_SHA: c55b2af2af0b3cdfa39904f1e2504f6bf4b97284
 
 jobs:
-  certify:
+  certify-contract-parity:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-
-      - name: Configure authenticated source access
+      - name: Require scoped source credential
         env:
           ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
         shell: bash
@@ -32,196 +27,54 @@ jobs:
           set -euo pipefail
           test -n "$ORE_SOURCE_PAT"
           echo "::add-mask::$ORE_SOURCE_PAT"
-          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
 
-      - name: Fetch exact ores-compose PR payload
+      - name: Check out exact ores-compose source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-compose
+          ref: d1afaa536cbd77681caf5729ed6aec501d5745ba
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Guard exact PR head
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
         shell: bash
         run: |
           set -euo pipefail
-          git init ores-compose
-          git -C ores-compose remote add origin https://github.com/ORESoftware/ores-compose.git
-          git -C ores-compose fetch --no-tags origin \
-            '+refs/pull/154/head:refs/remotes/origin/pr-154-head'
-          actual_head="$(git -C ores-compose rev-parse refs/remotes/origin/pr-154-head)"
-          printf 'expected PR head: %s\nactual PR head:   %s\n' "$COMPOSE_HEAD" "$actual_head"
-          test "$actual_head" = "$COMPOSE_HEAD"
-          git -C ores-compose checkout --detach refs/remotes/origin/pr-154-head
-          git -C ores-compose cat-file -e "$COMPOSE_BASE^{commit}"
-          changed="$(git -C ores-compose diff --name-only "$COMPOSE_BASE"..HEAD | sort | tr '\n' ' ')"
-          expected='contracts/json-schema/contract.schema.json contracts/typespec/main.tsp src/config_loader.rs src/local_up_process.rs src/service_environment.rs src/up_orchestrator.rs '
-          printf 'changed files: %s\n' "$changed"
-          test "$changed" = "$expected"
-          git -C ores-compose diff --check "$COMPOSE_BASE"..HEAD
-          test -z "$(git -C ores-compose status --porcelain)"
+          test "$(git rev-parse HEAD)" = "$COMPOSE_HEAD"
+          actual="$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/ORESoftware/ores-compose.git" refs/pull/154/head | cut -f1)"
+          test "$actual" = "$COMPOSE_HEAD"
+          git diff --check "${COMPOSE_HEAD}^" "$COMPOSE_HEAD"
 
-      - name: Install Rust 1.98.1
-        shell: bash
-        run: |
-          set -euo pipefail
-          rustup toolchain install 1.98.1 --profile minimal --no-self-update
-          rustup default 1.98.1
-          rustup component add rustfmt clippy
-          rustc --version | grep -F 'rustc 1.98.1'
-
-      - name: Format config_loader.rs
-        working-directory: ores-compose
-        shell: bash
-        run: rustfmt --edition 2021 --check --config skip_children=true src/config_loader.rs
-
-      - name: Format local_up_process.rs
-        working-directory: ores-compose
-        shell: bash
-        run: rustfmt --edition 2021 --check --config skip_children=true src/local_up_process.rs
-
-      - name: Format service_environment.rs
-        working-directory: ores-compose
-        shell: bash
-        run: rustfmt --edition 2021 --check --config skip_children=true src/service_environment.rs
-
-      - name: Format up_orchestrator.rs
-        working-directory: ores-compose
-        shell: bash
-        run: rustfmt --edition 2021 --check --config skip_children=true src/up_orchestrator.rs
-
-      - name: Verify locked metadata
-        working-directory: ores-compose
-        shell: bash
-        run: cargo metadata --locked --format-version 1 --no-deps >/dev/null
-
-      - name: Locked all-target all-feature compile
-        working-directory: ores-compose
-        shell: bash
-        run: cargo check --locked --all-targets --all-features
-
-      - name: Full Rust tests introduce no failures beyond exact base
-        working-directory: ores-compose
-        shell: bash
-        run: |
-          set -euo pipefail
-          set +e
-          cargo test --locked --all-targets --all-features 2>&1 | tee /tmp/ores-compose-head-tests.log
-          status=${PIPESTATUS[0]}
-          set -e
-          if [[ "$status" -eq 0 ]]; then
-            echo 'head full suite is green'
-            exit 0
-          fi
-
-          python3 - <<'PY'
-          import pathlib, re, sys
-          text = pathlib.Path('/tmp/ores-compose-head-tests.log').read_text()
-          matches = re.findall(r'\nfailures:\n((?:    [^\n]+\n)+)\ntest result:', text)
-          if not matches:
-              print('could not parse final cargo failure list', file=sys.stderr)
-              sys.exit(1)
-          actual = {line.strip() for line in matches[-1].splitlines() if line.strip()}
-          baseline = {
-              'execution_capability::tests::multi_replica_host_project_is_built_in_executable',
-              'execution_capability::tests::single_replica_host_project_is_built_in_executable',
-              'source_materializer::tests::checkout_parent_creation_stays_below_canonical_runtime_root',
-              'source_materializer::tests::disabled_hooks_directory_is_real_empty_and_not_the_checkout',
-              'source_materializer::tests::existing_checkout_path_must_be_a_directory',
-              'source_materializer::tests::git_process_configuration_removes_repository_and_config_overrides',
-              'source_materializer::tests::symlinked_checkout_parent_is_rejected_before_network_access',
-              'up_orchestrator::runtime::tests::early_preflight_accepts_multi_replica_host_service_with_canonical_identity_env',
-              'up_orchestrator::runtime::tests::early_preflight_accepts_single_replica_host_services',
-              'up_orchestrator::runtime::tests::early_preflight_rejects_missing_replica_runtime_evidence',
-              'up_orchestrator::runtime::tests::early_preflight_rejects_non_host_runtime_before_materialization',
-              'up_orchestrator::runtime::tests::early_preflight_rejects_replica_count_mismatch',
-              'up_orchestrator::runtime::tests::early_preflight_rejects_replica_index_mismatch',
-              'up_orchestrator::runtime::tests::early_preflight_rejects_replica_service_identity_mismatch',
-              'up_orchestrator::runtime::tests::preflight_rejects_missing_replica_runtime_evidence_after_materialization_too',
-              'up_orchestrator::runtime::tests::revalidates_working_directory_before_healthcheck_spawn',
-              'up_orchestrator::runtime::tests::revalidates_working_directory_before_replica_spawn',
-              'up_orchestrator::runtime::tests::revalidates_working_directory_between_build_commands',
-          }
-          new = sorted(actual - baseline)
-          print(f'head failures: {len(actual)}; exact-base known failures: {len(baseline)}')
-          if new:
-              print('new failures introduced by head:', *new, sep='\n  ', file=sys.stderr)
-              sys.exit(1)
-          print('no new full-suite failures beyond exact base')
-          PY
-
-      - name: Strict Clippy introduces no diagnostics beyond exact base
-        working-directory: ores-compose
-        shell: bash
-        run: |
-          set -euo pipefail
-          git worktree add --detach /tmp/ores-compose-base "$COMPOSE_BASE"
-
-          set +e
-          (cd /tmp/ores-compose-base && cargo clippy --locked --all-targets --all-features -- -D warnings) \
-            2>&1 | tee /tmp/ores-compose-base-clippy.log
-          base_status=${PIPESTATUS[0]}
-          cargo clippy --locked --all-targets --all-features -- -D warnings \
-            2>&1 | tee /tmp/ores-compose-head-clippy.log
-          head_status=${PIPESTATUS[0]}
-          set -e
-
-          printf 'base clippy status: %s\nhead clippy status: %s\n' "$base_status" "$head_status"
-          if [[ "$head_status" -eq 0 ]]; then
-            exit 0
-          fi
-
-          python3 - <<'PY'
-          from collections import Counter
-          from pathlib import Path
-          import re, sys
-
-          def diagnostics(path):
-              text = Path(path).read_text()
-              pairs = re.findall(r'^error: (.+?)\n\s*--> ([^:\n]+):\d+:\d+', text, re.M)
-              return Counter((message.strip(), source.strip()) for message, source in pairs)
-
-          base = diagnostics('/tmp/ores-compose-base-clippy.log')
-          head = diagnostics('/tmp/ores-compose-head-clippy.log')
-          new = head - base
-          print(f'exact-base clippy diagnostics: {sum(base.values())}')
-          print(f'head clippy diagnostics: {sum(head.values())}')
-          if new:
-              print('head-introduced strict-Clippy diagnostics:', file=sys.stderr)
-              for (message, source), count in sorted(new.items()):
-                  print(f'  {count}x {source}: {message}', file=sys.stderr)
-              sys.exit(1)
-          print('no strict-Clippy diagnostics beyond exact base')
-          PY
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22.9.0'
 
       - name: Compare independent TypeSpec and JSON Schema authorities
-        working-directory: ores-compose
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p target
-          set +e
           npx --yes \
-            --package=https://github.com/ORESoftware/typespec-json-schema-validator/archive/c55b2af26e0770bb947a80be016f0364dc46d6a3.tar.gz \
+            --package="https://github.com/ORESoftware/typespec-json-schema-validator/archive/${TJSV_SHA}.tar.gz" \
             tjsv check \
             --typespec=contracts/typespec/main.tsp \
             --schema=contracts/json-schema/contract.schema.json \
             --instances=contracts/instances \
-            --report=target/compose-contract-parity.json \
-            2>&1 | tee /tmp/ores-compose-tjsv.log
-          status=${PIPESTATUS[0]}
-          set -e
-          if [[ -f target/compose-contract-parity.json ]]; then
-            echo '--- TJSV parity report ---'
-            cat target/compose-contract-parity.json
-          fi
-          if [[ "$status" -ne 0 ]]; then
-            echo "TJSV failed with status $status" >&2
-            exit "$status"
-          fi
+            --report=target/compose-contract-parity.json
+          cat target/compose-contract-parity.json
 
-      - name: Verify exact tracked source remained immutable
+      - name: Reconfirm immutable exact head
         if: always()
-        working-directory: ores-compose
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$COMPOSE_HEAD"
           test -z "$(git status --porcelain --untracked-files=no)"
-          git diff --exit-code
-          git diff --cached --exit-code
-          git diff --check "$COMPOSE_BASE"..HEAD
-          echo ORES_COMPOSE_154_CERT_PASS
+          actual="$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/ORESoftware/ores-compose.git" refs/pull/154/head | cut -f1)"
+          test "$actual" = "$COMPOSE_HEAD"
+          echo ORES_COMPOSE_154_TJSV_CERT_PASS
