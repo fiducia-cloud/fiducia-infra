@@ -50,7 +50,9 @@ jobs:
           node-version: '22.9.0'
       - name: Verify pinned TJSV commit exists
         shell: bash
-        run: git ls-remote https://github.com/ORESoftware/typespec-json-schema-validator.git "$TJSV_SHA" | grep -F "$TJSV_SHA"
+        run: |
+          set -euo pipefail
+          git ls-remote https://github.com/ORESoftware/typespec-json-schema-validator.git | grep -F "$TJSV_SHA"
       - name: Run TJSV and retain status
         id: parity
         shell: bash
