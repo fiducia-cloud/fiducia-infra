@@ -76,6 +76,45 @@ jobs:
           cargo clippy --all-targets -- -D warnings
           cargo build --quiet --examples --bins
 
+      - name: Apply direct slirp namespace-entry candidate for diagnosis
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/linux/ores-proc-isolate.sh')
+          s = p.read_text()
+          old = '''"$NSENTER" --preserve-credentials -U --target="$child_pid" "$SLIRP" \\
+  --configure \\
+  --mtu=65520 \\
+  --disable-host-loopback \\
+  --enable-sandbox \\
+  --enable-seccomp \\
+  --netns-type=path \\
+  --ready-fd=6 \\
+  "/proc/$child_pid/ns/net" tap0 \\
+  6>"$READY_FIFO" &
+'''
+          new = '''"$SLIRP" \\
+  --configure \\
+  --mtu=65520 \\
+  --disable-host-loopback \\
+  --enable-sandbox \\
+  --enable-seccomp \\
+  --userns-path="/proc/$child_pid/ns/user" \\
+  --netns-type=path \\
+  --ready-fd=6 \\
+  "/proc/$child_pid/ns/net" tap0 \\
+  6>"$READY_FIFO" &
+'''
+          if old not in s:
+              raise SystemExit('expected f59 slirp invocation not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          shellcheck scripts/linux/*.sh
+          git diff --check
+          git diff -- scripts/linux/ores-proc-isolate.sh
+
       - name: Write strict boundary policy
         shell: bash
         run: |
