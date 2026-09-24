@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  COMPOSE_HEAD: d1afaa536cbd77681caf5729ed6aec501d5745ba
+  COMPOSE_HEAD: 9a0a3a98db0c266dc2a16ae2b1897521d5a9ca79
   TJSV_SHA: c55b2af2af0b3cdfa39904f1e2504f6bf4b97284
 
 jobs:
@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/ores-compose
-          ref: d1afaa536cbd77681caf5729ed6aec501d5745ba
+          ref: 9a0a3a98db0c266dc2a16ae2b1897521d5a9ca79
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 0
