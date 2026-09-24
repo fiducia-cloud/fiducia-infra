@@ -14,7 +14,7 @@ env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
   STACK_PR: '283'
   STACK_BASE: 'a673b93cb728c5d9c23d9ea59c0baffc9705f36e'
-  STACK_HEAD: '08876351bc9ba33fcc68d2f67d27df7e4503a193'
+  STACK_HEAD: '96609ce95ccb20d373e0e96c054907be973e7ec8'
 
 jobs:
   certify:
@@ -52,6 +52,12 @@ jobs:
           test "$actual_base" = "$STACK_BASE"
           git -C ores-stack diff --check "$STACK_BASE"..HEAD
           test -z "$(git -C ores-stack status --porcelain)"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ores-stack/package-lock.json
 
       - name: Install Rust 1.88
         shell: bash
@@ -94,9 +100,18 @@ jobs:
         working-directory: ores-stack
         run: npm ci
 
-      - name: Contract suite including governance v2
+      - name: Contract suite discovers every peer pair
         working-directory: ores-stack
         run: npm run check:contracts
+
+      - name: Conformance corpus and evidence boundary
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ores-stack
+          node --check conformance/check.mjs
+          node conformance/check.mjs | tee .ores-stack/conformance-check.json
 
       - name: Upload certification evidence
         if: always()
@@ -104,7 +119,7 @@ jobs:
         with:
           name: ores-stack-283-governance-${{ env.STACK_HEAD }}
           if-no-files-found: ignore
+          include-hidden-files: true
           path: |
-            ores-stack/.ores-stack/governance-schema-parity.json
-            ores-stack/.ores-stack/governance-v2-schema-parity.json
-            ores-stack/.ores-stack/mutation-receipt-schema-parity.json
+            ores-stack/.ores-stack/*-schema-parity.json
+            ores-stack/.ores-stack/conformance-check.json
