@@ -1,20 +1,14 @@
-name: ores-stack #283 targeted repair
+name: "ores-stack 283 targeted repair"
 
-on:
-  pull_request:
-    branches: [main]
-    paths:
-      - '.github/workflows/ores-stack-283-targeted-repair.yml'
-  workflow_dispatch:
+on: [push, workflow_dispatch]
 
 permissions:
   contents: read
 
 env:
-  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-  STACK_PR: '283'
-  STACK_HEAD: '5756f81ebc34983fe557569a83f2a93c3ef4d8b3'
-  STACK_BRANCH: 'feat/governance-v2-scaffold-admission-20260923'
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+  STACK_PR: "283"
+  STACK_HEAD: "5756f81ebc34983fe557569a83f2a93c3ef4d8b3"
 
 jobs:
   repair:
@@ -39,14 +33,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git clone --no-checkout https://github.com/ORESoftware/ores-stack.git source
+          git init source
+          git -C source remote add origin https://github.com/ORESoftware/ores-stack.git
           git -C source fetch --no-tags origin "+refs/pull/${STACK_PR}/head:refs/remotes/origin/pr-${STACK_PR}-head"
           actual="$(git -C source rev-parse refs/remotes/origin/pr-${STACK_PR}-head)"
           printf 'expected: %s\nactual:   %s\n' "$STACK_HEAD" "$actual"
           test "$actual" = "$STACK_HEAD"
           git -C source checkout --detach "$actual"
+          test -z "$(git -C source status --porcelain)"
 
-      - name: Apply the two deterministic repairs
+      - name: Install Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt
+
+      - name: Apply deterministic repair
         working-directory: source
         shell: bash
         run: |
@@ -54,7 +58,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          contract = Path('crates/ores-stack-cli/src/contract_cli.rs')
+          contract = Path("crates/ores-stack-cli/src/contract_cli.rs")
           text = contract.read_text()
           old = '''            let value: toml::Value = text
                 .parse()
@@ -62,10 +66,10 @@ jobs:
           new = '''            let value: toml::Value = toml::from_str(text)
                 .map_err(|error| format!("parse Cargo.toml: {error}"))?;'''
           if text.count(old) != 1:
-              raise SystemExit(f'expected exactly one Cargo.toml parser site, found {text.count(old)}')
+              raise SystemExit(f"expected one Cargo.toml parser site, found {text.count(old)}")
           contract.write_text(text.replace(old, new, 1))
 
-          stack = Path('crates/ores-stack-cli/src/stack_cli_hardened.rs')
+          stack = Path("crates/ores-stack-cli/src/stack_cli_hardened.rs")
           text = stack.read_text()
           old = '''        let from = stage_root.join(name);
         let to = workspace.join(name);
@@ -82,33 +86,20 @@ jobs:
         };
         if let Err(error) = publish_result {'''
           if text.count(old) != 1:
-              raise SystemExit(f'expected exactly one staged publish site, found {text.count(old)}')
+              raise SystemExit(f"expected one staged publish site, found {text.count(old)}")
           stack.write_text(text.replace(old, new, 1))
           PY
+          rustfmt --edition 2024 crates/ores-stack-cli/src/contract_cli.rs crates/ores-stack-cli/src/stack_cli_hardened.rs
           git diff --check
           mapfile -t changed < <(git diff --name-only | sort)
           printf '%s\n' "${changed[@]}"
           test "${#changed[@]}" -eq 2
-          test "${changed[0]}" = 'crates/ores-stack-cli/src/contract_cli.rs'
-          test "${changed[1]}" = 'crates/ores-stack-cli/src/stack_cli_hardened.rs'
+          test "${changed[0]}" = "crates/ores-stack-cli/src/contract_cli.rs"
+          test "${changed[1]}" = "crates/ores-stack-cli/src/stack_cli_hardened.rs"
 
-      - name: Install Rust 1.88
+      - name: Prove formerly failing tests
+        working-directory: source
         shell: bash
-        run: |
-          set -euo pipefail
-          rustup toolchain install 1.88.0 --profile minimal --no-self-update
-          rustup default 1.88.0
-          rustup component add rustfmt
-
-      - name: Format only repaired files
-        working-directory: source
-        run: |
-          set -euo pipefail
-          rustfmt --edition 2024 crates/ores-stack-cli/src/contract_cli.rs crates/ores-stack-cli/src/stack_cli_hardened.rs
-          git diff --check
-
-      - name: Prove both formerly failing tests
-        working-directory: source
         run: |
           set -euo pipefail
           cargo test --locked -p ores-stack-cli --bin ores-stack contract_cli::tests::web_governance_admits_disjoint_authority_and_commands -- --exact
@@ -116,12 +107,14 @@ jobs:
 
       - name: Run complete CLI tests
         working-directory: source
+        shell: bash
         run: |
           set -euo pipefail
           cargo test --locked -p ores-stack-cli --all-targets
           cargo test --locked -p ores-stack-cli --all-targets --all-features
 
-      - name: Commit and push only the proven repair
+      - name: Verify repair remained scoped
+        if: always()
         working-directory: source
         shell: bash
         run: |
@@ -129,10 +122,6 @@ jobs:
           test "$(git rev-parse HEAD)" = "$STACK_HEAD"
           mapfile -t changed < <(git diff --name-only | sort)
           test "${#changed[@]}" -eq 2
-          test "${changed[0]}" = 'crates/ores-stack-cli/src/contract_cli.rs'
-          test "${changed[1]}" = 'crates/ores-stack-cli/src/stack_cli_hardened.rs'
-          git config user.name 'ORESoftware'
-          git config user.email 'oresoftware@users.noreply.github.com'
-          git add -- "${changed[@]}"
-          git commit -m 'fix(governance): repair document parsing and publish collision guard'
-          git push origin "HEAD:refs/heads/${STACK_BRANCH}"
+          test "${changed[0]}" = "crates/ores-stack-cli/src/contract_cli.rs"
+          test "${changed[1]}" = "crates/ores-stack-cli/src/stack_cli_hardened.rs"
+          git diff --check
