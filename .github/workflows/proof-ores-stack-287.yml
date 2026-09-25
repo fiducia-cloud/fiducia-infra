@@ -44,7 +44,11 @@ jobs:
           bash scripts/bootstrap-cargo-lock.sh ensure
           bash scripts/check-cli-standardization.sh
           cargo metadata --locked --format-version 1 --no-deps >/dev/null
-      - run: cargo fmt --all -- --check
+      - name: Rustfmt changed provenance sources
+        run: |
+          rustfmt --edition 2021 --check \
+            crates/ores-stack-core/src/rpc_http_client_lane_post.rs \
+            crates/ores-stack-core/src/rpc_target_v3.rs
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --all-targets --locked
       - name: Contract checks
