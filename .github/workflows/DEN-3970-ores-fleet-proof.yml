@@ -1,0 +1,186 @@
+name: DEN-3970 ORESoftware fleet exact-head proof
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/DEN-3970-ores-fleet-proof.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  api-template:
+    name: api-template ${{ matrix.label }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: pr-32
+            branch: feat/portable-edge-middleware-hook-20260922
+            sha: fd76c082633b8181823eeb120f7937f84ce797b7
+          - label: pr-29
+            branch: test/ores-websocket-rpc-canary-main-20260920
+            sha: 6a8e2c25e33a717cc297d860642cf15e70ae475b
+          - label: pr-21
+            branch: feat/filesystem-routing-contracts
+            sha: ef319417da0634a17a88e46cd0a568a2976bbd5f
+    env:
+      SOURCE_REPO: ORESoftware/ores-api-server.template.rs
+      SOURCE_MAIN_SHA: 84f0cb4f4323270f8efd91f8fb2c06eaa315b388
+    steps:
+      - name: Require scoped source credential
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-api-server.template.rs
+          ref: ${{ matrix.sha }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Guard source identity
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ matrix.sha }}"
+          git diff --check "$SOURCE_MAIN_SHA" "${{ matrix.sha }}"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          test "$(git ls-remote "https://x-access-token:$ORE_SOURCE_PAT@github.com/$SOURCE_REPO.git" "refs/heads/${{ matrix.branch }}" | cut -f1)" = "${{ matrix.sha }}"
+          test "$(git ls-remote "https://x-access-token:$ORE_SOURCE_PAT@github.com/$SOURCE_REPO.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
+      - name: Validate JSON policy documents
+        run: jq empty .ores-config-authorities.json config/ores-middleware-stack.json contracts/rpc.route-map.json
+      - name: Install Rust 1.88
+        run: rustup toolchain install 1.88.0 --profile minimal --component rustfmt --component clippy
+      - name: Resolve Zed dependency graph
+        run: bash scripts/install-zed-deps.sh
+      - name: Cargo metadata and format
+        run: |
+          set -euo pipefail
+          cargo +1.88.0 metadata --no-deps --format-version 1 >/dev/null
+          cargo +1.88.0 fmt --all -- --check
+      - name: Server layout conformance
+        run: cargo +1.88.0 run --quiet --bin check-server-layout
+      - name: Embedded shared contracts
+        run: |
+          set -euo pipefail
+          if test -f template-shared/Cargo.toml; then
+            cargo +1.88.0 test --manifest-path template-shared/Cargo.toml
+          fi
+      - name: Lock config policy
+        run: |
+          set -euo pipefail
+          rustc +1.88.0 --edition=2021 scripts/check_lock_config.rs -o /tmp/check-lock-config
+          /tmp/check-lock-config
+      - name: Runtime config conformance
+        run: |
+          set -euo pipefail
+          if test -f conformance/check-runtime-configs.py; then
+            python3 conformance/check-runtime-configs.py
+          fi
+      - name: Rust tests and clippy
+        run: |
+          set -euo pipefail
+          cargo +1.88.0 test --all-targets
+          cargo +1.88.0 test --doc
+          cargo +1.88.0 clippy --all-targets -- -D warnings
+
+  archived-delete-data:
+    name: archived-delete-data pr-12
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOURCE_REPO: ORESoftware/ores-archived-and-delete-data
+      SOURCE_BRANCH: hardening/rehearsal-worker-v4
+      SOURCE_SHA: 602ecfd2b12d9dc2abd86b9a8e3c152d28ed2cf2
+      SOURCE_MAIN_SHA: aeb87abf6ad5a75cf098ea0dcf5cf6aad38847d3
+      PGPASSWORD: postgres
+      ORES_LOCKS_AND_LEASES_SQL_REV: 237f3ef8e4df1a354152fb0c56a4eb65e06ff378
+    steps:
+      - name: Require scoped source credential
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-archived-and-delete-data
+          ref: 602ecfd2b12d9dc2abd86b9a8e3c152d28ed2cf2
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Guard source identity
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          test "$(git ls-remote "https://x-access-token:$ORE_SOURCE_PAT@github.com/$SOURCE_REPO.git" "refs/heads/$SOURCE_BRANCH" | cut -f1)" = "$SOURCE_SHA"
+          test "$(git ls-remote "https://x-access-token:$ORE_SOURCE_PAT@github.com/$SOURCE_REPO.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.16.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version: '1.25.0'
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.88.0
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
+        with:
+          otp-version: '27.3'
+          gleam-version: '1.11.0'
+      - name: Root contract checks
+        run: |
+          set -euo pipefail
+          npm install
+          npm run layout:check
+          npm run safety:audit
+          npm run contracts:check
+      - name: Postgres lifecycle invariants
+        run: |
+          set -euo pipefail
+          url="https://raw.githubusercontent.com/ORESoftware/ores-locks-and-leases/$ORES_LOCKS_AND_LEASES_SQL_REV/persistence/postgres/fencing.sql"
+          curl --fail --silent --show-error --proto '=https' --tlsv1.2 --max-time 30 "$url" -o /tmp/ores-locks-fencing.sql
+          psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f /tmp/ores-locks-fencing.sql
+          for file in sql/postgres/[0-9][0-9][0-9]_*.sql; do psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f "$file"; done
+          for file in sql/postgres/tests/*.sql; do psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f "$file"; done
+      - name: Rust adapter
+        run: cargo test --manifest-path src/rust/Cargo.toml
+      - name: Go adapter
+        working-directory: src/golang
+        run: go test ./...
+      - name: TypeScript adapter
+        working-directory: src/typescript
+        run: |
+          set -euo pipefail
+          npm install
+          npm test
+      - name: Gleam adapter
+        working-directory: src/gleam
+        run: |
+          set -euo pipefail
+          gleam deps download
+          gleam test
