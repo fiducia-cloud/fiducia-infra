@@ -1,0 +1,184 @@
+name: certify ORESoftware mobile and desktop background runtimes
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/certify-ores-bg-runtimes.yml'
+
+permissions:
+  contents: read
+
+env:
+  DESKTOP_SHA: f7eaee76dc23107c4a779a4d3a35868809c2e1c6
+  MOBILE_SHA: 40452b88ef5663d05fdda157d7ba438eb7e90125
+
+jobs:
+  desktop-rust:
+    name: desktop locked Rust (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-desktop-bg-procs
+          ref: ${{ env.DESKTOP_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: stable
+          components: rustfmt,clippy
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --all-targets --locked
+      - run: cargo build --workspace --release --locked
+      - name: Verify systemd user unit
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cp install/linux/ores-desktop-bg.service "$RUNNER_TEMP/ores-desktop-bg.service"
+          sed -i 's#^ExecStart=.*#ExecStart=/bin/true#' "$RUNNER_TEMP/ores-desktop-bg.service"
+          systemd-analyze verify "$RUNNER_TEMP/ores-desktop-bg.service"
+      - name: Verify launchd property list
+        if: runner.os == 'macOS'
+        run: plutil -lint install/macos/com.oresoftware.desktop-bg.plist
+      - name: Verify Task Scheduler XML
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $path = 'install/windows/ores-desktop-bg-task.xml'
+          $stream = [System.IO.File]::OpenRead($path)
+          try {
+            $settings = [System.Xml.XmlReaderSettings]::new()
+            $reader = [System.Xml.XmlReader]::Create($stream, $settings)
+            try { while ($reader.Read()) {} } finally { $reader.Dispose() }
+          } finally { $stream.Dispose() }
+
+  desktop-msrv:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-desktop-bg-procs
+          ref: ${{ env.DESKTOP_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: '1.85.0'
+      - run: cargo check --workspace --all-targets --locked
+
+  desktop-contracts-dart:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-desktop-bg-procs
+          ref: ${{ env.DESKTOP_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.9.0'
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - run: npm run contracts:check
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d
+        with:
+          sdk: stable
+      - run: dart format --output=none --set-exit-if-changed clients/dart/desktop_bg_client.dart
+      - run: dart analyze clients/dart
+      - run: git ls-files --error-unmatch Cargo.lock
+      - run: git ls-files --error-unmatch .zpkg.lock
+
+  mobile-rust:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-mobile-bg-procs
+          ref: ${{ env.MOBILE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: stable
+          components: rustfmt,clippy
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --all-targets --locked
+      - run: cargo build --workspace --release --locked
+      - run: git ls-files --error-unmatch Cargo.lock
+      - run: git ls-files --error-unmatch .zpkg.lock
+
+  mobile-msrv:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-mobile-bg-procs
+          ref: ${{ env.MOBILE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: '1.85.0'
+      - run: cargo check --workspace --all-targets --locked
+
+  mobile-targets:
+    name: mobile target ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: aarch64-linux-android
+          - os: macos-15
+            target: aarch64-apple-ios
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-mobile-bg-procs
+          ref: ${{ env.MOBILE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - run: cargo check --workspace --target ${{ matrix.target }} --locked
+
+  mobile-contracts-flutter:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-mobile-bg-procs
+          ref: ${{ env.MOBILE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.9.0'
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - run: npm run contracts:check
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          channel: stable
+          cache: true
+      - working-directory: flutter
+        run: flutter pub get
+      - working-directory: flutter
+        run: flutter analyze
+      - working-directory: flutter
+        run: flutter test
