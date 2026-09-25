@@ -42,6 +42,13 @@ jobs:
         with:
           toolchain: '1.88.0'
           components: clippy
+      - name: Configure read-only auth for private Cargo git dependencies
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+          echo 'CARGO_NET_GIT_FETCH_WITH_CLI=true' >> "$GITHUB_ENV"
       - name: Compile exact core dependency closure
         run: cargo check --locked -p ores-stack-core --all-targets
       - name: Run RPC semantic and provenance regressions
@@ -64,3 +71,9 @@ jobs:
         run: |
           git diff --exit-code
           git diff --cached --exit-code
+      - name: Remove private Cargo git auth
+        if: always()
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          git config --global --unset-all url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf || true
