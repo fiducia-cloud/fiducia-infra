@@ -14,8 +14,8 @@ env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
   STACK_PR: '282'
   STACK_BASE: 'd46c07e0f91c2dbda9b2fee64bdd82f6d52fc1ef'
-  STACK_HEAD: '282676e28317139c63470e811141549446ffc80f'
-  STACK_BRANCH: 'feat/scintilla-deploy-target'
+  STACK_HEAD: '1d8654c5ddd8e1a4dc364919e82a3d402094fe18'
+  STACK_BRANCH: 'issue-281-scintilla-deploy'
 
 jobs:
   certify:
@@ -52,7 +52,7 @@ jobs:
           git -C ores-stack diff --check "$STACK_BASE"..HEAD
           mapfile -t changed < <(git -C ores-stack diff --name-only "$STACK_BASE"..HEAD | sort)
           printf '%s\n' "${changed[@]}"
-          test "${#changed[@]}" -eq 10
+          test "${#changed[@]}" -eq 13
 
       - name: Install Rust 1.88
         shell: bash
