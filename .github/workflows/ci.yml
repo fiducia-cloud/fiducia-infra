@@ -122,8 +122,8 @@ jobs:
             --skip generated_rest_route_compiles_against_pinned_operation_contract \
             --skip generated_web_page_compiles_against_pinned_api_docs_contract \
             --skip create_page_refuses_to_overwrite_authored_source
-      - name: Install contract tooling
-        run: npm ci
+      - name: Install exact-version contract tooling
+        run: npm install --ignore-scripts --no-audit --no-fund
       - name: Check TypeSpec and JSON Schema governance parity
         run: npm run check:contracts
       - name: Final immutable source guard
