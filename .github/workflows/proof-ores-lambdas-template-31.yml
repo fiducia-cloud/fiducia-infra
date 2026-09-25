@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: 0c6a8172e344252ae3fdb0b85ce74254d438cf82
+  SOURCE_SHA: b81a4457ea0fec0a16a5e96e0df43193ce52aca7
   ORESC_REV: 3d0b34bf8e93c382114bca888dbecddc32678b50
   RUST_TOOLCHAIN: 1.95.0
 
@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/ores-lambdas-template
-          ref: 0c6a8172e344252ae3fdb0b85ce74254d438cf82
+          ref: b81a4457ea0fec0a16a5e96e0df43193ce52aca7
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 1
@@ -60,9 +60,9 @@ jobs:
           echo "$RUNNER_TEMP/oresc-bin" >> "$GITHUB_PATH"
           rm -rf "$GITHUB_WORKSPACE/.ci"
       - name: Audit repository and root TOML contracts
-        run: oresc --no-json audit repo --path .
+        run: oresc --no-json audit repo
       - name: Audit environment declaration/reference coverage
-        run: oresc --no-json audit env --path .
+        run: oresc --no-json audit env
       - name: Prove tracked source remains unchanged
         run: |
           git diff --exit-code
