@@ -7,7 +7,7 @@ permissions:
 
 env:
   SOURCE_REPO: ORESoftware/3fa-backend.rs
-  SOURCE_HEAD_SHA: e1152ef13193524f56cc45ad7cd55223b2ce9d3c
+  SOURCE_HEAD_SHA: 7df97bc229a9c7e77dce37325d50b2cd7fc3ddc8
   SOURCE_BASE_SHA: 37c10d0217b281fa30f6e4adfb38052cc5ba963e
 
 jobs:
