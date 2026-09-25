@@ -16,7 +16,7 @@ jobs:
     env:
       SOURCE_REPO: ORESoftware/ores-lambda
       SOURCE_BRANCH: hardening/consumer-authority-20260920
-      SOURCE_SHA: 09bbdeaa406f10889faa7a3a1e4eb0ba2afcc632
+      SOURCE_SHA: 157b4ebeac66d3ca6938b2635e0abdaa88c618a5
       SOURCE_MAIN_SHA: cc7e5da3b42a75f8b172d85bf13a0c2844c2d431
     steps:
       - name: Require scoped source credential
@@ -30,7 +30,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/ores-lambda
-          ref: 09bbdeaa406f10889faa7a3a1e4eb0ba2afcc632
+          ref: 157b4ebeac66d3ca6938b2635e0abdaa88c618a5
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 0
@@ -91,7 +91,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/ores-lambda
-          ref: 09bbdeaa406f10889faa7a3a1e4eb0ba2afcc632
+          ref: 157b4ebeac66d3ca6938b2635e0abdaa88c618a5
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
       - name: Ingress config parity
@@ -99,6 +99,7 @@ jobs:
         with:
           typespec: contracts/ores-lambda-ingress-config.tsp
           schema: contracts/ores-lambda-ingress-config.schema.json
+          mapping: contracts/ores-lambda-ingress-config.mapping.json
           report: .conformance/ingress-config-report.json
           output_dir: .conformance/ingress-config-generated
           int64_strategy: number
