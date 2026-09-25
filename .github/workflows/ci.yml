@@ -42,6 +42,8 @@ jobs:
           set -euo pipefail
           echo "::add-mask::$ORE_SOURCE_PAT"
           test "$(git rev-parse HEAD)" = "$SOURCE_BASE_SHA"
+          git config user.name 'funded-proof'
+          git config user.email 'funded-proof@invalid.local'
           git -c http.extraHeader="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$ORE_SOURCE_PAT" | base64 -w0)" fetch origin "$SOURCE_HEAD_SHA"
           git merge --no-ff --no-commit FETCH_HEAD
           changed="$(git diff --cached --name-only "$SOURCE_BASE_SHA")"
