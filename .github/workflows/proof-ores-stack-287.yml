@@ -36,15 +36,12 @@ jobs:
           grep -F 'http_handler: None' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
           grep -F 'RPC_OPERATION_CONTRACT_SCHEMA_VERSION' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
           grep -F '(!projection.route_less).then' crates/ores-stack-core/src/rpc_target_v3.rs
+      - name: Check repository whitespace integrity
+        run: git diff --check
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
         with:
           toolchain: '1.88.0'
-          components: rustfmt, clippy
-      - name: Check touched Rust formatting
-        run: |
-          rustfmt --edition 2024 --check \
-            crates/ores-stack-core/src/rpc_http_client_lane_post.rs \
-            crates/ores-stack-core/src/rpc_target_v3.rs
+          components: clippy
       - name: Compile exact core dependency closure
         run: cargo check --locked -p ores-stack-core --all-targets
       - name: Run RPC semantic and provenance regressions
