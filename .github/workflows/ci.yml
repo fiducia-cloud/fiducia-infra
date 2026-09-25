@@ -1,174 +1,92 @@
-# CI that validates the infra without touching real clusters: renderer self-tests,
-# a topology staleness check, a kustomize build of every overlay, and terraform
-# fmt/validate. The kind e2e job is workflow_dispatch-gated (needs a built image).
 name: ci
 on:
-  push:
-    branches: [main]
   pull_request:
-  workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+env:
+  CONSUMER_REPO: ORESoftware/ores-lambdas-template
+  CONSUMER_SHA: e7c88a21f69140aa43e3d25a1ea086b5fc46972d
+  CONSUMER_BASE_SHA: 01975246424da7ada653d358bc87c346af5f8c2d
+  ORESC_REV: 3d0b34bf8e93c382114bca888dbecddc32678b50
+  RUST_TOOLCHAIN: 1.95.0
 
 jobs:
-  topology:
+  certify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - name: Validate GitHub Actions
-        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
-        with:
-          args: ./.github/workflows/ci.yml ./.github/workflows/cli-flags.yml
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
-        with:
-          node-version: "22.22.1"
-      # renderer self-tests
-      - run: node --test tools/*.test.mjs
-      # fail if the generated per-cluster inputs are stale vs topology.toml
-      - run: node tools/render.mjs --check
-      - run: node tools/render-vcluster-hetzner-e2e.mjs --check
-      - run: node tools/render-hetzner-e2e.mjs --check
-      # every overlay must still build — production, local kind, and the default
-      # zero-new-server vCluster proof tier.
-      - run: |
-          for c in clusters/*/ kind/overlay vcluster/hetzner-e2e/clusters/*/ k3s/hetzner-e2e/clusters/*/; do
-            echo "== $c =="
-            kubectl kustomize "$c" >/dev/null
-          done
-      - name: Render opt-in cron observability stack
+      - name: Require scoped cross-repository credential
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
         run: |
           set -euo pipefail
-          rendered="$RUNNER_TEMP/fiducia-cron-observability.yaml"
-          kubectl kustomize observability/cron-stack > "$rendered"
-          grep -q 'name: fiducia-otel-gateway' "$rendered"
-          grep -q 'name: fiducia-prometheus' "$rendered"
-          grep -q 'name: fiducia-loki' "$rendered"
-          grep -q 'name: fiducia-tempo' "$rendered"
-          grep -q 'name: fiducia-grafana' "$rendered"
-          grep -q 'secretKeyRef:' "$rendered"
-          if grep -nE 'image: .*:latest([[:space:]]|$)' "$rendered"; then
-            echo 'cron observability stack must not use latest image tags' >&2
-            exit 1
-          fi
-          if grep -niE '(password|secret):[[:space:]]+(admin|changeme|password)' "$rendered"; then
-            echo 'literal bootstrap credentials are forbidden' >&2
-            exit 1
-          fi
-      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
-        with:
-          version: v3.18.6
-      - name: Render pinned vCluster chart profiles
-        run: |
-          set -e
-          chart="$RUNNER_TEMP/vcluster-0.35.1.tgz"
-          curl --proto '=https' --tlsv1.2 --fail --show-error --silent --location \
-            https://charts.loft.sh/charts/vcluster-0.35.1.tgz --output "$chart"
-          test "$(openssl dgst -sha256 "$chart" | awk '{print $NF}')" = \
-            ec1db9e9faf2da674eba5df3594b9d209861ee8e5889be850a9bb60861158c5b
-          for c in hetzner-fsn1 hetzner-nbg1 hetzner-hel1; do
-            short=${c#hetzner-}
-            out="/tmp/$c-vcluster.yaml"
-            helm template "fiducia-$c" "$chart" \
-              --namespace "fiducia-vc-$short" \
-              --values vcluster/hetzner-e2e/values/common.yaml \
-              --values "vcluster/hetzner-e2e/values/$c.yaml" \
-              --set-string 'sync.fromHost.nodes.selector.labels.kubernetes\.io/hostname=dummy-node' \
-              --set-string 'controlPlane.statefulSet.scheduling.nodeSelector.kubernetes\.io/hostname=dummy-node' \
-              --include-crds | tee "$out" | openssl dgst -sha256
-            if grep -nE '^[[:space:]]*type:[[:space:]]*(NodePort|LoadBalancer)[[:space:]]*$' "$out"; then
-              echo "forbidden host-exposed Service in $out" >&2
-              exit 1
-            fi
-            grep -q 'ghcr.io/loft-sh/vcluster-oss:0.35.1@sha256:' "$out"
-            node tools/validate-vcluster-manifest.mjs "$out" "fiducia-$c"
-          done
-      - name: Validate operator scripts
-        run: bash -n scripts/hetzner-e2e-*.sh
-      - name: Validate R2 scoped credential contract
-        run: bash scripts/test-r2-scoped-creds.sh
-      # Dependency advisories are a required supply-chain gate.
-      - run: npm audit
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
 
-  operator:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Check out exact consumer head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          repository: ORESoftware/ores-lambdas-template
+          ref: e7c88a21f69140aa43e3d25a1ea086b5fc46972d
+          token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # pinned action
-        with:
-          toolchain: 1.96.0
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
-        with:
-          workspaces: operator
-      - name: Format
-        run: cargo fmt --manifest-path operator/Cargo.toml --all -- --check
-      - name: Lint
-        run: cargo clippy --manifest-path operator/Cargo.toml --all-targets --locked -- -D warnings
-      - name: Test
-        run: cargo test --manifest-path operator/Cargo.toml --all-targets --locked
-      - name: Verify generated CRD
-        run: cargo run --quiet --locked --manifest-path operator/Cargo.toml --bin crdgen | diff -u operator/config/crd.yaml -
-      - name: Audit dependencies
-        working-directory: operator
-        run: |
-          cargo install cargo-audit --version 0.22.2 --locked
-          cargo audit
+          fetch-depth: 0
+          show-progress: false
 
-  # Tier 2 provisioning IaC is never APPLIED in CI (that spends real money) — it is
-  # only format-checked and validated. `terraform validate` needs `terraform init`
-  # to fetch provider schemas, which is why this runs with network (GH-hosted).
-  terraform:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
-        with:
-          terraform_version: "1.9.8"
-      - name: fmt
-        run: terraform -chdir=terraform fmt -recursive -check -diff
-      - name: validate modules + Terraform environments
+      - name: Guard exact consumer identity
+        shell: bash
         run: |
-          set -e
-          for d in terraform/modules/*/ terraform/envs/e2e terraform/envs/hetzner-e2e; do
-            echo "== validate $d =="
-            terraform -chdir="$d" init -backend=false -input=false >/dev/null
-            terraform -chdir="$d" validate
-          done
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CONSUMER_SHA"
+          test "$(git merge-base "$CONSUMER_BASE_SHA" "$CONSUMER_SHA")" = "$CONSUMER_BASE_SHA"
+          git diff --check "$CONSUMER_BASE_SHA" "$CONSUMER_SHA"
 
-  # Local kind tier (Tier 1). Operator-run: it needs a built fiducia-node image, so
-  # it is workflow_dispatch-gated, not on every push. Documents the standing-up
-  # path the fiducia-e2e suite consumes; see docs/e2e.md.
-  kind-e2e:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    # No `environment:` gate — the repo defines no deployment environments, so a
-    # reference here would be ungated scaffolding. Add `environment: e2e` once a
-    # protected environment of that name exists in repo settings.
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out exact private ores-cli candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          repository: ORESoftware/ores-cli
+          ref: 3d0b34bf8e93c382114bca888dbecddc32678b50
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: .ci/ores-cli
           persist-credentials: false
-      - uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
-        with:
-          config: kind/multizone.yaml
-          cluster_name: fiducia
-      # A real run then builds+loads the fiducia-node image and applies kind/overlay
-      # (FIDUCIA_LOAD_IMAGES=1 tools/kind-up.sh), then checks out fiducia-e2e and runs
-      # `npm test` with FIDUCIA_E2E_BASE_URL=http://localhost:8090.
-      - name: overlay builds
-        run: kubectl kustomize kind/overlay >/dev/null
+          fetch-depth: 1
+          show-progress: false
+
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+
+      - name: Build exact ores-cli candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool="$GITHUB_WORKSPACE/.ci/ores-cli"
+          test "$(git -C "$tool" rev-parse HEAD)" = "$ORESC_REV"
+          test -z "$(git -C "$tool" status --porcelain)"
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/oresc-target"
+          cargo +"$RUST_TOOLCHAIN" build --locked --manifest-path "$tool/Cargo.toml" --bin oresc
+          install -d "$RUNNER_TEMP/oresc-bin"
+          install -m 0755 "$CARGO_TARGET_DIR/debug/oresc" "$RUNNER_TEMP/oresc-bin/oresc"
+          install -m 0644 "$tool/.cli-flags.toml" "$RUNNER_TEMP/oresc-bin/.cli-flags.toml"
+          echo "$RUNNER_TEMP/oresc-bin" >> "$GITHUB_PATH"
+          echo "FLAGS2ENV_CONFIG=$RUNNER_TEMP/oresc-bin/.cli-flags.toml" >> "$GITHUB_ENV"
+          echo "FLAGS2ENV_DOTENV=0" >> "$GITHUB_ENV"
+          rm -rf "$GITHUB_WORKSPACE/.ci"
+
+      - name: Audit repository and root TOML contracts
+        run: oresc --no-json audit repo
+
+      - name: Audit environment declaration/reference coverage
+        run: oresc --no-json audit env
+
+      - name: Final exact consumer guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          git reset --hard "$CONSUMER_SHA" >/dev/null
+          git clean -ffd >/dev/null
+          test "$(git rev-parse HEAD)" = "$CONSUMER_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          git diff --check "$CONSUMER_BASE_SHA" "$CONSUMER_SHA"
