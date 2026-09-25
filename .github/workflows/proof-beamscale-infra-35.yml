@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: df117ced1a46cd6ba8f66c3b302fdc45295d0e80
+  SOURCE_SHA: 9ca9d7fcf81c023327c03095fb1ab44385a6808d
   ORES_COMPOSE_SHA: fb6d0b2aeb7d87c598e006bed050162b55e0c9f0
 
 jobs:
