@@ -1,0 +1,94 @@
+name: certify ORESoftware ores-cli runnerless stack
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/certify-ores-cli-stack.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: ores-cli #${{ matrix.pr }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pr: 57
+            sha: 36b96c90aef82e299bb30a151147cef0f40387fe
+          - pr: 86
+            sha: 1042e46e25141e96de4f14938cffa116d90f0eab
+          - pr: 89
+            sha: 77bc31591c35cee04a6aac5cf4cdd58422ecd5c6
+          - pr: 129
+            sha: 95b9e11df9987e64b73ac77ec1404a8649b12f5d
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out exact ores-cli candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-cli
+          ref: ${{ matrix.sha }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+      - name: Verify exact candidate
+        run: test "$(git rev-parse HEAD)" = "${{ matrix.sha }}"
+      - name: Verify clone post-install path
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x post-install.sh
+          command -v zsh >/dev/null
+          bash -n post-install.sh
+          bash -n tests/post_install.sh
+          bash -n tests/shell_install_contract.sh
+          bash -n tests/tjsv_lifecycle_contract.sh
+          bash -n tests/launcher_symlink_contract.sh
+          bash tests/post_install.sh
+          bash tests/shell_install_contract.sh
+          bash tests/tjsv_lifecycle_contract.sh
+          bash tests/launcher_symlink_contract.sh
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+          components: clippy,rustfmt
+      - name: Verify committed dependency graph
+        run: cargo metadata --locked --format-version 1 > /dev/null
+      - name: Check formatting
+        run: cargo fmt --all --check
+      - name: Run Clippy
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+      - name: Run tests
+        run: cargo test --all-targets --all-features --locked
+      - name: Self-audit repository and runtime TOML contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run --quiet --locked --bin oresc -- --no-json audit repo --path . --profile rust-cli > "$RUNNER_TEMP/repository-audit.txt"
+          grep -F 'status=passed command=audit repo' "$RUNNER_TEMP/repository-audit.txt"
+          grep -F 'runtime-toml-inspected [.ores-otel.toml]' "$RUNNER_TEMP/repository-audit.txt"
+      - name: Gate repository environment contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run --quiet --locked --bin oresc -- --no-json audit env --path . > "$RUNNER_TEMP/environment-audit.txt"
+          grep -F 'status=passed command=audit env' "$RUNNER_TEMP/environment-audit.txt"
+          grep -F 'environment-contract-ready' "$RUNNER_TEMP/environment-audit.txt"
+      - name: Audit Cargo and zed-pkg parity
+        run: cargo run --quiet --locked -- audit package --path . > "$RUNNER_TEMP/package-audit.jsonl"
+      - name: Verify explicit plain stdout
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run --quiet --locked -- --no-json audit package --path . > "$RUNNER_TEMP/package-audit.txt"
+          grep -F 'status=passed command=audit package' "$RUNNER_TEMP/package-audit.txt"
+          if grep -Eq '^[[:space:]]*\{' "$RUNNER_TEMP/package-audit.txt"; then
+            echo 'plain mode emitted JSON' >&2
+            exit 1
+          fi
+      - name: Prove exact source stayed immutable
+        run: |
+          test "$(git rev-parse HEAD)" = "${{ matrix.sha }}"
+          git diff --exit-code
