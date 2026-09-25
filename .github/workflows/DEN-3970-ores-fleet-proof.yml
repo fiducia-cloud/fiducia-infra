@@ -60,6 +60,8 @@ jobs:
       - name: Install Rust 1.88
         run: rustup toolchain install 1.88.0 --profile minimal --component rustfmt --component clippy
       - name: Resolve Zed dependency graph
+        env:
+          ZED_PKG_GITHUB_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
         run: bash scripts/install-zed-deps.sh
       - name: Cargo metadata and format
         run: |
@@ -158,7 +160,17 @@ jobs:
           npm install
           npm run layout:check
           npm run safety:audit
+          set +e
           npm run contracts:check
+          rc=$?
+          set -e
+          if [[ "$rc" -ne 0 ]]; then
+            echo "=== lifecycle generated schema ==="
+            test ! -f artifacts/generated-schema-b/lifecycle.typespec.generated.schema.json || cat artifacts/generated-schema-b/lifecycle.typespec.generated.schema.json
+            echo "=== lifecycle parity report ==="
+            test ! -f artifacts/schema-parity.json || cat artifacts/schema-parity.json
+            exit "$rc"
+          fi
       - name: Postgres lifecycle invariants
         run: |
           set -euo pipefail
