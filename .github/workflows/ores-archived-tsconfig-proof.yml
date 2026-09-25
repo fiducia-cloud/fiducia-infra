@@ -16,7 +16,7 @@ jobs:
     env:
       SOURCE_REPO: ORESoftware/ores-archived-and-delete-data
       SOURCE_BRANCH: fix/typescript-rootdir-ts7
-      SOURCE_SHA: 1b66d93f9b2f63d1413514e5cb344aaf48594b1c
+      SOURCE_SHA: 4319b28de62086c96f7bc913ebbc861afd542c00
       SOURCE_MAIN_SHA: a419fada16f7fa46c800be1e0b6cd434d3af4055
     steps:
       - name: Require scoped source credential
@@ -31,12 +31,12 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: ORESoftware/ores-archived-and-delete-data
-          ref: 1b66d93f9b2f63d1413514e5cb344aaf48594b1c
+          ref: 4319b28de62086c96f7bc913ebbc861afd542c00
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 0
           path: source
-      - name: Guard exact one-file baseline repair
+      - name: Guard exact baseline repair delta
         working-directory: source
         shell: bash
         env:
@@ -45,8 +45,9 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           mapfile -t changed < <(git diff --name-only "$SOURCE_MAIN_SHA" "$SOURCE_SHA")
-          test "${#changed[@]}" -eq 1
-          test "${changed[0]}" = "src/typescript/tsconfig.json"
+          test "${#changed[@]}" -eq 2
+          test "${changed[0]}" = "src/typescript/test/adapters.test.mjs"
+          test "${changed[1]}" = "src/typescript/tsconfig.json"
           git diff --check "$SOURCE_MAIN_SHA" "$SOURCE_SHA"
           echo "::add-mask::$ORE_SOURCE_PAT"
           test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
