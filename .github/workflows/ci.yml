@@ -7,15 +7,15 @@ permissions:
 
 env:
   CONSUMER_REPO: ORESoftware/ores-lambdas-template
-  CONSUMER_SHA: ce326adebac5a46fb00af4f164bd7f8e036c4c90
+  CONSUMER_SHA: 5c4752db76bf2b1dd3b3a5f904912db1817c9781
   CONSUMER_BASE_SHA: 8bf03b7022123d1a1a252c74774c9152eb6b94a3
-  ORESC_REV: 3d0b34bf8e93c382114bca888dbecddc32678b50
+  ORESC_REV: 6388131c1c93d3f8b096cd22aca1556d6d30b5c7
   RUST_TOOLCHAIN: 1.95.0
 
 jobs:
   certify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - name: Require scoped cross-repository credential
         env:
@@ -30,7 +30,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ORESoftware/ores-lambdas-template
-          ref: ce326adebac5a46fb00af4f164bd7f8e036c4c90
+          ref: 5c4752db76bf2b1dd3b3a5f904912db1817c9781
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 0
@@ -48,7 +48,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ORESoftware/ores-cli
-          ref: 3d0b34bf8e93c382114bca888dbecddc32678b50
+          ref: 6388131c1c93d3f8b096cd22aca1556d6d30b5c7
           token: ${{ secrets.ORE_SOURCE_PAT }}
           path: .ci/ores-cli
           persist-credentials: false
@@ -57,6 +57,16 @@ jobs:
 
       - name: Install pinned Rust toolchain
         run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+
+      - name: Prove ores-cli registry regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool="$GITHUB_WORKSPACE/.ci/ores-cli"
+          test "$(git -C "$tool" rev-parse HEAD)" = "$ORESC_REV"
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/oresc-target"
+          cargo +"$RUST_TOOLCHAIN" test --locked --manifest-path "$tool/Cargo.toml" registry_includes_canonical_audit_config -- --exact
+          cargo +"$RUST_TOOLCHAIN" test --locked --manifest-path "$tool/Cargo.toml" accepts_lambda_and_standards_runtime_contract_names -- --exact
 
       - name: Build exact ores-cli candidate
         shell: bash
