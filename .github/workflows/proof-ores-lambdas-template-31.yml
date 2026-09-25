@@ -45,7 +45,7 @@ jobs:
           fetch-depth: 1
           show-progress: false
       - name: Install pinned Rust toolchain
-        run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+        run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt --component clippy
       - name: Certify exact ores-cli candidate
         shell: bash
         run: |
