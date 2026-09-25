@@ -47,9 +47,9 @@ jobs:
           git -c http.extraHeader="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$ORE_SOURCE_PAT" | base64 -w0)" fetch origin "$SOURCE_HEAD_SHA"
           git merge --no-ff --no-commit FETCH_HEAD
           changed="$(git diff --cached --name-only "$SOURCE_BASE_SHA")"
-          test "$changed" = ".github/workflows/ci.yml"
+          test "$changed" = ".github/workflows/ores-lint-hook-contract.yml"
           git diff --cached --check
-          grep -q 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' .github/workflows/ci.yml
+          grep -q 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' .github/workflows/ores-lint-hook-contract.yml
 
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
