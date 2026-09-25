@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
-      SOURCE_SHA: 7f1d8d1b1c024d50c4b179441ed076d15f241074
+      SOURCE_SHA: dbd517e65d4419bdde039ec3ac3fd31480ef48d1
       SOURCE_MAIN_SHA: 1fb45fe0f954440dfc8eaa56ba1c4cf002e17ff7
     steps:
       - name: Require scoped source credential
@@ -29,7 +29,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/ores-transport
-          ref: 7f1d8d1b1c024d50c4b179441ed076d15f241074
+          ref: dbd517e65d4419bdde039ec3ac3fd31480ef48d1
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 0
