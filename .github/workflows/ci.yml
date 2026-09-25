@@ -65,8 +65,8 @@ jobs:
           tool="$GITHUB_WORKSPACE/.ci/ores-cli"
           test "$(git -C "$tool" rev-parse HEAD)" = "$ORESC_REV"
           export CARGO_TARGET_DIR="$RUNNER_TEMP/oresc-target"
-          cargo +"$RUST_TOOLCHAIN" test --locked --manifest-path "$tool/Cargo.toml" registry_includes_canonical_audit_config -- --exact
-          cargo +"$RUST_TOOLCHAIN" test --locked --manifest-path "$tool/Cargo.toml" accepts_lambda_and_standards_runtime_contract_names -- --exact
+          cargo +"$RUST_TOOLCHAIN" test --locked --manifest-path "$tool/Cargo.toml" registry_includes_canonical_audit_config
+          cargo +"$RUST_TOOLCHAIN" test --locked --manifest-path "$tool/Cargo.toml" accepts_lambda_and_standards_runtime_contract_names
 
       - name: Build exact ores-cli candidate
         shell: bash
