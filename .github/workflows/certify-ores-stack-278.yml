@@ -154,6 +154,11 @@ jobs:
             "@typespec/compiler@1.16.0" \
             "@typespec/json-schema@1.16.0"
           test "$(node -p "require('./node_modules/@oresoftware/typespec-json-schema-validator/package.json').version")" = "0.1.0"
+          node_root="$(dirname "$(dirname "$(command -v node)")")"
+          test -f "$node_root/include/node/node.h"
+          npm_config_nodedir="$node_root" node node_modules/node-gyp/bin/node-gyp.js rebuild \
+            --directory=node_modules/@oresoftware/f2e/clients/nodejs
+          test -f node_modules/@oresoftware/f2e/clients/nodejs/build/Release/flags2env.node
       - name: Check TypeSpec and JSON Schema governance parity
         run: npm run check:contracts
       - name: Final immutable source guard
