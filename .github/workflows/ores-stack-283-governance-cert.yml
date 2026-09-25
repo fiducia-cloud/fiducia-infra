@@ -82,11 +82,11 @@ jobs:
           mapfile -t candidate_changed < <(git diff --name-only "$STACK_BASE"..HEAD | sort)
           printf '%s\n' "${fmt_changed[@]}" > "$RUNNER_TEMP/fmt-changed"
           printf '%s\n' "${candidate_changed[@]}" > "$RUNNER_TEMP/candidate-changed"
-          candidate_fmt_drift="$(comm -12 "$RUNNER_TEMP/fmt-changed" "$RUNNER_TEMP/candidate-changed")"
-          if [[ -n "$candidate_fmt_drift" ]]; then
+          mapfile -t candidate_fmt_changed < <(comm -12 "$RUNNER_TEMP/fmt-changed" "$RUNNER_TEMP/candidate-changed")
+          if (( ${#candidate_fmt_changed[@]} )); then
             echo "candidate-owned files are not rustfmt clean:" >&2
-            printf '%s\n' "$candidate_fmt_drift" >&2
-            git diff -- ${candidate_fmt_drift//\n'/ }
+            printf '%s\n' "${candidate_fmt_changed[@]}" >&2
+            git diff -- "${candidate_fmt_changed[@]}"
             exit 1
           fi
           if (( ${#fmt_changed[@]} )); then
