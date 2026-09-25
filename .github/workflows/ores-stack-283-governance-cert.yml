@@ -17,7 +17,7 @@ permissions:
 
 env:
   STACK_BASE: 'a673b93cb728c5d9c23d9ea59c0baffc9705f36e'
-  STACK_HEAD: '6e537d73eebc786ad4bd6cbc072509b6a569fe6c'
+  STACK_HEAD: 'd85bf4ea9c0d9b548fa48cc64482e15f1d89da33'
 
 jobs:
   certify:
@@ -71,11 +71,9 @@ jobs:
           rustup toolchain install 1.88.0 --profile minimal --no-self-update
           rustup component add --toolchain 1.88.0 rustfmt clippy
 
-      - name: Apply deterministic rustfmt repair to #283 candidate files
+      - name: Reject formatting drift introduced by #283
         working-directory: source
         shell: bash
-        env:
-          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
         run: |
           set -euo pipefail
           git fetch --no-tags --depth=1 origin "$STACK_BASE"
@@ -85,30 +83,16 @@ jobs:
           printf '%s\n' "${fmt_changed[@]}" > "$RUNNER_TEMP/fmt-changed"
           printf '%s\n' "${candidate_changed[@]}" > "$RUNNER_TEMP/candidate-changed"
           mapfile -t candidate_fmt_changed < <(comm -12 "$RUNNER_TEMP/fmt-changed" "$RUNNER_TEMP/candidate-changed")
-          expected=(
-            crates/ores-stack-cli/src/contract_cli.rs
-            crates/ores-stack-cli/src/stack_cli_hardened.rs
-          )
-          if (( ${#candidate_fmt_changed[@]} != 2 )) || [[ "${candidate_fmt_changed[0]}" != "${expected[0]}" ]] || [[ "${candidate_fmt_changed[1]}" != "${expected[1]}" ]]; then
-            echo "refusing unexpected candidate formatting set" >&2
+          if (( ${#candidate_fmt_changed[@]} )); then
+            echo "candidate-owned files are not rustfmt clean:" >&2
             printf '%s\n' "${candidate_fmt_changed[@]}" >&2
+            git diff -- "${candidate_fmt_changed[@]}"
             exit 1
           fi
-          for path in "${fmt_changed[@]}"; do
-            keep=0
-            for candidate in "${candidate_fmt_changed[@]}"; do
-              [[ "$path" == "$candidate" ]] && keep=1
-            done
-            (( keep == 1 )) || git restore --source="$STACK_HEAD" -- "$path"
-          done
-          git diff --check
-          git diff -- "${candidate_fmt_changed[@]}"
-          git add -- "${candidate_fmt_changed[@]}"
-          test -z "$(git diff --name-only)"
-          git config user.name "ores-stack-ci"
-          git config user.email "ores-stack-ci@users.noreply.github.com"
-          git commit --no-gpg-sign -m "style(governance): rustfmt candidate repairs"
-          git push origin "HEAD:refs/heads/feat/governance-v2-scaffold-admission-20260923"
+          if (( ${#fmt_changed[@]} )); then
+            git restore --source="$STACK_HEAD" -- "${fmt_changed[@]}"
+          fi
+          test -z "$(git status --porcelain --untracked-files=all)"
 
       - name: Install pinned contract tooling
         working-directory: source
