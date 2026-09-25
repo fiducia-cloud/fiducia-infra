@@ -1,0 +1,79 @@
+name: proof-ores-stack-287
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_SHA: 924d65b5c8cf7055a1fc4c48704ca1becb304374
+  API_DOCS_SHA: 348d67decc3618b3a3846fc88c36e77c4bb6f074
+
+jobs:
+  rpc-provenance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact ORES Stack head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-stack
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+      - name: Verify exact source and dependency provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          grep -F "rev = \"$API_DOCS_SHA\"" crates/ores-stack-core/Cargo.toml
+          ! grep -F '46ac63ceb9f88740144ca690e84e81f2202965df' crates/ores-stack-core/Cargo.toml
+          grep -F 'http_handler: None' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
+          grep -F 'RPC_OPERATION_CONTRACT_SCHEMA_VERSION' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
+          grep -F '(!projection.route_less).then' crates/ores-stack-core/src/rpc_target_v3.rs
+      - name: Check repository whitespace integrity
+        run: git diff --check
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.88.0'
+          components: clippy
+      - name: Configure read-only auth for private Cargo git dependencies
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+          echo 'CARGO_NET_GIT_FETCH_WITH_CLI=true' >> "$GITHUB_ENV"
+      - name: Compile exact core dependency closure
+        run: cargo check --locked -p ores-stack-core --all-targets
+      - name: Run RPC semantic and provenance regressions
+        run: |
+          set -euo pipefail
+          for test_name in \
+            operation_index_is_the_semantic_source \
+            rpc_authority_conformance \
+            rpc_no_rpc_lambda_semantics \
+            rpc_no_rpc_semantic_dispatch \
+            rpc_projection_discovery \
+            rpc_projection_import_resolution \
+            rpc_target_hardening
+          do
+            cargo test --locked -p ores-stack-core --test "$test_name"
+          done
+      - name: Strict core Clippy
+        run: cargo clippy --locked -p ores-stack-core --all-targets -- -D warnings
+      - name: Prove source unchanged
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
+      - name: Remove private Cargo git auth
+        if: always()
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          git config --global --unset-all url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf || true
