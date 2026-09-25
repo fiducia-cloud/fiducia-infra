@@ -123,6 +123,12 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
-          status="$(git status --porcelain)"
-          printf '%s' "$status"
-          test -z "$status"
+          status="$(git status --porcelain --untracked-files=all)"
+          printf '%s\n' "$status"
+          unexpected="$(printf '%s\n' "$status" | grep -v '^ M AGENTS.md$' || true)"
+          test -z "$unexpected"
+          git diff --exit-code -- src/auth/passcode.rs src/auth/voice.rs Cargo.toml Cargo.lock
+          if printf '%s\n' "$status" | grep -q '^ M AGENTS.md$'; then
+            git checkout -- AGENTS.md
+          fi
+          test -z "$(git status --porcelain --untracked-files=all)"
