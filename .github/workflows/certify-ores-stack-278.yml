@@ -79,10 +79,8 @@ jobs:
           echo "::add-mask::$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
           git config --global net.git-fetch-with-cli true
-      - name: Check CLI with locked graph
-        run: cargo check -p ores-stack-cli --all-targets --locked
-      - name: Test CLI with locked graph
-        run: cargo test -p ores-stack-cli --locked
+      - name: Prefetch locked Cargo graph under scoped authentication
+        run: cargo fetch --locked
       - name: Remove Cargo git authentication
         if: always()
         env:
@@ -93,6 +91,10 @@ jobs:
           echo "::add-mask::$ORE_SOURCE_PAT"
           git config --global --unset-all url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf || true
           git config --global --unset-all net.git-fetch-with-cli || true
+      - name: Check CLI with prefetched locked graph
+        run: cargo check -p ores-stack-cli --all-targets --locked --offline
+      - name: Test CLI with prefetched locked graph
+        run: cargo test -p ores-stack-cli --locked --offline
       - name: Install contract tooling
         run: npm ci
       - name: Check TypeSpec and JSON Schema governance parity
