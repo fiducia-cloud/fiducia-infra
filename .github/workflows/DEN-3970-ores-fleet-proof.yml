@@ -110,7 +110,7 @@ jobs:
     env:
       SOURCE_REPO: ORESoftware/ores-archived-and-delete-data
       SOURCE_BRANCH: hardening/rehearsal-worker-v4
-      SOURCE_SHA: 602ecfd2b12d9dc2abd86b9a8e3c152d28ed2cf2
+      SOURCE_SHA: db850732578c1e3e2f14565ec116552e8593bca1
       SOURCE_MAIN_SHA: aeb87abf6ad5a75cf098ea0dcf5cf6aad38847d3
       PGPASSWORD: postgres
       ORES_LOCKS_AND_LEASES_SQL_REV: 237f3ef8e4df1a354152fb0c56a4eb65e06ff378
@@ -126,7 +126,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/ores-archived-and-delete-data
-          ref: 602ecfd2b12d9dc2abd86b9a8e3c152d28ed2cf2
+          ref: db850732578c1e3e2f14565ec116552e8593bca1
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 0
