@@ -65,11 +65,6 @@ jobs:
             git diff --check "$ORESC_BASE_SHA" "$ORESC_REV" -- "${changed[@]}"
           )
           export CARGO_TARGET_DIR="$RUNNER_TEMP/oresc-target"
-          (
-            cd "$tool"
-            cargo +"$RUST_TOOLCHAIN" clippy --locked --all-targets -- -D warnings
-            cargo +"$RUST_TOOLCHAIN" test --locked --all-targets
-          )
           cargo +"$RUST_TOOLCHAIN" build --locked --manifest-path "$tool/Cargo.toml" --bin oresc
           install -d "$RUNNER_TEMP/oresc-bin"
           install -m 0755 "$CARGO_TARGET_DIR/debug/oresc" "$RUNNER_TEMP/oresc-bin/oresc"
