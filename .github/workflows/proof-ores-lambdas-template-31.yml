@@ -1,0 +1,69 @@
+name: proof-ores-lambdas-template-31
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_SHA: 0c6a8172e344252ae3fdb0b85ce74254d438cf82
+  ORESC_REV: 3d0b34bf8e93c382114bca888dbecddc32678b50
+  RUST_TOOLCHAIN: 1.95.0
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out exact consumer head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-lambdas-template
+          ref: 0c6a8172e344252ae3fdb0b85ce74254d438cf82
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+      - name: Verify exact consumer head
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      - name: Require funded cross-repository read credential
+        shell: bash
+        env:
+          CROSS_REPO_READ_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+        run: test -n "$CROSS_REPO_READ_TOKEN"
+      - name: Check out exact ores-cli candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-cli
+          ref: 3d0b34bf8e93c382114bca888dbecddc32678b50
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: .ci/ores-cli
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+      - name: Build exact ores-cli candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool="$GITHUB_WORKSPACE/.ci/ores-cli"
+          test "$(git -C "$tool" rev-parse HEAD)" = "$ORESC_REV"
+          test -z "$(git -C "$tool" status --porcelain)"
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/oresc-target"
+          cargo +"$RUST_TOOLCHAIN" build --locked --manifest-path "$tool/Cargo.toml" --bin oresc
+          install -d "$RUNNER_TEMP/oresc-bin"
+          install -m 0755 "$CARGO_TARGET_DIR/debug/oresc" "$RUNNER_TEMP/oresc-bin/oresc"
+          echo "$RUNNER_TEMP/oresc-bin" >> "$GITHUB_PATH"
+          rm -rf "$GITHUB_WORKSPACE/.ci"
+      - name: Audit repository and root TOML contracts
+        run: oresc --no-json audit repo --path .
+      - name: Audit environment declaration/reference coverage
+        run: oresc --no-json audit env --path .
+      - name: Prove tracked source remains unchanged
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
