@@ -32,7 +32,6 @@ jobs:
           otp-version: "27"
           gleam-version: "1.15.0"
           rebar3-version: "3.24"
-          version-type: strict
       - name: Download dependencies
         run: gleam deps download
       - name: Check formatting
