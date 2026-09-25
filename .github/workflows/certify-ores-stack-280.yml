@@ -1,0 +1,93 @@
+name: certify ores-stack 280 dynamic route manifest
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/certify-ores-stack-280.yml'
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_REPO: ORESoftware/ores-stack
+  SOURCE_BRANCH: feat/dynamic-route-manifest-v1
+  SOURCE_SHA: 0ba55cb5d7cede41ce8ecdad4866afd5eccc54a5
+  SOURCE_MAIN_SHA: d46c07e0f91c2dbda9b2fee64bdd82f6d52fc1ef
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Require scoped source credential
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+      - name: Check out exact source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ORESoftware/ores-stack
+          ref: 0ba55cb5d7cede41ce8ecdad4866afd5eccc54a5
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Guard exact source identity
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(git merge-base "$SOURCE_MAIN_SHA" "$SOURCE_SHA")" = "$SOURCE_MAIN_SHA"
+          git diff --check "$SOURCE_MAIN_SHA" "$SOURCE_SHA"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.9.0
+          cache: npm
+      - name: Configure scoped Cargo git authentication
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+          git config --global net.git-fetch-with-cli true
+      - name: Rust formatting
+        run: cargo fmt --all -- --check
+      - name: Check CLI
+        run: cargo check -p ores-stack-cli --all-targets --locked
+      - name: Test CLI
+        run: cargo test -p ores-stack-cli --locked
+      - name: Clippy CLI
+        run: cargo clippy -p ores-stack-cli --all-targets --locked -- -D warnings
+      - name: Remove Cargo git authentication
+        if: always()
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          git config --global --unset-all url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf || true
+          git config --global --unset-all net.git-fetch-with-cli || true
+      - name: Install contract tooling
+        run: npm ci
+      - name: Check all contracts
+        run: npm run check:contracts
+      - name: Final immutable source guard
+        if: always()
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          git reset --hard "$SOURCE_SHA" >/dev/null
+          git clean -ffd >/dev/null
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
