@@ -1,0 +1,56 @@
+name: generate ORESoftware mobile/desktop lockfiles
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/generate-ores-bg-locks.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  mobile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ORESoftware/ores-mobile-bg-procs
+          ref: 16e9737af02d0ff234c57303377467fc0f3def72
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.88.0
+      - name: Generate exact lock
+        run: |
+          set -euo pipefail
+          cargo generate-lockfile
+          test -s Cargo.lock
+          echo "MOBILE_LOCK_B64_BEGIN"
+          base64 -w0 Cargo.lock
+          echo
+          echo "MOBILE_LOCK_B64_END"
+
+  desktop:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ORESoftware/ores-desktop-bg-procs
+          ref: 2e3b845109f94ab961a444eaa30bdd58c8ca2fc0
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.88.0
+      - name: Generate exact lock
+        run: |
+          set -euo pipefail
+          cargo generate-lockfile
+          test -s Cargo.lock
+          echo "DESKTOP_LOCK_B64_BEGIN"
+          base64 -w0 Cargo.lock
+          echo
+          echo "DESKTOP_LOCK_B64_END"
