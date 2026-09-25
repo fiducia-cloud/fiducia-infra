@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  DESKTOP_SHA: dcb6107c53d1271dc6e5569070fc02bef796b428
+  DESKTOP_SHA: 333e2d035437cb45b3df4edadacecd1a1c9087f9
   MOBILE_SHA: fe0b3ae92562b03202efe64a17d61c4004221fc5
 
 jobs:
