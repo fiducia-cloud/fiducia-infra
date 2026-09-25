@@ -16,7 +16,7 @@ jobs:
     env:
       SOURCE_REPO: ORESoftware/ores-websocket
       SOURCE_BRANCH: fix/zpkg-universal-language-20260922
-      SOURCE_SHA: 736a16b2bd50c5c4163fe49f0b1ea1de1f0a61bf
+      SOURCE_SHA: 4cb985fb2a095c0976276d3a35493ca179f23300
       SOURCE_MAIN_SHA: 37ff2dc38878dc6e85accb562ec5c07652853c65
       ZED_CLI_REVISION: 69fce161e456d758459cab5d3a6441f599769bfa
       CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
@@ -34,7 +34,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: ORESoftware/ores-websocket
-          ref: 736a16b2bd50c5c4163fe49f0b1ea1de1f0a61bf
+          ref: 4cb985fb2a095c0976276d3a35493ca179f23300
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 0
@@ -57,6 +57,7 @@ jobs:
           grep -F 'test = "sh conformance/check.sh"' .zpkg.toml
           grep -F '"oresoftware/typespec-json-schema-validator" = "^0.1.1"' .zpkg.toml
           grep -F 'npm install --ignore-scripts --no-audit --no-fund --package-lock=false' conformance/check.sh
+          grep -F 'npm rebuild @oresoftware/f2e --ignore-scripts=false --no-audit --no-fund' conformance/check.sh
           echo "::add-mask::$ORE_SOURCE_PAT"
           test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
           test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
