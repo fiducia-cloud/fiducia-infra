@@ -65,7 +65,8 @@ jobs:
         run: |
           set -euo pipefail
           cargo fmt --all
-          test -z "$(git diff -- crates/ores-stack-cli/src/contract_cli.rs crates/ores-stack-cli/src/entry.rs)"
+          git diff -- crates/ores-stack-cli/src/contract_cli.rs crates/ores-stack-cli/src/stack_cli_hardened.rs crates/ores-stack-cli/src/entry.rs
+          test -z "$(git diff -- crates/ores-stack-cli/src/contract_cli.rs crates/ores-stack-cli/src/stack_cli_hardened.rs crates/ores-stack-cli/src/entry.rs)"
           git reset --hard "$SOURCE_SHA" >/dev/null
           git clean -ffd >/dev/null
           test -z "$(git status --porcelain --untracked-files=all)"
