@@ -21,11 +21,11 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/ores-proc-isolation-cli
-          ref: 906a7b45444fdca5040b6eed469a4efbcbf8bd8d
+          ref: 16a335e532958b720f206b2bfed713ea5e5141bd
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
       - name: Verify exact source head
-        run: test "$(git rev-parse HEAD)" = "906a7b45444fdca5040b6eed469a4efbcbf8bd8d"
+        run: test "$(git rev-parse HEAD)" = "16a335e532958b720f206b2bfed713ea5e5141bd"
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           toolchain: 1.88.0
@@ -69,7 +69,14 @@ jobs:
           set -e
           test "$rc" -eq 2
       - name: Verify source remained clean
-        run: test -z "$(git status --porcelain)"
+        shell: bash
+        run: |
+          set -euo pipefail
+          # This executable repo does not track Cargo.lock; Cargo generates one
+          # from the exact manifests during verification. Remove only that known
+          # build byproduct, then require the checkout to be otherwise pristine.
+          rm -f Cargo.lock
+          test -z "$(git status --porcelain --untracked-files=all)"
 
   sandbox-smoke-linux:
     runs-on: ubuntu-24.04
@@ -79,11 +86,11 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/ores-proc-isolation-cli
-          ref: 906a7b45444fdca5040b6eed469a4efbcbf8bd8d
+          ref: 16a335e532958b720f206b2bfed713ea5e5141bd
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
       - name: Verify exact source head
-        run: test "$(git rev-parse HEAD)" = "906a7b45444fdca5040b6eed469a4efbcbf8bd8d"
+        run: test "$(git rev-parse HEAD)" = "16a335e532958b720f206b2bfed713ea5e5141bd"
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           toolchain: 1.88.0
