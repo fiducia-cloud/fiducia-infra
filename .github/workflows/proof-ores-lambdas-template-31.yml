@@ -11,6 +11,7 @@ permissions:
 env:
   SOURCE_SHA: e094a32ecc4f1c33f732c970fd594c1345fc039f
   ORESC_REV: 6388131c1c93d3f8b096cd22aca1556d6d30b5c7
+  ORESC_BASE_SHA: 5409f3f169990bb7c7e6ac149a050201a7136f48
   RUST_TOOLCHAIN: 1.95.0
 
 jobs:
@@ -42,7 +43,7 @@ jobs:
           token: ${{ secrets.ORE_SOURCE_PAT }}
           path: .ci/ores-cli
           persist-credentials: false
-          fetch-depth: 1
+          fetch-depth: 0
           show-progress: false
       - name: Install pinned Rust toolchain
         run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt --component clippy
@@ -53,12 +54,19 @@ jobs:
           tool="$GITHUB_WORKSPACE/.ci/ores-cli"
           test "$(git -C "$tool" rev-parse HEAD)" = "$ORESC_REV"
           test -z "$(git -C "$tool" status --porcelain)"
+          (
+            cd "$tool"
+            git cat-file -e "$ORESC_BASE_SHA^{commit}"
+            mapfile -t changed < <(git diff --name-only "$ORESC_BASE_SHA" "$ORESC_REV")
+            printf 'changed: %s\n' "${changed[@]}"
+            test "${#changed[@]}" -eq 2
+            printf '%s\n' "${changed[@]}" | grep -Fxq 'src/audit/runtime_toml_registry.rs'
+            printf '%s\n' "${changed[@]}" | grep -Fxq 'src/audit/runtime_toml_registry_tests.rs'
+            git diff --check "$ORESC_BASE_SHA" "$ORESC_REV" -- "${changed[@]}"
+          )
           export CARGO_TARGET_DIR="$RUNNER_TEMP/oresc-target"
           (
             cd "$tool"
-            rustfmt +"$RUST_TOOLCHAIN" --edition 2024 --check \
-              src/audit/runtime_toml_registry.rs \
-              src/audit/runtime_toml_registry_tests.rs
             cargo +"$RUST_TOOLCHAIN" clippy --locked --all-targets -- -D warnings
             cargo +"$RUST_TOOLCHAIN" test --locked --all-targets
           )
