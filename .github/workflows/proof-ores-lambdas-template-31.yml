@@ -1,4 +1,4 @@
-name: proof-ores-lambdas-template-31
+name: proof-ores-lambdas-template-50
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: e7c88a21f69140aa43e3d25a1ea086b5fc46972d
+  SOURCE_SHA: 4ec1094f9ac6bbe4b694022c4ca77ea765628ad3
   ORESC_REV: 5409f3f169990bb7c7e6ac149a050201a7136f48
   RUST_TOOLCHAIN: 1.95.0
 
@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/ores-lambdas-template
-          ref: e7c88a21f69140aa43e3d25a1ea086b5fc46972d
+          ref: 4ec1094f9ac6bbe4b694022c4ca77ea765628ad3
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 1
