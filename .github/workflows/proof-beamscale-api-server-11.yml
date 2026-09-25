@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: c2854214c9c6d8687da2f49519a48c8985bbbf49
+  SOURCE_SHA: e45a7f6596545b2e0d6a59195ddf8b10a6589de9
 
 jobs:
   rust:
