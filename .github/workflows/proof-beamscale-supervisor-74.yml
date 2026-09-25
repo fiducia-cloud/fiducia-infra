@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: 6acaf28b7340b38e32b010e29322523b90a1fd74
+  SOURCE_SHA: c8731694642c5e4da505f5f873999a7d9986c8c9
 
 jobs:
   test:
