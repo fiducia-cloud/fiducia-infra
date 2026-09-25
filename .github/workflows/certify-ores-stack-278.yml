@@ -17,7 +17,7 @@ permissions:
 env:
   SOURCE_REPO: ORESoftware/ores-stack
   SOURCE_BRANCH: feat/cli-contract-governance-v1-20260922
-  SOURCE_SHA: 65da57fd01f674ccf5bc2b0fb952f4ad93e7c0aa
+  SOURCE_SHA: 940f5f520e56328c777f36878873da4ef206041b
   SOURCE_MAIN_SHA: d46c07e0f91c2dbda9b2fee64bdd82f6d52fc1ef
 
 jobs:
