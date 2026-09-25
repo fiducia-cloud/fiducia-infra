@@ -44,7 +44,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/bmscl-provider-deploy-tests"
-          erlc -DTEST -o "$RUNNER_TEMP/bmscl-provider-deploy-tests" src/bmscl_provider_deploy_ffi.erl
+          erlc -DTEST -o "$RUNNER_TEMP/bmscl-provider-deploy-tests" \
+            src/bmscl_deploy_ffi.erl \
+            src/bmscl_provider_bundle_ffi.erl \
+            src/bmscl_provider_deploy_ffi.erl
           erlc -o "$RUNNER_TEMP/bmscl-provider-deploy-tests" test/bmscl_provider_deploy_tests.erl
           erl -noshell -pa "$RUNNER_TEMP/bmscl-provider-deploy-tests" \
             -eval 'case eunit:test(bmscl_provider_deploy_tests, [verbose]) of ok -> halt(0); _ -> halt(1) end.'
