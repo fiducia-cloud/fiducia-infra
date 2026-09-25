@@ -13,7 +13,7 @@ jobs:
     env:
       SOURCE_REPO: ORESoftware/ores-websocket
       SOURCE_BRANCH: fix/zpkg-universal-language-20260922
-      SOURCE_SHA: 7e080a1e0c5f4eb7d471b4bfd59e2869f4ae6cc3
+      SOURCE_SHA: 2bd8c673deb35a3051271b3486e09506e9f6febb
       SOURCE_MAIN_SHA: 37ff2dc38878dc6e85accb562ec5c07652853c65
       ZED_CLI_REVISION: 69fce161e456d758459cab5d3a6441f599769bfa
       CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: ORESoftware/ores-websocket
-          ref: 7e080a1e0c5f4eb7d471b4bfd59e2869f4ae6cc3
+          ref: 2bd8c673deb35a3051271b3486e09506e9f6febb
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 0
@@ -51,7 +51,7 @@ jobs:
           ! grep -F 'language = "multi"' .zpkg.toml
           ! grep -Eq '^\[targets\.' .zpkg.toml
           grep -F 'test = "sh conformance/check.sh"' .zpkg.toml
-          grep -F '"oresoftware/typespec-json-schema-validator" = "^0.1.0"' .zpkg.toml
+          grep -F '"oresoftware/typespec-json-schema-validator" = "^0.1.1"' .zpkg.toml
           echo "::add-mask::$ORE_SOURCE_PAT"
           test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
           test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
@@ -82,22 +82,7 @@ jobs:
           echo "::add-mask::$ORE_SOURCE_PAT"
           rm -rf .vendor .zed zed_modules .zpkg.lock
           zed validate
-          set +e
           zed install --allow-build --install-mode copy
-          install_status=$?
-          set -e
-          echo '--- copied Zed tree ---'
-          find .vendor/.zed -maxdepth 5 -print 2>/dev/null | sort | head -n 400 || true
-          echo '--- tjsv launcher ---'
-          if [[ -e .vendor/.zed/.bin/tjsv ]]; then
-            ls -la .vendor/.zed/.bin/tjsv
-            sed -n '1,120p' .vendor/.zed/.bin/tjsv || true
-          fi
-          echo '--- package src candidates ---'
-          find .vendor/.zed -type f \( -path '*/src/cli.mjs' -o -path '*/src/config-cli.mjs' \) -print 2>/dev/null | sort || true
-          if [[ "$install_status" -ne 0 ]]; then
-            exit "$install_status"
-          fi
           zed validate --require-lock
           test -x .vendor/.zed/.bin/tjsv || test -x .zed/.bin/tjsv || test -x zed_modules/.bin/tjsv
           zed run tjsv --help >/dev/null
