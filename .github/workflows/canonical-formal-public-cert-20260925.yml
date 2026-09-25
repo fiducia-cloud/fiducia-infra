@@ -1,0 +1,99 @@
+name: Canonical public formal exact-head certification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/canonical-formal-public-cert-20260925.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out certification harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install Python 3.13
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.13'
+
+      - name: Check out MCP wave 5 exact head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: canonical-cloud/canonical-mcp-server.rs
+          ref: 11b63d79c0be617c31d17d086652873de2ad0f9f
+          path: mcp-wave5
+          persist-credentials: false
+          show-progress: false
+          fetch-depth: 1
+
+      - name: Check out MCP wave 2 exact head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: canonical-cloud/canonical-mcp-server.rs
+          ref: 923fc864f8331e296f6d99b0b6a26a2bb248da4d
+          path: mcp-wave2
+          persist-credentials: false
+          show-progress: false
+          fetch-depth: 1
+
+      - name: Check out web wave 4 exact head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: canonical-cloud/canonical-web-server.rs
+          ref: dbd587d3a384f5825aba68d8aefddb0b1c1c3a08
+          path: web-wave4
+          persist-credentials: false
+          show-progress: false
+          fetch-depth: 1
+
+      - name: Check out API wave 4 exact head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: canonical-cloud/canonical-api-server.rs
+          ref: 8f84eeace6222061cc6c87f94fedfdf2b18a258d
+          path: api-wave4
+          persist-credentials: false
+          show-progress: false
+          fetch-depth: 1
+
+      - name: Verify exact source identities and clean patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C mcp-wave5 rev-parse HEAD)" = "11b63d79c0be617c31d17d086652873de2ad0f9f"
+          test "$(git -C mcp-wave2 rev-parse HEAD)" = "923fc864f8331e296f6d99b0b6a26a2bb248da4d"
+          test "$(git -C web-wave4 rev-parse HEAD)" = "dbd587d3a384f5825aba68d8aefddb0b1c1c3a08"
+          test "$(git -C api-wave4 rev-parse HEAD)" = "8f84eeace6222061cc6c87f94fedfdf2b18a258d"
+          git -C mcp-wave5 diff --check
+          git -C mcp-wave2 diff --check
+          git -C web-wave4 diff --check
+          git -C api-wave4 diff --check
+
+      - name: Byte-compile formal models
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile mcp-wave5/conformance/formal_wave5_model.py
+          python3 -m py_compile mcp-wave2/conformance/tool_authority_model.py
+          python3 -m py_compile web-wave4/conformance/formal_wave4_model.py
+          python3 -m py_compile api-wave4/conformance/formal_wave4_model.py
+
+      - name: Execute exact formal models
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 mcp-wave5/conformance/formal_wave5_model.py
+          python3 mcp-wave2/conformance/tool_authority_model.py
+          python3 web-wave4/conformance/formal_wave4_model.py
+          python3 api-wave4/conformance/formal_wave4_model.py
