@@ -21,7 +21,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/ores-proc-isolation-cli
-          ref: 8a83ca481e28b75a53b82765d5cde9399e6a6735
+          ref: d4dad9eec6900bf1873ce42650d9b24395e879ec
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
       - name: Verify exact source head
@@ -93,7 +93,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/ores-proc-isolation-cli
-          ref: 8a83ca481e28b75a53b82765d5cde9399e6a6735
+          ref: d4dad9eec6900bf1873ce42650d9b24395e879ec
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
       - name: Verify exact source head
