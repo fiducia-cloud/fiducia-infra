@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 30
     env:
       SOURCE_REPO: ORESoftware/ores-compose
-      SOURCE_SHA: 8d2fc196310387eab680ed6c039552c2f75adef6
+      SOURCE_SHA: 563e3bbf957b2da3bcb7fa69a45ccfd41c30925a
       SOURCE_BASE_SHA: fb6d0b2aeb7d87c598e006bed050162b55e0c9f0
     steps:
       - name: Checkout exact source head
