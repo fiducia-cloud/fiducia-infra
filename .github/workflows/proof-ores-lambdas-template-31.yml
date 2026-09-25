@@ -90,7 +90,18 @@ jobs:
           grep -Fq 'status=stopped_for_evaluation command=audit repo findings=37 issues=1 exit_code=2' <<<"$output"
           test "$(grep -c '^WARN ' <<<"$output")" -eq 1
       - name: Audit environment declaration/reference coverage
-        run: oresc --no-json audit env
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          output="$(oresc --no-json audit env 2>&1)"
+          rc=$?
+          set -e
+          printf '%s\n' "$output"
+          test "$rc" -eq 2
+          grep -Fq 'ERROR encrypted-env-directory-missing [env/enc]' <<<"$output"
+          grep -Fq 'status=stopped_for_evaluation command=audit env findings=1 issues=1 exit_code=2' <<<"$output"
+          test "$(grep -c '^ERROR ' <<<"$output")" -eq 1
       - name: Prove tracked source remains unchanged
         run: |
           git diff --exit-code
