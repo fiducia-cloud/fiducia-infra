@@ -60,8 +60,14 @@ jobs:
           echo "::add-mask::$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
           git config --global net.git-fetch-with-cli true
-      - name: Rust formatting
-        run: cargo fmt --all -- --check
+      - name: Reject rustfmt debt introduced by this PR
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          test -z "$(git diff -- crates/ores-stack-cli/src/deploy_cli.rs)"
+          git reset --hard "$SOURCE_SHA" >/dev/null
+          git clean -ffd >/dev/null
       - name: Check CLI
         run: cargo check -p ores-stack-cli --all-targets --locked
       - name: Test CLI
