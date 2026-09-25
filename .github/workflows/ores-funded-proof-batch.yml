@@ -97,8 +97,9 @@ jobs:
         run: |
           set -euo pipefail
           docker run --rm --privileged --security-opt apparmor=unconfined \
-            -v "$PWD:/src" -w /src rust:1.88-bookworm bash -lc '
+            -v "$PWD:/src" -w /src rust:1.88-bookworm bash -c '
               set -euo pipefail
+              export PATH="/usr/local/cargo/bin:$PATH"
               apt-get update
               DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends bubblewrap slirp4netns iproute2 iptables curl ca-certificates
               cargo build --quiet --examples --bins
