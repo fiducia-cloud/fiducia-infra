@@ -1,0 +1,63 @@
+name: proof-ores-stack-287
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_SHA: 8fb826d4a72c37efd2a746566e60c78114b20d5c
+
+jobs:
+  rust-contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact ores-stack head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-stack
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+      - name: Verify exact source head
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+          components: rustfmt,clippy
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+      - name: Allow private ORE git dependencies for this job
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Bootstrap lock and policy
+        run: |
+          bash scripts/bootstrap-cargo-lock.sh ensure
+          bash scripts/check-cli-standardization.sh
+          cargo metadata --locked --format-version 1 --no-deps >/dev/null
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --all-targets --locked
+      - name: Contract checks
+        run: |
+          npm install
+          mkdir -p .ores-stack
+          npm run check:contracts
+      - name: Prove source unchanged except generated lock bootstrap
+        run: |
+          git diff --exit-code -- . ':!Cargo.lock'
+          git diff --cached --exit-code
+      - name: Remove credential rewrite
+        if: always()
+        run: git config --global --unset-all url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf || true
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
