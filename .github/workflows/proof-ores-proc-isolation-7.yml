@@ -21,11 +21,11 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/ores-proc-isolation-cli
-          ref: 16a335e532958b720f206b2bfed713ea5e5141bd
+          ref: 7bae8e96637e4d35b7ec92febcd1135c4597a4f2
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
       - name: Verify exact source head
-        run: test "$(git rev-parse HEAD)" = "16a335e532958b720f206b2bfed713ea5e5141bd"
+        run: test "$(git rev-parse HEAD)" = "7bae8e96637e4d35b7ec92febcd1135c4597a4f2"
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           toolchain: 1.88.0
@@ -86,11 +86,11 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/ores-proc-isolation-cli
-          ref: 16a335e532958b720f206b2bfed713ea5e5141bd
+          ref: 7bae8e96637e4d35b7ec92febcd1135c4597a4f2
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
       - name: Verify exact source head
-        run: test "$(git rev-parse HEAD)" = "16a335e532958b720f206b2bfed713ea5e5141bd"
+        run: test "$(git rev-parse HEAD)" = "7bae8e96637e4d35b7ec92febcd1135c4597a4f2"
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           toolchain: 1.88.0
