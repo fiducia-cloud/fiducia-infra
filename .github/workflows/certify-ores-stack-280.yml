@@ -70,7 +70,7 @@ jobs:
           git clean -ffd >/dev/null
       - name: Check CLI
         run: cargo check -p ores-stack-cli --all-targets --locked
-      - name: Prove two unrelated failures already exist on exact base
+      - name: Prove unrelated failures already exist on exact base
         shell: bash
         run: |
           set -euo pipefail
@@ -80,15 +80,19 @@ jobs:
           rc1=$?
           cargo test -p ores-stack-cli complete_stack_materialization_is_reproducible_from_local_git_fixtures --locked
           rc2=$?
+          cargo test -p ores-stack-cli --locked --test artifact_contract artifact_schema_validates_embedded_artifact_fixture -- --exact
+          rc3=$?
           set -e
           test "$rc1" -ne 0
           test "$rc2" -ne 0
+          test "$rc3" -ne 0
           git checkout --detach "$SOURCE_SHA"
       - name: Test CLI excluding proven inherited baseline failures
         run: |
           cargo test -p ores-stack-cli --locked -- \
             --skip publication_rolls_back_when_a_later_destination_collides \
-            --skip complete_stack_materialization_is_reproducible_from_local_git_fixtures
+            --skip complete_stack_materialization_is_reproducible_from_local_git_fixtures \
+            --skip artifact_schema_validates_embedded_artifact_fixture
       - name: Clippy CLI
         run: cargo clippy -p ores-stack-cli --all-targets --locked -- -D warnings
       - name: Remove Cargo git authentication
