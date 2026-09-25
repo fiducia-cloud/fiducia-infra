@@ -42,6 +42,7 @@ jobs:
             test -f "$profile"
             sudo install -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
             sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
       - name: Shell syntax
         run: |
@@ -105,6 +106,7 @@ jobs:
             test -f "$profile"
             sudo install -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
             sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
       - name: Build CLI and fixture
         run: cargo build --quiet --examples --bins
