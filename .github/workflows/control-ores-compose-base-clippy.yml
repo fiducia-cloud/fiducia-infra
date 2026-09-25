@@ -1,0 +1,31 @@
+name: control ORESoftware ores-compose base clippy
+
+on:
+  push:
+    branches:
+      - proof/ores-compose-184-base-clippy-20260924
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  clippy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      SOURCE_REPO: ORESoftware/ores-compose
+      SOURCE_SHA: fb6d0b2aeb7d87c598e006bed050162b55e0c9f0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+      - run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      - run: |
+          rustup toolchain install 1.98.1 --profile minimal --component clippy
+          rustup default 1.98.1
+      - run: cargo clippy --all-targets --all-features -- -D warnings
