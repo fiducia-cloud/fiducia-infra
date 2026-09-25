@@ -98,9 +98,22 @@ jobs:
         working-directory: source
         run: npm install --ignore-scripts --no-audit --no-fund
 
+      - name: Prime Rust dependencies and remove CI Git rewrite
+        working-directory: source
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          cargo +1.88.0 fetch --locked
+          rewrite="url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf"
+          git config --global --unset-all "$rewrite" || true
+
       - name: Run exact-head governance certification
         working-directory: source
         shell: bash
+        env:
+          CARGO_NET_OFFLINE: 'true'
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$STACK_HEAD"
