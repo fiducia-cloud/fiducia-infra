@@ -24,7 +24,7 @@ jobs:
           ref: ${{ env.SOURCE_SHA }}
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Prove exact source head
         shell: bash
