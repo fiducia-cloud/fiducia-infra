@@ -52,7 +52,6 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.9.0
-          cache: npm
       - name: Configure scoped Cargo git authentication
         env:
           ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
