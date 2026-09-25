@@ -56,13 +56,19 @@ jobs:
         with:
           toolchain: '1.88.0'
           components: rustfmt, clippy
-      - name: Install Linux policy helpers
+      - name: Install Linux policy helpers and scoped AppArmor profile
         if: runner.os == 'Linux'
         shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y bubblewrap slirp4netns iproute2 iptables shellcheck curl
+          sudo apt-get install -y apparmor-profiles apparmor-utils bubblewrap slirp4netns iproute2 iptables shellcheck curl
+          if [[ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || printf '0')" == '1' ]]; then
+            profile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+            test -f "$profile"
+            sudo install -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
+            sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          fi
       - name: Mirror source policy and Rust checks
         working-directory: source
         shell: bash
