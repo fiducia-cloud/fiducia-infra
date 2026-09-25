@@ -21,13 +21,16 @@ jobs:
       SOURCE_REPO: ORESoftware/ores-proc-isolation-cli
       SOURCE_SHA: 98e8725c0d2ac53b1bd84806949222a462068694
     steps:
-      - name: Checkout exact public source head
+      - name: Extract exact public source head
         shell: bash
         run: |
           set -euo pipefail
-          git clone --filter=blob:none "https://github.com/${SOURCE_REPO}.git" source
-          git -C source checkout --detach "$SOURCE_SHA"
-          test "$(git -C source rev-parse HEAD)" = "$SOURCE_SHA"
+          mkdir source
+          curl --fail --location --silent --show-error \
+            "https://codeload.github.com/${SOURCE_REPO}/tar.gz/${SOURCE_SHA}" \
+            | tar -xz -C source --strip-components=1
+          test -f source/Cargo.toml
+          printf '%s\n' "$SOURCE_SHA" > source/.funded-proof-source-sha
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
           toolchain: '1.88.0'
@@ -50,6 +53,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          test "$(cat .funded-proof-source-sha)" = "$SOURCE_SHA"
           bash -n scripts/linux/ores-proc-isolate.sh
           bash -n scripts/macos/ores-proc-isolate.sh
           if [[ "$RUNNER_OS" == Linux ]]; then shellcheck scripts/linux/ores-proc-isolate.sh scripts/macos/ores-proc-isolate.sh; fi
@@ -109,9 +113,9 @@ jobs:
           sleep 1
           curl --fail --silent http://127.0.0.1:18080 >/dev/null
           if target/debug/ores-proc-isolation run curl-flex --config /tmp/ores-pi-smoke.yaml -- http://127.0.0.1:18080; then exit 1; fi
-      - name: Exact source clean guard
+      - name: Exact source receipt
         working-directory: source
-        run: git diff --exit-code
+        run: test "$(cat .funded-proof-source-sha)" = "$SOURCE_SHA"
 
   archived-typescript:
     name: ores-archived-and-delete-data#14 contracts + TypeScript
@@ -121,12 +125,15 @@ jobs:
       SOURCE_REPO: ORESoftware/ores-archived-and-delete-data
       SOURCE_SHA: 53e0edefb3be96b6091c599fbd39e34bcc1f1c11
     steps:
-      - name: Checkout exact public source head
+      - name: Extract exact public source head
         run: |
           set -euo pipefail
-          git clone --filter=blob:none "https://github.com/${SOURCE_REPO}.git" source
-          git -C source checkout --detach "$SOURCE_SHA"
-          test "$(git -C source rev-parse HEAD)" = "$SOURCE_SHA"
+          mkdir source
+          curl --fail --location --silent --show-error \
+            "https://codeload.github.com/${SOURCE_REPO}/tar.gz/${SOURCE_SHA}" \
+            | tar -xz -C source --strip-components=1
+          test -f source/package.json
+          printf '%s\n' "$SOURCE_SHA" > source/.funded-proof-source-sha
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: '22.16.0'
@@ -134,6 +141,7 @@ jobs:
         working-directory: source
         run: |
           set -euo pipefail
+          test "$(cat .funded-proof-source-sha)" = "$SOURCE_SHA"
           npm install
           npm run layout:check
           npm run safety:audit
@@ -144,6 +152,6 @@ jobs:
           set -euo pipefail
           npm install
           npm test
-      - name: Exact source diff guard
+      - name: Exact source receipt
         working-directory: source
-        run: git diff --exit-code -- . ':!artifacts'
+        run: test "$(cat .funded-proof-source-sha)" = "$SOURCE_SHA"
