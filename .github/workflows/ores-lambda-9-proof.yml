@@ -9,6 +9,59 @@ permissions:
   contents: read
 
 jobs:
+  format-source:
+    name: Format exact ores-lambda source branch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      SOURCE_SHA: 062966f31ae0acf51949adb6fec8b94253bea29c
+      SOURCE_BRANCH: hardening/consumer-authority-20260920
+    steps:
+      - name: Check out exact source with scoped write credential
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-lambda
+          ref: 062966f31ae0acf51949adb6fec8b94253bea29c
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Guard branch still points at exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin "${SOURCE_BRANCH}"
+          current="$(git rev-parse "origin/${SOURCE_BRANCH}")"
+          if [ "${current}" != "${SOURCE_SHA}" ]; then
+            echo "source branch moved to ${current}; refusing stale formatter push"
+            exit 0
+          fi
+          test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
+
+      - name: Install Rust 1.88 rustfmt
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: "1.88.0"
+          components: rustfmt
+
+      - name: Apply deterministic Rustfmt and push if needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin "${SOURCE_BRANCH}"
+          test "$(git rev-parse "origin/${SOURCE_BRANCH}")" = "${SOURCE_SHA}"
+          cargo fmt --all
+          if git diff --quiet; then
+            echo "already formatted"
+            exit 0
+          fi
+          git diff --check
+          git config user.name "the1mills"
+          git config user.email "2148448+the1mills@users.noreply.github.com"
+          git add -- '*.rs'
+          git commit -m "style: apply cargo fmt"
+          git push origin "HEAD:${SOURCE_BRANCH}"
+
   rust:
     name: ores-lambda#9 Rust/conformance
     runs-on: ubuntu-24.04
