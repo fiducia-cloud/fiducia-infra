@@ -32,6 +32,7 @@ jobs:
         with:
           repository: ORESoftware/ores-archived-and-delete-data
           ref: 68a5c856436845111ce6a92c2c7ddd2a138ecbab
+          token: ${{ secrets.ORE_SOURCE_PAT }}
           path: archived
           persist-credentials: false
           show-progress: false
@@ -42,6 +43,7 @@ jobs:
         with:
           repository: ORESoftware/ores-err-trace
           ref: f8edc2d7c842606b74e0075108af397987860354
+          token: ${{ secrets.ORE_SOURCE_PAT }}
           path: err-trace
           persist-credentials: false
           show-progress: false
@@ -52,6 +54,7 @@ jobs:
         with:
           repository: ORESoftware/ores-desktop-bg-procs
           ref: 4bddcbe92b5e941f414cade837bab7259747e250
+          token: ${{ secrets.ORE_SOURCE_PAT }}
           path: desktop
           persist-credentials: false
           show-progress: false
@@ -62,6 +65,7 @@ jobs:
         with:
           repository: ORESoftware/ores-mobile-bg-procs
           ref: 62b7b3a8ad0160dbf66f4c473ff524bdfd3efb60
+          token: ${{ secrets.ORE_SOURCE_PAT }}
           path: mobile
           persist-credentials: false
           show-progress: false
