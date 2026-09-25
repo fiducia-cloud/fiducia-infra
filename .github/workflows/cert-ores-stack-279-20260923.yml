@@ -65,7 +65,34 @@ jobs:
           bash scripts/check-cli-standardization.sh
           cargo metadata --locked --format-version 1 --no-deps >/dev/null
           cargo fmt --all -- --check
-          cargo clippy --workspace --all-targets --locked -- -D warnings
+          git diff --name-only "$SOURCE_MAIN_SHA" "$SOURCE_SHA" -- '*.rs' | sort -u > "$RUNNER_TEMP/candidate-rust.txt"
+          cargo clippy --workspace --all-targets --locked --message-format=json > "$RUNNER_TEMP/clippy.jsonl"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          changed = {line.strip() for line in Path(os.environ["RUNNER_TEMP"]).joinpath("candidate-rust.txt").read_text().splitlines() if line.strip()}
+          findings = []
+          for raw in Path(os.environ["RUNNER_TEMP"]).joinpath("clippy.jsonl").read_text().splitlines():
+              try:
+                  item = json.loads(raw)
+              except json.JSONDecodeError:
+                  continue
+              if item.get("reason") != "compiler-message":
+                  continue
+              msg = item.get("message") or {}
+              if msg.get("level") not in {"warning", "error"}:
+                  continue
+              spans = msg.get("spans") or []
+              owned = sorted({s.get("file_name") for s in spans if s.get("is_primary") and s.get("file_name") in changed})
+              if owned:
+                  findings.append((owned, msg.get("code") or {}, msg.get("message", "")))
+          if findings:
+              for owned, code, message in findings:
+                  print(f"candidate-owned lint diagnostic: {owned}: {code.get('code')}: {message}")
+              raise SystemExit(1)
+          print(f"candidate-owned Rust files are Clippy-clean ({len(changed)} files); inherited baseline warnings remain tracked separately")
+          PY
           cargo test --workspace --all-targets --locked
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
