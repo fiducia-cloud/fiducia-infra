@@ -21,19 +21,19 @@ jobs:
           - pr: 8
             os: ubuntu-24.04
             source_branch: hardening/nixos-trusted-helper-paths
-            source_sha: 814883721a59bd4d3aa2fd67c09bc2c8a4785311
+            source_sha: 02386f3c1e34b83a9d58b08cc5b7ded744e34b32
           - pr: 8
             os: macos-15
             source_branch: hardening/nixos-trusted-helper-paths
-            source_sha: 814883721a59bd4d3aa2fd67c09bc2c8a4785311
+            source_sha: 02386f3c1e34b83a9d58b08cc5b7ded744e34b32
           - pr: 9
             os: ubuntu-24.04
             source_branch: fix/beamscale-userns-proof
-            source_sha: b89fb039e978855c4a3ff6d82718d5e9a14da549
+            source_sha: 8a83ca481e28b75a53b82765d5cde9399e6a6735
           - pr: 9
             os: macos-15
             source_branch: fix/beamscale-userns-proof
-            source_sha: b89fb039e978855c4a3ff6d82718d5e9a14da549
+            source_sha: 8a83ca481e28b75a53b82765d5cde9399e6a6735
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -126,10 +126,10 @@ jobs:
         include:
           - pr: 8
             source_branch: hardening/nixos-trusted-helper-paths
-            source_sha: 814883721a59bd4d3aa2fd67c09bc2c8a4785311
+            source_sha: 02386f3c1e34b83a9d58b08cc5b7ded744e34b32
           - pr: 9
             source_branch: fix/beamscale-userns-proof
-            source_sha: b89fb039e978855c4a3ff6d82718d5e9a14da549
+            source_sha: 8a83ca481e28b75a53b82765d5cde9399e6a6735
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -223,9 +223,9 @@ jobs:
       matrix:
         include:
           - pr: 8
-            source_sha: 814883721a59bd4d3aa2fd67c09bc2c8a4785311
+            source_sha: 02386f3c1e34b83a9d58b08cc5b7ded744e34b32
           - pr: 9
-            source_sha: b89fb039e978855c4a3ff6d82718d5e9a14da549
+            source_sha: 8a83ca481e28b75a53b82765d5cde9399e6a6735
     runs-on: macos-15
     timeout-minutes: 25
     steps:
