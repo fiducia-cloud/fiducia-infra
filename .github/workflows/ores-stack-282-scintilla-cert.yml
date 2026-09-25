@@ -97,12 +97,67 @@ jobs:
           cargo check --locked -p ores-stack-core --all-targets
           cargo check --locked -p ores-stack-cli --all-targets
 
-      - name: Test changed runtime surfaces
+      - name: Test changed runtime surfaces differential to exact base
         working-directory: ores-stack
+        shell: bash
         run: |
           set -euo pipefail
-          cargo test --locked -p ores-stack-core --all-targets
-          cargo test --locked -p ores-stack-cli --all-targets
+          compare_suite() {
+            package="$1"
+            label="$2"
+
+            git checkout --detach "$STACK_BASE" >/dev/null
+            set +e
+            cargo test --locked -p "$package" --all-targets 2>&1 | tee "$RUNNER_TEMP/${label}-base.log"
+            base_rc=${PIPESTATUS[0]}
+            set -e
+
+            git checkout --detach "$CANDIDATE_HEAD" >/dev/null
+            set +e
+            cargo test --locked -p "$package" --all-targets 2>&1 | tee "$RUNNER_TEMP/${label}-candidate.log"
+            candidate_rc=${PIPESTATUS[0]}
+            set -e
+
+            BASE_LOG="$RUNNER_TEMP/${label}-base.log" CANDIDATE_LOG="$RUNNER_TEMP/${label}-candidate.log" python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+
+          ansi = re.compile(r"\x1b\[[0-9;]*m")
+          def failures(path):
+              lines = [ansi.sub("", line) for line in Path(path).read_text(errors="replace").splitlines()]
+              starts = [i for i, line in enumerate(lines) if line.strip() == "failures:"]
+              if not starts:
+                  return set()
+              start = starts[-1] + 1
+              out = set()
+              for line in lines[start:]:
+                  stripped = line.strip()
+                  if stripped.startswith("test result:"):
+                      break
+                  if not stripped or stripped.startswith("----"):
+                      continue
+                  if line.startswith("    ") and not stripped.startswith(("left:", "right:", "note:")):
+                      out.add(stripped)
+              return out
+
+          base = failures(os.environ["BASE_LOG"])
+          candidate = failures(os.environ["CANDIDATE_LOG"])
+          introduced = sorted(candidate - base)
+          print("exact-base failures:", sorted(base))
+          print("candidate failures:", sorted(candidate))
+          if introduced:
+              raise SystemExit("candidate introduced new test failures: " + ", ".join(introduced))
+          PY
+
+            if [ "$candidate_rc" -ne 0 ] && [ "$base_rc" -eq 0 ]; then
+              echo "candidate suite failed while exact base passed" >&2
+              exit 1
+            fi
+          }
+
+          compare_suite ores-stack-core stack-core
+          compare_suite ores-stack-cli stack-cli
+          git checkout --detach "$CANDIDATE_HEAD" >/dev/null
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
