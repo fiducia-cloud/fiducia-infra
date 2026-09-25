@@ -83,6 +83,7 @@ jobs:
           set -euo pipefail
           echo "::add-mask::$ORE_SOURCE_PAT"
           rm -rf .vendor .zed zed_modules .zpkg.lock node_modules dist artifacts
+          npm install --ignore-scripts --no-audit --no-fund
           zed validate
           zed install --allow-build --install-mode copy
           zed validate --require-lock
