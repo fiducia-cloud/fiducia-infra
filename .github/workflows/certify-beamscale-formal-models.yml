@@ -22,11 +22,11 @@ jobs:
       matrix:
         include:
           - repository: beamscale/bmscl-supervisor
-            sha: a753719330a9a0847b240bed83e43851bda63301
-            pr: '76'
+            sha: 621ff18a7a09ea60e494fe127cba4e2cdf83cc2b
+            pr: '80'
           - repository: beamscale/bmscl-compiler
-            sha: df91b4a8680beb03db6e98a3c403b009a3c4f637
-            pr: '31'
+            sha: 69a74da7e97c7bba3042f407ea4819d8e7f055a9
+            pr: '32'
           - repository: beamscale/bmscl-cli
             sha: e6cd94513495087d5bb6eceb3994b51b20fcd488
             pr: '20'
