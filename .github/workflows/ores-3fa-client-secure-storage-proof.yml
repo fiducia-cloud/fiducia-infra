@@ -1,0 +1,98 @@
+name: ORESoftware 3fa-client secure-storage proof
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ores-3fa-client-secure-storage-proof.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  flutter-secure-storage:
+    name: 3fa-client-ui.dart#39 exact-head
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      SOURCE_REPO: ORESoftware/3fa-client-ui.dart
+      SOURCE_BRANCH: dependabot/pub/flutter_secure_storage-11.2.0
+      SOURCE_SHA: 01e67db2bb0654221c15f0a0d53d5920d2cfaed5
+      SOURCE_MAIN_SHA: aec7b668d056cbc08cdb406929d39490a8b7d04f
+      FLUTTER_VERSION: 3.44.2
+    steps:
+      - name: Require scoped source credential
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+      - name: Checkout exact private source head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/3fa-client-ui.dart
+          ref: 01e67db2bb0654221c15f0a0d53d5920d2cfaed5
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 0
+          path: source
+      - name: Guard exact dependency-only delta
+        working-directory: source
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          mapfile -t changed < <(git diff --name-only "$SOURCE_MAIN_SHA" "$SOURCE_SHA")
+          test "${#changed[@]}" -eq 2
+          test "${changed[0]}" = "pubspec.lock"
+          test "${changed[1]}" = "pubspec.yaml"
+          git diff --check "$SOURCE_MAIN_SHA" "$SOURCE_SHA"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Verify Android release-signing policy
+        working-directory: source
+        run: |
+          set -euo pipefail
+          bash scripts/tests/test-android-release-signing.sh
+          bash scripts/check-android-release-signing.sh
+      - name: Resolve Flutter dependencies
+        working-directory: source
+        run: flutter pub get
+      - name: Validate vendored sync package
+        working-directory: source
+        run: |
+          set -euo pipefail
+          dart run tool/check_vendored_sync.dart
+          cd vendor/threefa_sync
+          dart pub get
+          dart analyze
+          dart test
+      - name: Analyze and test app
+        working-directory: source
+        run: |
+          set -euo pipefail
+          flutter analyze
+          flutter test --reporter expanded
+      - name: Final immutable source guard
+        working-directory: source
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          git reset --hard "$SOURCE_SHA" >/dev/null
+          git clean -ffd >/dev/null
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
