@@ -16,7 +16,7 @@ jobs:
     env:
       SOURCE_REPO: ORESoftware/ores-lambda
       SOURCE_BRANCH: hardening/consumer-authority-20260920
-      SOURCE_SHA: ba01ae2f3ec291c08b7b52c98f88d07189439260
+      SOURCE_SHA: 062966f31ae0acf51949adb6fec8b94253bea29c
       SOURCE_MAIN_SHA: cc7e5da3b42a75f8b172d85bf13a0c2844c2d431
     steps:
       - name: Require scoped source credential
@@ -30,7 +30,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/ores-lambda
-          ref: ba01ae2f3ec291c08b7b52c98f88d07189439260
+          ref: 062966f31ae0acf51949adb6fec8b94253bea29c
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 0
@@ -91,7 +91,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/ores-lambda
-          ref: ba01ae2f3ec291c08b7b52c98f88d07189439260
+          ref: 062966f31ae0acf51949adb6fec8b94253bea29c
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
       - name: Ingress config parity
@@ -101,6 +101,7 @@ jobs:
           schema: contracts/ores-lambda-ingress-config.schema.json
           report: .conformance/ingress-config-report.json
           output_dir: .conformance/ingress-config-generated
+          int64_strategy: number
       - name: Lambda repository parity
         uses: ORESoftware/typespec-json-schema-validator@bd503465dab8c5148fee722b443ed04ff126c9bf
         with:
@@ -108,6 +109,7 @@ jobs:
           schema: contracts/ores-lambda-repository.schema.json
           report: .conformance/lambda-repository-report.json
           output_dir: .conformance/lambda-repository-generated
+          int64_strategy: number
       - name: Lambda fleet manifest parity
         uses: ORESoftware/typespec-json-schema-validator@bd503465dab8c5148fee722b443ed04ff126c9bf
         with:
@@ -115,6 +117,7 @@ jobs:
           schema: contracts/ores-lambda-manifest.schema.json
           report: .conformance/lambda-manifest-report.json
           output_dir: .conformance/lambda-manifest-generated
+          int64_strategy: number
       - name: Ingress receipt parity
         uses: ORESoftware/typespec-json-schema-validator@bd503465dab8c5148fee722b443ed04ff126c9bf
         with:
@@ -122,6 +125,7 @@ jobs:
           schema: contracts/ores-lambda-ingress-receipt.schema.json
           report: .conformance/ingress-receipt-report.json
           output_dir: .conformance/ingress-receipt-generated
+          int64_strategy: number
       - name: Conformance receipt parity
         uses: ORESoftware/typespec-json-schema-validator@bd503465dab8c5148fee722b443ed04ff126c9bf
         with:
@@ -129,3 +133,4 @@ jobs:
           schema: contracts/ores-lambda-conformance-receipt.schema.json
           report: .conformance/conformance-receipt-report.json
           output_dir: .conformance/conformance-receipt-generated
+          int64_strategy: number
