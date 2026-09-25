@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: 2b7f7beb56b7a321e3c4c616caa3ceea73be0b84
+  SOURCE_SHA: e094a32ecc4f1c33f732c970fd594c1345fc039f
   ORESC_REV: 6388131c1c93d3f8b096cd22aca1556d6d30b5c7
   RUST_TOOLCHAIN: 1.95.0
 
@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/ores-lambdas-template
-          ref: 2b7f7beb56b7a321e3c4c616caa3ceea73be0b84
+          ref: e094a32ecc4f1c33f732c970fd594c1345fc039f
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 1
