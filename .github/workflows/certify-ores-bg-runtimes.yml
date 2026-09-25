@@ -9,8 +9,8 @@ permissions:
   contents: read
 
 env:
-  DESKTOP_SHA: f7eaee76dc23107c4a779a4d3a35868809c2e1c6
-  MOBILE_SHA: 40452b88ef5663d05fdda157d7ba438eb7e90125
+  DESKTOP_SHA: 7ca992b979eeeb19e7aa1b97925001f78861f894
+  MOBILE_SHA: fe0b3ae92562b03202efe64a17d61c4004221fc5
 
 jobs:
   desktop-rust:
@@ -86,7 +86,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22.9.0'
-      - run: npm install --ignore-scripts --no-audit --no-fund
+      - run: npm install --no-audit --no-fund
       - run: npm run contracts:check
       - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d
         with:
@@ -155,6 +155,12 @@ jobs:
         with:
           toolchain: stable
           targets: ${{ matrix.target }}
+      - name: Configure Android NDK compiler
+        if: matrix.target == 'aarch64-linux-android'
+        shell: bash
+        run: |
+          echo "CC_aarch64_linux_android=$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang" >> "$GITHUB_ENV"
+          echo "AR_aarch64_linux_android=$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar" >> "$GITHUB_ENV"
       - run: cargo check --workspace --target ${{ matrix.target }} --locked
 
   mobile-contracts-flutter:
@@ -170,7 +176,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22.9.0'
-      - run: npm install --ignore-scripts --no-audit --no-fund
+      - run: npm install --no-audit --no-fund
       - run: npm run contracts:check
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
         with:
