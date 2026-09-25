@@ -17,7 +17,7 @@ permissions:
 
 env:
   STACK_BASE: 'a673b93cb728c5d9c23d9ea59c0baffc9705f36e'
-  STACK_HEAD: '372c48a56658b808edb22c7aac57617a7c8a184e'
+  STACK_HEAD: 'cf1d44119a0eb3025c08466d03546180617d17a0'
 
 jobs:
   certify:
