@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 env:
-  STACK_HEAD: 'cf0f1d4fcaf55c96f929b5038759f30a9d8ae723'
+  STACK_HEAD: '6e537d73eebc786ad4bd6cbc072509b6a569fe6c'
 
 jobs:
   certify:
