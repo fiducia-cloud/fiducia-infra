@@ -16,7 +16,7 @@ jobs:
       matrix:
         os: [ubuntu-24.04, macos-15]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 35
     env:
       SOURCE_REPO: ORESoftware/ores-proc-isolation-cli
       SOURCE_BRANCH: security/beamscale-tripwire-mount
@@ -56,19 +56,13 @@ jobs:
         with:
           toolchain: '1.88.0'
           components: rustfmt, clippy
-      - name: Install Linux sandbox helpers
+      - name: Install Linux policy helpers
         if: runner.os == 'Linux'
         shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y apparmor-profiles apparmor-utils bubblewrap slirp4netns iproute2 iptables shellcheck curl
-          if [[ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || printf '0')" == '1' ]]; then
-            profile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
-            test -f "$profile"
-            sudo install -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
-            sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
-          fi
+          sudo apt-get install -y bubblewrap slirp4netns iproute2 iptables shellcheck curl
       - name: Mirror source policy and Rust checks
         working-directory: source
         shell: bash
@@ -90,14 +84,19 @@ jobs:
             set -e
             test "$rc" -eq 2
           fi
-      - name: Linux sandbox smoke
+      - name: Linux sandbox smoke in privileged container
         if: runner.os == 'Linux'
         working-directory: source
         shell: bash
         run: |
           set -euo pipefail
-          cargo build --quiet --examples --bins
-          cat > /tmp/ores-pi-smoke.yaml <<'YAML'
+          docker run --rm --privileged --security-opt apparmor=unconfined \
+            -v "$PWD:/src" -w /src rust:1.88-bookworm bash -lc '
+              set -euo pipefail
+              apt-get update
+              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends bubblewrap slirp4netns iproute2 iptables curl ca-certificates
+              cargo build --quiet --examples --bins
+              cat > /tmp/ores-pi-smoke.yaml <<"YAML"
           version: 1
           defaults:
             group: no-net
@@ -124,15 +123,16 @@ jobs:
               group: external
               command: [/usr/bin/curl, --fail, --silent, --show-error]
           YAML
-          target/debug/ores-proc-isolation run true --config /tmp/ores-pi-smoke.yaml
-          if target/debug/ores-proc-isolation run passwd --config /tmp/ores-pi-smoke.yaml; then exit 1; fi
-          target/debug/ores-proc-isolation run internet --config /tmp/ores-pi-smoke.yaml
-          target/debug/examples/loopback_fixture 127.0.0.1:18080 >/tmp/ores-pi-http.log 2>&1 &
-          server=$!
-          trap 'kill "$server" || true' EXIT
-          sleep 1
-          curl --fail --silent http://127.0.0.1:18080 >/dev/null
-          if target/debug/ores-proc-isolation run curl-flex --config /tmp/ores-pi-smoke.yaml -- http://127.0.0.1:18080; then exit 1; fi
+              target/debug/ores-proc-isolation run true --config /tmp/ores-pi-smoke.yaml
+              if target/debug/ores-proc-isolation run passwd --config /tmp/ores-pi-smoke.yaml; then exit 1; fi
+              target/debug/ores-proc-isolation run internet --config /tmp/ores-pi-smoke.yaml
+              target/debug/examples/loopback_fixture 127.0.0.1:18080 >/tmp/ores-pi-http.log 2>&1 &
+              server=$!
+              trap "kill $server || true" EXIT
+              sleep 1
+              curl --fail --silent http://127.0.0.1:18080 >/dev/null
+              if target/debug/ores-proc-isolation run curl-flex --config /tmp/ores-pi-smoke.yaml -- http://127.0.0.1:18080; then exit 1; fi
+            '
       - name: Final immutable source guard
         working-directory: source
         shell: bash
@@ -140,6 +140,7 @@ jobs:
           ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
         run: |
           set -euo pipefail
+          sudo chown -R "$(id -u):$(id -g)" .
           git reset --hard "$SOURCE_SHA" >/dev/null
           git clean -ffd >/dev/null
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
