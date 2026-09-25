@@ -1,0 +1,45 @@
+name: Proof ores-proc-isolation-cli #6
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/proof-ores-proc-isolation-cli-6.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-head-proof:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact ORESoftware PR head
+        uses: actions/checkout@v4
+        with:
+          repository: ORESoftware/ores-proc-isolation-cli
+          ref: 98e8725c0d2ac53b1bd84806949222a462068694
+          fetch-depth: 1
+      - name: Assert exact head SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "98e8725c0d2ac53b1bd84806949222a462068694"
+      - name: Install Rust 1.88
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.88'
+          components: clippy,rustfmt
+      - name: Cargo fmt
+        run: cargo fmt --all -- --check
+      - name: Cargo check
+        run: cargo check --all-targets --locked
+      - name: Cargo test
+        run: cargo test --all-targets --locked
+      - name: Cargo clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Security invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -RIn --exclude-dir=.git -E 'unsafe[[:space:]]*\{' src
+          grep -RIn --exclude-dir=.git -E 'honeypot|cgroup|namespace|uid|gid|rootless|fail.closed' src tests README.md >/dev/null
