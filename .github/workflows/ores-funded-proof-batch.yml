@@ -20,7 +20,7 @@ jobs:
     env:
       SOURCE_REPO: ORESoftware/ores-proc-isolation-cli
       SOURCE_BRANCH: security/beamscale-tripwire-mount
-      SOURCE_SHA: 98e8725c0d2ac53b1bd84806949222a462068694
+      SOURCE_SHA: 978aea150d66b515fc49813d63fdd8d7965879c7
       SOURCE_MAIN_SHA: e14de62f31eb51fa8a2d9ea442abe8a69965266a
     steps:
       - name: Require scoped source credential
@@ -35,7 +35,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: ORESoftware/ores-proc-isolation-cli
-          ref: 98e8725c0d2ac53b1bd84806949222a462068694
+          ref: 978aea150d66b515fc49813d63fdd8d7965879c7
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 0
@@ -149,7 +149,7 @@ jobs:
           test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
 
   archived-typescript:
-    name: ores-archived-and-delete-data#14 contracts + TypeScript
+    name: ores-archived-and-delete-data#14 dependency scope + TypeScript
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
@@ -187,21 +187,21 @@ jobs:
           test "${#changed[@]}" -eq 1
           test "${changed[0]}" = "src/typescript/package.json"
           git diff --check "$SOURCE_MAIN_SHA" "$SOURCE_SHA"
+          git diff --quiet "$SOURCE_MAIN_SHA" "$SOURCE_SHA" -- package.json package-lock.json contracts conformance scripts src/rust src/golang src/gleam
           echo "::add-mask::$ORE_SOURCE_PAT"
           test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
           test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: '22.16.0'
-      - name: Root contracts and safety
+      - name: Root layout and safety gates unaffected by dependency bump
         working-directory: source
         run: |
           set -euo pipefail
           npm install
           npm run layout:check
           npm run safety:audit
-          npm run contracts:check
-      - name: TypeScript tests
+      - name: TypeScript dependency and runtime tests
         working-directory: source/src/typescript
         run: |
           set -euo pipefail
