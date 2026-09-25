@@ -1,0 +1,49 @@
+name: proof-beamscale-infra-35
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_SHA: 157b3b477883b42eedb95f687eb4cb5485a794d5
+  ORES_COMPOSE_SHA: fb6d0b2aeb7d87c598e006bed050162b55e0c9f0
+
+jobs:
+  compose-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact BeamScale infra head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: beamscale/bmscl-infra
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: source
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+      - name: Verify exact source head
+        run: test "$(git -C source rev-parse HEAD)" = "$SOURCE_SHA"
+      - name: Check out exact ores-compose validator
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.ORES_COMPOSE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: tool
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+      - name: Verify exact validator head
+        run: test "$(git -C tool rev-parse HEAD)" = "$ORES_COMPOSE_SHA"
+      - name: Validate BeamScale compose manifest
+        run: cargo run --locked --manifest-path tool/Cargo.toml -- check source/.ores-compose.yaml
+      - name: Prove source remains unchanged
+        run: |
+          git -C source diff --exit-code
+          git -C source diff --cached --exit-code
