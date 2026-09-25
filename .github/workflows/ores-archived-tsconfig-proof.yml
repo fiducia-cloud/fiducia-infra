@@ -1,4 +1,4 @@
-name: ORESoftware archived-data TypeScript baseline proof
+name: ORESoftware archived-data dependency proof
 
 on:
   pull_request:
@@ -9,15 +9,15 @@ permissions:
   contents: read
 
 jobs:
-  archived-rootdir:
-    name: ores-archived-and-delete-data#15 exact-head
+  archived-node-types:
+    name: ores-archived-and-delete-data#14 exact-head
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
       SOURCE_REPO: ORESoftware/ores-archived-and-delete-data
-      SOURCE_BRANCH: fix/typescript-rootdir-ts7
-      SOURCE_SHA: 4319b28de62086c96f7bc913ebbc861afd542c00
-      SOURCE_MAIN_SHA: a419fada16f7fa46c800be1e0b6cd434d3af4055
+      SOURCE_BRANCH: dependabot/npm_and_yarn/src/typescript/types/node-26.6.2
+      SOURCE_SHA: e5f214dd988b310c125f18d46e363f6a1b7abff2
+      SOURCE_MAIN_SHA: 40b43bff25978ed6ad85ea7a760e97279de91a13
     steps:
       - name: Require scoped source credential
         shell: bash
@@ -31,12 +31,12 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: ORESoftware/ores-archived-and-delete-data
-          ref: 4319b28de62086c96f7bc913ebbc861afd542c00
+          ref: e5f214dd988b310c125f18d46e363f6a1b7abff2
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 0
           path: source
-      - name: Guard exact baseline repair delta
+      - name: Guard exact one-file dependency delta
         working-directory: source
         shell: bash
         env:
@@ -45,10 +45,10 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           mapfile -t changed < <(git diff --name-only "$SOURCE_MAIN_SHA" "$SOURCE_SHA")
-          test "${#changed[@]}" -eq 2
-          test "${changed[0]}" = "src/typescript/test/adapters.test.mjs"
-          test "${changed[1]}" = "src/typescript/tsconfig.json"
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = "src/typescript/package.json"
           git diff --check "$SOURCE_MAIN_SHA" "$SOURCE_SHA"
+          git diff --quiet "$SOURCE_MAIN_SHA" "$SOURCE_SHA" -- package.json package-lock.json contracts conformance scripts src/rust src/golang src/gleam src/typescript/tsconfig.json src/typescript/test
           echo "::add-mask::$ORE_SOURCE_PAT"
           test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
           test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
@@ -62,7 +62,7 @@ jobs:
           npm install
           npm run layout:check
           npm run safety:audit
-      - name: TypeScript build and tests
+      - name: TypeScript dependency build and tests
         working-directory: source/src/typescript
         run: |
           set -euo pipefail
