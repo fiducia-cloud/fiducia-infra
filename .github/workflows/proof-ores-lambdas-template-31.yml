@@ -46,7 +46,7 @@ jobs:
           show-progress: false
       - name: Install pinned Rust toolchain
         run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
-      - name: Build exact ores-cli candidate
+      - name: Certify exact ores-cli candidate
         shell: bash
         run: |
           set -euo pipefail
@@ -54,6 +54,12 @@ jobs:
           test "$(git -C "$tool" rev-parse HEAD)" = "$ORESC_REV"
           test -z "$(git -C "$tool" status --porcelain)"
           export CARGO_TARGET_DIR="$RUNNER_TEMP/oresc-target"
+          (
+            cd "$tool"
+            cargo +"$RUST_TOOLCHAIN" fmt --all -- --check
+            cargo +"$RUST_TOOLCHAIN" clippy --locked --all-targets -- -D warnings
+            cargo +"$RUST_TOOLCHAIN" test --locked --all-targets
+          )
           cargo +"$RUST_TOOLCHAIN" build --locked --manifest-path "$tool/Cargo.toml" --bin oresc
           install -d "$RUNNER_TEMP/oresc-bin"
           install -m 0755 "$CARGO_TARGET_DIR/debug/oresc" "$RUNNER_TEMP/oresc-bin/oresc"
