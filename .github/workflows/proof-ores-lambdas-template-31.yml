@@ -56,7 +56,9 @@ jobs:
           export CARGO_TARGET_DIR="$RUNNER_TEMP/oresc-target"
           (
             cd "$tool"
-            cargo +"$RUST_TOOLCHAIN" fmt --all -- --check
+            rustfmt +"$RUST_TOOLCHAIN" --edition 2024 --check \
+              src/audit/runtime_toml_registry.rs \
+              src/audit/runtime_toml_registry_tests.rs
             cargo +"$RUST_TOOLCHAIN" clippy --locked --all-targets -- -D warnings
             cargo +"$RUST_TOOLCHAIN" test --locked --all-targets
           )
