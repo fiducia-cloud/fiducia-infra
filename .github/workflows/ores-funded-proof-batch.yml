@@ -1,0 +1,149 @@
+name: ORESoftware funded proof batch
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ores-funded-proof-batch.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  proc-isolation:
+    name: ores-proc-isolation-cli#6 (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      SOURCE_REPO: ORESoftware/ores-proc-isolation-cli
+      SOURCE_SHA: 98e8725c0d2ac53b1bd84806949222a462068694
+    steps:
+      - name: Checkout exact public source head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none "https://github.com/${SOURCE_REPO}.git" source
+          git -C source checkout --detach "$SOURCE_SHA"
+          test "$(git -C source rev-parse HEAD)" = "$SOURCE_SHA"
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: '1.88.0'
+          components: rustfmt, clippy
+      - name: Install Linux sandbox helpers
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y apparmor-profiles apparmor-utils bubblewrap slirp4netns iproute2 iptables shellcheck curl
+          if [[ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || printf '0')" == '1' ]]; then
+            profile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+            test -f "$profile"
+            sudo install -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
+            sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          fi
+      - name: Mirror source policy and Rust checks
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/linux/ores-proc-isolate.sh
+          bash -n scripts/macos/ores-proc-isolate.sh
+          if [[ "$RUNNER_OS" == Linux ]]; then shellcheck scripts/linux/ores-proc-isolate.sh scripts/macos/ores-proc-isolate.sh; fi
+          cargo fmt --all -- --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test --all-targets
+          cargo run --quiet -- check --config .ores-proc-isolation.yaml
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            cargo run --quiet -- doctor --config .ores-proc-isolation.yaml
+          else
+            set +e
+            cargo run --quiet -- doctor --config .ores-proc-isolation.yaml
+            rc=$?
+            set -e
+            test "$rc" -eq 2
+          fi
+      - name: Linux sandbox smoke
+        if: runner.os == 'Linux'
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --quiet --examples --bins
+          cat > /tmp/ores-pi-smoke.yaml <<'YAML'
+          version: 1
+          defaults:
+            group: no-net
+          groups:
+            no-net:
+              network:
+                mode: none
+            external:
+              network:
+                mode: external
+                deny_loopback: true
+                deny_private_networks: true
+          processes:
+            true:
+              group: no-net
+              command: [/usr/bin/true]
+            passwd:
+              group: no-net
+              command: [/usr/bin/cat, /etc/passwd]
+            internet:
+              group: external
+              command: [/usr/bin/curl, --fail, --silent, --show-error, --head, https://example.com]
+            curl-flex:
+              group: external
+              command: [/usr/bin/curl, --fail, --silent, --show-error]
+          YAML
+          target/debug/ores-proc-isolation run true --config /tmp/ores-pi-smoke.yaml
+          if target/debug/ores-proc-isolation run passwd --config /tmp/ores-pi-smoke.yaml; then exit 1; fi
+          target/debug/ores-proc-isolation run internet --config /tmp/ores-pi-smoke.yaml
+          target/debug/examples/loopback_fixture 127.0.0.1:18080 >/tmp/ores-pi-http.log 2>&1 &
+          server=$!
+          trap 'kill "$server" || true' EXIT
+          sleep 1
+          curl --fail --silent http://127.0.0.1:18080 >/dev/null
+          if target/debug/ores-proc-isolation run curl-flex --config /tmp/ores-pi-smoke.yaml -- http://127.0.0.1:18080; then exit 1; fi
+      - name: Exact source clean guard
+        working-directory: source
+        run: git diff --exit-code
+
+  archived-typescript:
+    name: ores-archived-and-delete-data#14 contracts + TypeScript
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      SOURCE_REPO: ORESoftware/ores-archived-and-delete-data
+      SOURCE_SHA: 53e0edefb3be96b6091c599fbd39e34bcc1f1c11
+    steps:
+      - name: Checkout exact public source head
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none "https://github.com/${SOURCE_REPO}.git" source
+          git -C source checkout --detach "$SOURCE_SHA"
+          test "$(git -C source rev-parse HEAD)" = "$SOURCE_SHA"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22.16.0'
+      - name: Root contracts and safety
+        working-directory: source
+        run: |
+          set -euo pipefail
+          npm install
+          npm run layout:check
+          npm run safety:audit
+          npm run contracts:check
+      - name: TypeScript tests
+        working-directory: source/src/typescript
+        run: |
+          set -euo pipefail
+          npm install
+          npm test
+      - name: Exact source diff guard
+        working-directory: source
+        run: git diff --exit-code -- . ':!artifacts'
