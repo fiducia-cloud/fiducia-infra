@@ -1,0 +1,41 @@
+name: proof-api-docs-233
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact api-docs head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/api-docs
+          ref: e6bea554d74d93f0d43fd33abbc96711ebbb3301
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify exact source head
+        run: test "$(git rev-parse HEAD)" = "e6bea554d74d93f0d43fd33abbc96711ebbb3301"
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
+      - name: Rust format
+        run: cargo fmt --all -- --check
+      - name: Rust tests
+        run: cargo test --locked --workspace --all-features
+      - name: Rust clippy
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+      - name: Focused lambda producer regression tests
+        run: cargo test --locked -p ores-api-docs lambda_deployment_docs -- --nocapture
+      - name: Prove tracked source stayed clean
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
