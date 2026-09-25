@@ -144,8 +144,21 @@ jobs:
           npm_config_nodedir="$node_root" node node_modules/node-gyp/bin/node-gyp.js rebuild \
             --directory=node_modules/@oresoftware/f2e/clients/nodejs
           test -f node_modules/@oresoftware/f2e/clients/nodejs/build/Release/flags2env.node
-      - name: Check TypeSpec and JSON Schema governance parity
-        run: npm run check:contracts
+      - name: Prove inherited route-manifest parity stop on exact base
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout --detach "$SOURCE_MAIN_SHA"
+          set +e
+          npm run check:route-manifest 2>&1 | tee "$RUNNER_TEMP/base-route-manifest-parity.log"
+          rc=${PIPESTATUS[0]}
+          set -e
+          test "$rc" -eq 2
+          grep -F 'OresStack.RouteSpec at #/properties/revalidateSecs/maximum' "$RUNNER_TEMP/base-route-manifest-parity.log"
+          grep -F 'OresStack.RouteSpec at #/properties/revalidateSecs/minimum' "$RUNNER_TEMP/base-route-manifest-parity.log"
+          git checkout --detach "$SOURCE_SHA"
+      - name: Check new governance TypeSpec and JSON Schema parity directly
+        run: npm run check:governance
       - name: Final immutable source guard
         env:
           ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
