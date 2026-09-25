@@ -19,18 +19,39 @@ jobs:
     timeout-minutes: 30
     env:
       SOURCE_REPO: ORESoftware/ores-proc-isolation-cli
+      SOURCE_BRANCH: security/beamscale-tripwire-mount
       SOURCE_SHA: 98e8725c0d2ac53b1bd84806949222a462068694
+      SOURCE_MAIN_SHA: e14de62f31eb51fa8a2d9ea442abe8a69965266a
     steps:
-      - name: Extract exact public source head
+      - name: Require scoped source credential
         shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
         run: |
           set -euo pipefail
-          mkdir source
-          curl --fail --location --silent --show-error \
-            "https://codeload.github.com/${SOURCE_REPO}/tar.gz/${SOURCE_SHA}" \
-            | tar -xz -C source --strip-components=1
-          test -f source/Cargo.toml
-          printf '%s\n' "$SOURCE_SHA" > source/.funded-proof-source-sha
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+      - name: Checkout exact private source head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ORESoftware/ores-proc-isolation-cli
+          ref: 98e8725c0d2ac53b1bd84806949222a462068694
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 0
+          path: source
+      - name: Guard exact source identity
+        working-directory: source
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git diff --check "$SOURCE_MAIN_SHA" "$SOURCE_SHA"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
           toolchain: '1.88.0'
@@ -53,7 +74,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(cat .funded-proof-source-sha)" = "$SOURCE_SHA"
           bash -n scripts/linux/ores-proc-isolate.sh
           bash -n scripts/macos/ores-proc-isolate.sh
           if [[ "$RUNNER_OS" == Linux ]]; then shellcheck scripts/linux/ores-proc-isolate.sh scripts/macos/ores-proc-isolate.sh; fi
@@ -113,9 +133,20 @@ jobs:
           sleep 1
           curl --fail --silent http://127.0.0.1:18080 >/dev/null
           if target/debug/ores-proc-isolation run curl-flex --config /tmp/ores-pi-smoke.yaml -- http://127.0.0.1:18080; then exit 1; fi
-      - name: Exact source receipt
+      - name: Final immutable source guard
         working-directory: source
-        run: test "$(cat .funded-proof-source-sha)" = "$SOURCE_SHA"
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          git reset --hard "$SOURCE_SHA" >/dev/null
+          git clean -ffd >/dev/null
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
 
   archived-typescript:
     name: ores-archived-and-delete-data#14 contracts + TypeScript
@@ -123,17 +154,42 @@ jobs:
     timeout-minutes: 25
     env:
       SOURCE_REPO: ORESoftware/ores-archived-and-delete-data
+      SOURCE_BRANCH: dependabot/npm_and_yarn/src/typescript/types/node-26.6.2
       SOURCE_SHA: 53e0edefb3be96b6091c599fbd39e34bcc1f1c11
+      SOURCE_MAIN_SHA: a419fada16f7fa46c800be1e0b6cd434d3af4055
     steps:
-      - name: Extract exact public source head
+      - name: Require scoped source credential
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
         run: |
           set -euo pipefail
-          mkdir source
-          curl --fail --location --silent --show-error \
-            "https://codeload.github.com/${SOURCE_REPO}/tar.gz/${SOURCE_SHA}" \
-            | tar -xz -C source --strip-components=1
-          test -f source/package.json
-          printf '%s\n' "$SOURCE_SHA" > source/.funded-proof-source-sha
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+      - name: Checkout exact private source head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ORESoftware/ores-archived-and-delete-data
+          ref: 53e0edefb3be96b6091c599fbd39e34bcc1f1c11
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 0
+          path: source
+      - name: Guard exact dependency-only delta
+        working-directory: source
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          mapfile -t changed < <(git diff --name-only "$SOURCE_MAIN_SHA" "$SOURCE_SHA")
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = "src/typescript/package.json"
+          git diff --check "$SOURCE_MAIN_SHA" "$SOURCE_SHA"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: '22.16.0'
@@ -141,7 +197,6 @@ jobs:
         working-directory: source
         run: |
           set -euo pipefail
-          test "$(cat .funded-proof-source-sha)" = "$SOURCE_SHA"
           npm install
           npm run layout:check
           npm run safety:audit
@@ -152,6 +207,17 @@ jobs:
           set -euo pipefail
           npm install
           npm test
-      - name: Exact source receipt
+      - name: Final immutable source guard
         working-directory: source
-        run: test "$(cat .funded-proof-source-sha)" = "$SOURCE_SHA"
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          git reset --hard "$SOURCE_SHA" >/dev/null
+          git clean -ffd >/dev/null
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
