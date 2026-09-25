@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: b81a4457ea0fec0a16a5e96e0df43193ce52aca7
+  SOURCE_SHA: e7c88a21f69140aa43e3d25a1ea086b5fc46972d
   ORESC_REV: 5409f3f169990bb7c7e6ac149a050201a7136f48
   RUST_TOOLCHAIN: 1.95.0
 
@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/ores-lambdas-template
-          ref: b81a4457ea0fec0a16a5e96e0df43193ce52aca7
+          ref: e7c88a21f69140aa43e3d25a1ea086b5fc46972d
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 1
@@ -57,7 +57,10 @@ jobs:
           cargo +"$RUST_TOOLCHAIN" build --locked --manifest-path "$tool/Cargo.toml" --bin oresc
           install -d "$RUNNER_TEMP/oresc-bin"
           install -m 0755 "$CARGO_TARGET_DIR/debug/oresc" "$RUNNER_TEMP/oresc-bin/oresc"
+          install -m 0644 "$tool/.cli-flags.toml" "$RUNNER_TEMP/oresc-bin/.cli-flags.toml"
           echo "$RUNNER_TEMP/oresc-bin" >> "$GITHUB_PATH"
+          echo "FLAGS2ENV_CONFIG=$RUNNER_TEMP/oresc-bin/.cli-flags.toml" >> "$GITHUB_ENV"
+          echo "FLAGS2ENV_DOTENV=0" >> "$GITHUB_ENV"
           rm -rf "$GITHUB_WORKSPACE/.ci"
       - name: Audit repository and root TOML contracts
         run: oresc --no-json audit repo
