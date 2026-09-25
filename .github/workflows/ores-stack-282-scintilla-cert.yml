@@ -1,0 +1,210 @@
+name: 'ores-stack #282 Scintilla certification'
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-stack-282-scintilla-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+  STACK_PR: '282'
+  STACK_BASE: 'd46c07e0f91c2dbda9b2fee64bdd82f6d52fc1ef'
+  STACK_HEAD: '1d8654c5ddd8e1a4dc364919e82a3d402094fe18'
+  STACK_BRANCH: 'issue-281-scintilla-deploy'
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Configure authenticated ores-stack source access
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch immutable PR head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --no-tags origin "+refs/pull/${STACK_PR}/head:refs/remotes/origin/pr-${STACK_PR}-head"
+          actual_head="$(git -C ores-stack rev-parse refs/remotes/origin/pr-${STACK_PR}-head)"
+          printf 'expected head: %s\nactual head:   %s\n' "$STACK_HEAD" "$actual_head"
+          test "$actual_head" = "$STACK_HEAD"
+          git -C ores-stack checkout --detach "$actual_head"
+          git -C ores-stack cat-file -e "$STACK_BASE^{commit}"
+          test "$(git -C ores-stack merge-base HEAD "$STACK_BASE")" = "$STACK_BASE"
+          git -C ores-stack diff --check "$STACK_BASE"..HEAD
+          mapfile -t changed < <(git -C ores-stack diff --name-only "$STACK_BASE"..HEAD | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" -eq 13
+
+      - name: Install Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+
+      - name: Canonicalize only changed Rust files and create local candidate
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2024 \
+            crates/ores-stack-cli/src/deploy_cli.rs \
+            crates/ores-stack-core/src/lambda_artifact.rs \
+            crates/ores-stack-core/src/lambda_build.rs
+          git diff --check
+          mapfile -t formatted < <(git diff --name-only | sort)
+          printf 'rustfmt changed:\n'; printf '  %s\n' "${formatted[@]:-<none>}"
+          test "${#formatted[@]}" -ge 1
+          for path in "${formatted[@]}"; do
+            case "$path" in
+              crates/ores-stack-cli/src/deploy_cli.rs|crates/ores-stack-core/src/lambda_artifact.rs|crates/ores-stack-core/src/lambda_build.rs) ;;
+              *) echo "unexpected rustfmt mutation: $path" >&2; exit 1 ;;
+            esac
+          done
+          git config user.name 'ORESoftware'
+          git config user.email 'oresoftware@users.noreply.github.com'
+          git add -- "${formatted[@]}"
+          git commit -m 'style(scintilla): canonicalize deploy target Rust sources'
+          candidate="$(git rev-parse HEAD)"
+          echo "CANDIDATE_HEAD=$candidate" >> "$GITHUB_ENV"
+          printf 'candidate head: %s\n' "$candidate"
+
+      - name: Compile changed runtime surfaces
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          cargo metadata --locked --format-version 1 --no-deps >/dev/null
+          cargo check --locked -p ores-stack-core --all-targets
+          cargo check --locked -p ores-stack-cli --all-targets
+
+      - name: Test changed runtime surfaces differential to exact base
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          compare_suite() {
+            package="$1"
+            label="$2"
+
+            git checkout --detach "$STACK_BASE" >/dev/null
+            set +e
+            cargo test --locked -p "$package" --all-targets 2>&1 | tee "$RUNNER_TEMP/${label}-base.log"
+            base_rc=${PIPESTATUS[0]}
+            set -e
+
+            git checkout --detach "$CANDIDATE_HEAD" >/dev/null
+            set +e
+            cargo test --locked -p "$package" --all-targets 2>&1 | tee "$RUNNER_TEMP/${label}-candidate.log"
+            candidate_rc=${PIPESTATUS[0]}
+            set -e
+
+            BASE_LOG="$RUNNER_TEMP/${label}-base.log" CANDIDATE_LOG="$RUNNER_TEMP/${label}-candidate.log" python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+
+          ansi = re.compile(r"\x1b\[[0-9;]*m")
+          def failures(path):
+              lines = [ansi.sub("", line) for line in Path(path).read_text(errors="replace").splitlines()]
+              starts = [i for i, line in enumerate(lines) if line.strip() == "failures:"]
+              if not starts:
+                  return set()
+              start = starts[-1] + 1
+              out = set()
+              for line in lines[start:]:
+                  stripped = line.strip()
+                  if stripped.startswith("test result:"):
+                      break
+                  if not stripped or stripped.startswith("----"):
+                      continue
+                  if line.startswith("    ") and not stripped.startswith(("left:", "right:", "note:")):
+                      out.add(stripped)
+              return out
+
+          base = failures(os.environ["BASE_LOG"])
+          candidate = failures(os.environ["CANDIDATE_LOG"])
+          introduced = sorted(candidate - base)
+          print("exact-base failures:", sorted(base))
+          print("candidate failures:", sorted(candidate))
+          if introduced:
+              raise SystemExit("candidate introduced new test failures: " + ", ".join(introduced))
+          PY
+
+            if [ "$candidate_rc" -ne 0 ] && [ "$base_rc" -eq 0 ]; then
+              echo "candidate suite failed while exact base passed" >&2
+              exit 1
+            fi
+          }
+
+          compare_suite ores-stack-core stack-core
+          compare_suite ores-stack-cli stack-cli
+          git checkout --detach "$CANDIDATE_HEAD" >/dev/null
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+
+      - name: Validate changed contract peers
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          for stem in ores-lambda-artifact-receipt ores-lambda-build-manifest ores-stack-deploy; do
+            test -f "contracts/${stem}.tsp"
+            test -f "contracts/${stem}.schema.json"
+            node -e 'const fs=require("fs"); const p=process.argv[1]; const x=JSON.parse(fs.readFileSync(p,"utf8")); if(x.$schema!=="https://json-schema.org/draft/2020-12/schema") throw new Error(`${p}: expected Draft 2020-12`)' "contracts/${stem}.schema.json"
+          done
+          TJSV_SHA=e29a91d7ef74e3b0613ea79e988bec4c467535d2
+          npm install --prefix "$RUNNER_TEMP/tjsv" --no-audit --no-fund \
+            "https://github.com/ORESoftware/typespec-json-schema-validator/archive/${TJSV_SHA}.tar.gz"
+          export PATH="$RUNNER_TEMP/tjsv/node_modules/.bin:$PATH"
+          npm run check:contracts
+
+      - name: Push fully tested formatting repair to source branch
+        working-directory: ores-stack
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_HEAD"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+          git push origin "$CANDIDATE_HEAD:refs/heads/$STACK_BRANCH"
+
+      - name: Clippy changed runtime surfaces
+        working-directory: ores-stack
+        run: |
+          set -euo pipefail
+          cargo clippy --locked -p ores-stack-core --all-targets
+          cargo clippy --locked -p ores-stack-cli --all-targets
+
+      - name: Verify candidate tree remained clean
+        if: always()
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_HEAD"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          git diff --check "$STACK_BASE"..HEAD
