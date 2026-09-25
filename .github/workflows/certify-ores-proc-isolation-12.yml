@@ -22,6 +22,7 @@ jobs:
         with:
           repository: ${{ env.SOURCE_REPO }}
           ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 1
 
