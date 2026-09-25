@@ -1,0 +1,63 @@
+name: proof-bmscl-cli-gleam-24
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_SHA: 068b0da571c7ee86dfe725b2c0565b183df0c93a
+
+jobs:
+  provider-boundary:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact BeamScale CLI head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: beamscale/bmscl-cli-gleam
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+      - name: Verify exact source head
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
+        with:
+          otp-version: "27"
+          gleam-version: "1.15.0"
+          rebar3-version: "3.24"
+          version-type: strict
+      - name: Download dependencies
+        run: gleam deps download
+      - name: Check formatting
+        run: gleam format --check src
+      - name: Check and build project
+        run: |
+          gleam check
+          gleam build
+      - name: Run provider deployment boundary regressions
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bmscl-provider-deploy-tests"
+          erlc -DTEST -o "$RUNNER_TEMP/bmscl-provider-deploy-tests" src/bmscl_provider_deploy_ffi.erl
+          erlc -o "$RUNNER_TEMP/bmscl-provider-deploy-tests" test/bmscl_provider_deploy_tests.erl
+          erl -noshell -pa "$RUNNER_TEMP/bmscl-provider-deploy-tests" \
+            -eval 'case eunit:test(bmscl_provider_deploy_tests, [verbose]) of ok -> halt(0); _ -> halt(1) end.'
+      - name: Run existing dev state regressions
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bmscl-dev-state-tests"
+          erlc -DTEST -o "$RUNNER_TEMP/bmscl-dev-state-tests" src/bmscl_dev_ffi.erl
+          erlc -o "$RUNNER_TEMP/bmscl-dev-state-tests" test/bmscl_dev_state_tests.erl
+          erl -noshell -pa "$RUNNER_TEMP/bmscl-dev-state-tests" \
+            -eval 'case eunit:test(bmscl_dev_state_tests, [verbose]) of ok -> halt(0); _ -> halt(1) end.'
+      - name: Prove source unchanged
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
