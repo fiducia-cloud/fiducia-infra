@@ -7,8 +7,8 @@ permissions:
 
 env:
   CONSUMER_REPO: ORESoftware/ores-lambdas-template
-  CONSUMER_SHA: e7c88a21f69140aa43e3d25a1ea086b5fc46972d
-  CONSUMER_BASE_SHA: 01975246424da7ada653d358bc87c346af5f8c2d
+  CONSUMER_SHA: 499705ee66805ca1726b3acf30ea3c499d983eba
+  CONSUMER_BASE_SHA: 8bf03b7022123d1a1a252c74774c9152eb6b94a3
   ORESC_REV: 3d0b34bf8e93c382114bca888dbecddc32678b50
   RUST_TOOLCHAIN: 1.95.0
 
@@ -30,7 +30,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ORESoftware/ores-lambdas-template
-          ref: e7c88a21f69140aa43e3d25a1ea086b5fc46972d
+          ref: 499705ee66805ca1726b3acf30ea3c499d983eba
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 0
