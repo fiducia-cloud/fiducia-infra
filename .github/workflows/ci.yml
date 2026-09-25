@@ -38,11 +38,11 @@ jobs:
 
       - name: Guard reviewed package delta
         shell: bash
-        env:
-          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(git rev-parse "refs/remotes/origin/${SOURCE_BRANCH}")" = "$SOURCE_SHA"
+          test "$(git rev-parse refs/remotes/origin/main)" = "$SOURCE_MAIN_SHA"
           mapfile -t changed < <(git diff --name-only "$SOURCE_MAIN_SHA" "$SOURCE_SHA")
           test "${#changed[@]}" -eq 2
           printf '%s\n' "${changed[@]}" | grep -Fx '.zpkg.toml'
@@ -54,9 +54,6 @@ jobs:
           grep -F 'test = "sh conformance/check.sh"' .zpkg.toml
           grep -F '"oresoftware/typespec-json-schema-validator" = "^0.1.1"' .zpkg.toml
           grep -F 'npm install --ignore-scripts --no-audit --no-fund --package-lock=false' conformance/check.sh
-          echo "::add-mask::$ORE_SOURCE_PAT"
-          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
-          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
 
       - name: Install certified Zed CLI
         shell: bash
@@ -126,6 +123,8 @@ jobs:
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           test -z "$(git status --porcelain --untracked-files=all)"
           echo "::add-mask::$ORE_SOURCE_PAT"
-          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
-          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
+          branch_sha=$(curl -fsSL -H "Authorization: Bearer ${ORE_SOURCE_PAT}" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/${SOURCE_REPO}/git/ref/heads/${SOURCE_BRANCH}" | jq -r '.object.sha')
+          main_sha=$(curl -fsSL -H "Authorization: Bearer ${ORE_SOURCE_PAT}" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/${SOURCE_REPO}/git/ref/heads/main" | jq -r '.object.sha')
+          test "$branch_sha" = "$SOURCE_SHA"
+          test "$main_sha" = "$SOURCE_MAIN_SHA"
           git diff --check "$SOURCE_MAIN_SHA" "$SOURCE_SHA"
