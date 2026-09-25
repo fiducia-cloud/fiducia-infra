@@ -11,7 +11,7 @@ permissions:
 env:
   SOURCE_REPO: ORESoftware/ores-stack
   SOURCE_BRANCH: feat/dynamic-route-manifest-v1
-  SOURCE_SHA: 4ed6ab2492bc1d03e6d3eef7c56844363e1ce013
+  SOURCE_SHA: 080690d1930db4e78b9ff876bc72c229640c1c24
   SOURCE_MAIN_SHA: d46c07e0f91c2dbda9b2fee64bdd82f6d52fc1ef
 
 jobs:
@@ -30,7 +30,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: ORESoftware/ores-stack
-          ref: 4ed6ab2492bc1d03e6d3eef7c56844363e1ce013
+          ref: 080690d1930db4e78b9ff876bc72c229640c1c24
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 0
@@ -82,17 +82,27 @@ jobs:
           rc2=$?
           cargo test -p ores-stack-cli --locked --test artifact_contract artifact_schema_validates_embedded_artifact_fixture -- --exact
           rc3=$?
+          cargo test -p ores-stack-cli source_only_sync_and_check_need_no_client_fanout_arguments --locked 2>&1 | tee "$RUNNER_TEMP/base-rpc-source-only.log"
+          rc4=${PIPESTATUS[0]}
+          cargo test -p ores-stack-cli sync_check_detects_generated_rpc_drift --locked 2>&1 | tee "$RUNNER_TEMP/base-rpc-drift.log"
+          rc5=${PIPESTATUS[0]}
           set -e
           test "$rc1" -ne 0
           test "$rc2" -ne 0
           test "$rc3" -ne 0
+          test "$rc4" -ne 0
+          test "$rc5" -ne 0
+          grep -F 'REST route authority moved under src/routes/rest/**' "$RUNNER_TEMP/base-rpc-source-only.log"
+          grep -F 'REST route authority moved under src/routes/rest/**' "$RUNNER_TEMP/base-rpc-drift.log"
           git checkout --detach "$SOURCE_SHA"
       - name: Test CLI excluding proven inherited baseline failures
         run: |
           cargo test -p ores-stack-cli --locked -- \
             --skip publication_rolls_back_when_a_later_destination_collides \
             --skip complete_stack_materialization_is_reproducible_from_local_git_fixtures \
-            --skip artifact_schema_validates_embedded_artifact_fixture
+            --skip artifact_schema_validates_embedded_artifact_fixture \
+            --skip source_only_sync_and_check_need_no_client_fanout_arguments \
+            --skip sync_check_detects_generated_rpc_drift
       - name: Clippy CLI
         run: cargo clippy -p ores-stack-cli --all-targets --locked -- -D warnings
       - name: Remove Cargo git authentication
