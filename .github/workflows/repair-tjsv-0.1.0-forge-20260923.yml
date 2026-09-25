@@ -1,0 +1,144 @@
+name: repair TJSV 0.1.0 forge mirror
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/repair-tjsv-0.1.0-forge-20260923.yml']
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_REPO: ORESoftware/typespec-json-schema-validator
+  SOURCE_TAG: v0.1.0
+  SOURCE_SHA: a1d863aca59362b3671ca12404041ff9a520ec8b
+  ZED_CLI_REVISION: 69fce161e456d758459cab5d3a6441f599769bfa
+  EXPECTED_SHA256: 3118fc55f005fd89f4e05ce6515e4feef6cb4dd5e89282f81504025eefe2066c
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Configure authenticated forge access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch immutable tagged source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init source
+          git -C source remote add origin "https://github.com/$SOURCE_REPO.git"
+          git -C source fetch --depth=1 origin "refs/tags/$SOURCE_TAG:refs/tags/$SOURCE_TAG"
+          test "$(git -C source rev-list -n1 "$SOURCE_TAG")" = "$SOURCE_SHA"
+          git -C source checkout --detach "$SOURCE_SHA"
+          test -z "$(git -C source status --porcelain --untracked-files=all)"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22.16.0'
+          package-manager-cache: false
+
+      - name: Reproduce tagged package build inputs
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          node_root="$(dirname "$(dirname "$(command -v node)")")"
+          test -f "$node_root/include/node/node.h"
+          export npm_config_nodedir="$node_root"
+          npm ci --ignore-scripts
+          npm rebuild @oresoftware/f2e --foreground-scripts
+          node ./bin/typespec-json-schema-validator.mjs doctor --quiet
+          test -z "$(git status --porcelain --untracked-files=no)"
+
+      - name: Install Rust 1.88 and pinned Zed CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          cargo install --git https://github.com/zed-pkg/zed-cli --rev "$ZED_CLI_REVISION" --locked zed-cli
+          test "$(zed --version | awk '{print $2}')" = "0.3.0"
+
+      - name: Rebuild deterministic artifact and prove registry digest
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          zed validate --manifest .zpkg.toml --lock .zpkg.lock --require-lock
+          out_dir="$RUNNER_TEMP/tjsv-pack"
+          rm -rf "$out_dir"
+          mkdir -p "$out_dir"
+          zed pack --out "$out_dir"
+          artifact="$(find "$out_dir" -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
+          test -n "$artifact"
+          test -s "$artifact"
+          actual="$(sha256sum "$artifact" | awk '{print $1}')"
+          echo "artifact=$artifact"
+          echo "artifact sha256=$actual"
+          test "$actual" = "$EXPECTED_SHA256"
+          tar -tzf "$artifact" >/dev/null
+          cp "$artifact" "$RUNNER_TEMP/tjsv-0.1.0.tar.gz"
+          test -z "$(git status --porcelain --untracked-files=no)"
+
+      - name: Publish exact bytes as GitHub release fallback assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$GH_TOKEN"
+          artifact="$RUNNER_TEMP/tjsv-0.1.0.tar.gz"
+          test "$(sha256sum "$artifact" | awk '{print $1}')" = "$EXPECTED_SHA256"
+          remote_tag="$(git -C source ls-remote origin "refs/tags/$SOURCE_TAG" | cut -f1)"
+          test "$remote_tag" = "$SOURCE_SHA"
+
+          if ! gh release view "$SOURCE_TAG" --repo "$SOURCE_REPO" >/dev/null 2>&1; then
+            gh release create "$SOURCE_TAG" \
+              --repo "$SOURCE_REPO" \
+              --verify-tag \
+              --title "$SOURCE_TAG" \
+              --notes 'Recovered immutable Zed package forge mirror from the existing v0.1.0 tag after registry metadata was published without an accessible artifact. Every uploaded tarball is byte-identical and matches the registry-advertised SHA-256.'
+          fi
+
+          names=(
+            "zpkg-${EXPECTED_SHA256}.tar.gz"
+            "zpkg-oresoftware-typespec-json-schema-validator-0.1.0.tar.gz"
+            "zpkg-typespec-json-schema-validator-0.1.0.tar.gz"
+          )
+          for name in "${names[@]}"; do
+            candidate="$RUNNER_TEMP/$name"
+            cp "$artifact" "$candidate"
+            existing_dir="$RUNNER_TEMP/existing-${name//[^A-Za-z0-9]/_}"
+            mkdir -p "$existing_dir"
+            if gh release download "$SOURCE_TAG" --repo "$SOURCE_REPO" --pattern "$name" --dir "$existing_dir" >/dev/null 2>&1; then
+              test "$(sha256sum "$existing_dir/$name" | awk '{print $1}')" = "$EXPECTED_SHA256"
+              echo "$name already present with expected digest"
+            else
+              gh release upload "$SOURCE_TAG" "$candidate" --repo "$SOURCE_REPO"
+            fi
+          done
+
+      - name: Prove public fallback assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in \
+            "zpkg-${EXPECTED_SHA256}.tar.gz" \
+            'zpkg-oresoftware-typespec-json-schema-validator-0.1.0.tar.gz' \
+            'zpkg-typespec-json-schema-validator-0.1.0.tar.gz'
+          do
+            url="https://github.com/$SOURCE_REPO/releases/download/$SOURCE_TAG/$name"
+            out="$RUNNER_TEMP/verify-$name"
+            curl --fail --location --silent --show-error "$url" --output "$out"
+            test "$(sha256sum "$out" | awk '{print $1}')" = "$EXPECTED_SHA256"
+          done
+          echo TJSV_0_1_0_FORGE_MIRROR_REPAIRED
