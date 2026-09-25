@@ -1,0 +1,67 @@
+name: certify ORESoftware ores-compose 184
+
+on:
+  push:
+    branches:
+      - proof/ores-compose-184-formal-20260924
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SOURCE_REPO: ORESoftware/ores-compose
+      SOURCE_SHA: de0abaed54a2a7e8be80906be84aeea100854ed2
+    steps:
+      - name: Checkout exact source head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Prove exact source head and reviewed delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git diff --check HEAD^ HEAD
+          mapfile -t changed < <(git diff --name-only HEAD^ HEAD)
+          test "${#changed[@]}" -eq 2
+          printf '%s\n' "${changed[@]}" | grep -Fx '.github/workflows/formal-model.yml'
+          printf '%s\n' "${changed[@]}" | grep -Fx 'conformance/formal_model.rs'
+
+      - name: Install reviewed Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install 1.98.1 --profile minimal --component rustfmt,clippy
+          rustup default 1.98.1
+          rustc --version | grep -F 'rustc 1.98.1'
+
+      - name: Run bounded orchestration model
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustc --edition=2021 -D warnings conformance/formal_model.rs -o /tmp/formal-model
+          /tmp/formal-model
+
+      - name: Rust formatting
+        run: cargo fmt --all --check
+
+      - name: Rust clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Rust tests
+        run: cargo test --all-targets --all-features
+
+      - name: Final immutable source guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
