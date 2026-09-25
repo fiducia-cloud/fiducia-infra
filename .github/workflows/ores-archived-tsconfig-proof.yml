@@ -16,7 +16,7 @@ jobs:
     env:
       SOURCE_REPO: ORESoftware/ores-archived-and-delete-data
       SOURCE_BRANCH: fix/typescript-rootdir-ts7
-      SOURCE_SHA: 9fdfdb00621c03edc1b0193b861d68d2b2a1e251
+      SOURCE_SHA: 1b66d93f9b2f63d1413514e5cb344aaf48594b1c
       SOURCE_MAIN_SHA: a419fada16f7fa46c800be1e0b6cd434d3af4055
     steps:
       - name: Require scoped source credential
@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: ORESoftware/ores-archived-and-delete-data
-          ref: 9fdfdb00621c03edc1b0193b861d68d2b2a1e251
+          ref: 1b66d93f9b2f63d1413514e5cb344aaf48594b1c
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 0
