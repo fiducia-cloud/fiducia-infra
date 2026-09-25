@@ -54,3 +54,68 @@ jobs:
           base64 -w0 Cargo.lock
           echo
           echo "DESKTOP_LOCK_B64_END"
+
+
+  format-desktop-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ORESoftware/ores-desktop-bg-procs
+          ref: 7ce2e7274c0b1431e984ad5158b4d5bbeb52f4a1
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: true
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: stable
+          components: rustfmt
+      - name: Format and push deterministic Rust output
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "7ce2e7274c0b1431e984ad5158b4d5bbeb52f4a1"
+          cargo fmt --all
+          if git diff --quiet; then
+            echo "already formatted"
+            exit 0
+          fi
+          git diff --check
+          git config user.name "the1mills"
+          git config user.email "2148448+the1mills@users.noreply.github.com"
+          git add -- '*.rs'
+          git commit -m "style: apply cargo fmt"
+          git push origin HEAD:hardening/runtime-parity-20260914
+
+  format-mobile-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ORESoftware/ores-mobile-bg-procs
+          ref: db11d19356d52f825af7f5d540d8c46d5ea26b84
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: true
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: stable
+          components: rustfmt
+      - name: Format and push deterministic Rust output
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "db11d19356d52f825af7f5d540d8c46d5ea26b84"
+          cargo fmt --all
+          if git diff --quiet; then
+            echo "already formatted"
+            exit 0
+          fi
+          git diff --check
+          git config user.name "the1mills"
+          git config user.email "2148448+the1mills@users.noreply.github.com"
+          git add -- '*.rs'
+          git commit -m "style: apply cargo fmt"
+          git push origin HEAD:feat/mobile-background-runtime
