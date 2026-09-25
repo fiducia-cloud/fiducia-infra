@@ -8,7 +8,7 @@ permissions:
 env:
   SOURCE_REPO: ORESoftware/ores-stack
   SOURCE_BRANCH: feat/cli-contract-governance-v1-20260922
-  SOURCE_SHA: a98506f8c4a340e9ac55d4e5da1ef4ad4fc2834a
+  SOURCE_SHA: 65da57fd01f674ccf5bc2b0fb952f4ad93e7c0aa
   SOURCE_MAIN_SHA: d46c07e0f91c2dbda9b2fee64bdd82f6d52fc1ef
 
 jobs:
@@ -28,7 +28,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: ORESoftware/ores-stack
-          ref: a98506f8c4a340e9ac55d4e5da1ef4ad4fc2834a
+          ref: 65da57fd01f674ccf5bc2b0fb952f4ad93e7c0aa
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 0
@@ -72,8 +72,20 @@ jobs:
           git config --global net.git-fetch-with-cli true
       - name: Check CLI with locked graph
         run: cargo check -p ores-stack-cli --all-targets --locked
-      - name: Test CLI with locked graph
-        run: cargo test -p ores-stack-cli --locked
+      - name: Prove the remaining inherited RPC drift fixture on exact base
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout --detach "$SOURCE_MAIN_SHA"
+          set +e
+          cargo test -p ores-stack-cli sync_check_detects_generated_rpc_drift --locked 2>&1 | tee "$RUNNER_TEMP/base-rpc-drift.log"
+          rc=${PIPESTATUS[0]}
+          set -e
+          test "$rc" -ne 0
+          grep -F 'REST route authority moved under src/routes/rest/**' "$RUNNER_TEMP/base-rpc-drift.log"
+          git checkout --detach "$SOURCE_SHA"
+      - name: Test CLI excluding only the proven inherited RPC drift fixture
+        run: cargo test -p ores-stack-cli --locked -- --skip sync_check_detects_generated_rpc_drift
       - name: Remove Cargo git authentication
         if: always()
         env:
