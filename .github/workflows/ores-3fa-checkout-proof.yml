@@ -16,8 +16,8 @@ jobs:
     env:
       SOURCE_REPO: ORESoftware/3fa-backend.rs
       SOURCE_BRANCH: dependabot/github_actions/actions/checkout-7.0.1
-      SOURCE_SHA: e6901b258de5fea75d8591ae3cabf38c888b47d7
-      SOURCE_MAIN_SHA: 432d2c76bc4264b4b13d505812a82722d4caf370
+      SOURCE_SHA: e1152ef13193524f56cc45ad7cd55223b2ce9d3c
+      SOURCE_MAIN_SHA: f2a81af9947be5a2f19964de0780490b61467897
     steps:
       - name: Require scoped source credential
         shell: bash
@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/3fa-backend.rs
-          ref: e6901b258de5fea75d8591ae3cabf38c888b47d7
+          ref: e1152ef13193524f56cc45ad7cd55223b2ce9d3c
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 0
