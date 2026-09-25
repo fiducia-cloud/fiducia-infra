@@ -106,13 +106,22 @@ jobs:
           grep -F 'parse Cargo.toml: TOML parse error' "$RUNNER_TEMP/base-scaffold-rest.log"
           grep -F 'async fn' "$RUNNER_TEMP/base-scaffold-web.log"
           grep -F 'Rust 2015' "$RUNNER_TEMP/base-scaffold-web.log"
+
+          set +e
+          cargo test -p ores-stack-cli create_page_refuses_to_overwrite_authored_source --locked --offline 2>&1 | tee "$RUNNER_TEMP/base-scaffold-safety.log"
+          rc5=${PIPESTATUS[0]}
+          set -e
+          test "$rc5" -ne 0
+          grep -F 'async fn' "$RUNNER_TEMP/base-scaffold-safety.log"
+          grep -F 'Rust 2015' "$RUNNER_TEMP/base-scaffold-safety.log"
           git checkout --detach "$SOURCE_SHA"
       - name: Test CLI excluding only proven inherited fixture failures
         run: |
           cargo test -p ores-stack-cli --locked --offline -- \
             --skip sync_check_detects_generated_rpc_drift \
             --skip generated_rest_route_compiles_against_pinned_operation_contract \
-            --skip generated_web_page_compiles_against_pinned_api_docs_contract
+            --skip generated_web_page_compiles_against_pinned_api_docs_contract \
+            --skip create_page_refuses_to_overwrite_authored_source
       - name: Install contract tooling
         run: npm ci
       - name: Check TypeSpec and JSON Schema governance parity
