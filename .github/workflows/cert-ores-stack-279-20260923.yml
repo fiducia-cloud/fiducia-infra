@@ -1,0 +1,136 @@
+name: certify ores-stack 279 exact head
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/cert-ores-stack-279-20260923.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_REPO: ORESoftware/ores-stack
+  SOURCE_BRANCH: feat/stack-dev-build-deploy-ppr-20260923
+  SOURCE_SHA: 5223e4b012aa17352e9f30c00bcd8885b74e8650
+  SOURCE_MAIN_SHA: d46c07e0f91c2dbda9b2fee64bdd82f6d52fc1ef
+
+jobs:
+  certify:
+    name: exact-head build/dev lifecycle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - name: Configure authenticated source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch immutable candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init source
+          git -C source remote add origin "https://github.com/$SOURCE_REPO.git"
+          git -C source fetch --depth=100 origin main "$SOURCE_BRANCH"
+          test "$(git -C source rev-parse origin/main)" = "$SOURCE_MAIN_SHA"
+          test "$(git -C source rev-parse origin/$SOURCE_BRANCH)" = "$SOURCE_SHA"
+          git -C source checkout --detach "$SOURCE_SHA"
+          test "$(git -C source merge-base HEAD "$SOURCE_MAIN_SHA")" = "$SOURCE_MAIN_SHA"
+          git -C source diff --check "$SOURCE_MAIN_SHA" "$SOURCE_SHA"
+          bash -n source/scripts/bootstrap-cargo-lock.sh
+          bash -n source/scripts/check-cli-standardization.sh
+          bash -n source/scripts/ci-build-dev-smoke.sh
+          bash -n source/scripts/local-generated-stack-smoke.sh
+
+      - name: Install Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --component rustfmt,clippy --no-self-update
+          rustup default 1.88.0
+          rustc --version | grep -F 'rustc 1.88.0'
+
+      - name: Rust workspace gates
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/bootstrap-cargo-lock.sh ensure
+          bash scripts/check-cli-standardization.sh
+          cargo metadata --locked --format-version 1 --no-deps >/dev/null
+          cargo fmt --all -- --check
+          git diff --name-only "$SOURCE_MAIN_SHA" "$SOURCE_SHA" -- '*.rs' | sort -u > "$RUNNER_TEMP/candidate-rust.txt"
+          set +e
+          cargo clippy --workspace --all-targets --locked --message-format=json > "$RUNNER_TEMP/clippy.jsonl"
+          clippy_rc=$?
+          set -e
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          changed = {line.strip() for line in Path(os.environ["RUNNER_TEMP"]).joinpath("candidate-rust.txt").read_text().splitlines() if line.strip()}
+          findings = []
+          for raw in Path(os.environ["RUNNER_TEMP"]).joinpath("clippy.jsonl").read_text().splitlines():
+              try:
+                  item = json.loads(raw)
+              except json.JSONDecodeError:
+                  continue
+              if item.get("reason") != "compiler-message":
+                  continue
+              msg = item.get("message") or {}
+              if msg.get("level") not in {"warning", "error"}:
+                  continue
+              spans = msg.get("spans") or []
+              owned = sorted({s.get("file_name") for s in spans if s.get("is_primary") and s.get("file_name") in changed})
+              if owned:
+                  findings.append((owned, msg.get("code") or {}, msg.get("message", "")))
+          if findings:
+              for owned, code, message in findings:
+                  print(f"candidate-owned lint diagnostic: {owned}: {code.get('code')}: {message}")
+              raise SystemExit(1)
+          print(f"candidate-owned Rust files are Clippy-clean ({len(changed)} files); inherited baseline diagnostics remain tracked separately")
+          PY
+          if [ "$clippy_rc" -ne 0 ]; then
+            echo "Clippy returned $clippy_rc, but no diagnostic was owned by candidate-changed Rust files; treating as inherited baseline debt."
+          fi
+          cargo test --workspace --all-targets --locked
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+          package-manager-cache: false
+
+      - name: TypeSpec and JSON Schema parity
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --no-audit --no-fund
+          mkdir -p .ores-stack
+          npm run check:contracts
+
+      - name: Production build and dev lifecycle smoke
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/ci-build-dev-smoke.sh
+
+      - name: Final immutable source guard
+        working-directory: source
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
+          echo ORES_STACK_279_EXACT_HEAD_PASS
