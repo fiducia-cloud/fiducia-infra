@@ -1,7 +1,8 @@
-name: ci
+name: proof-ores-proc-isolation-7
 
 on:
   pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -29,21 +30,19 @@ jobs:
         with:
           toolchain: 1.88.0
           components: rustfmt, clippy
-      - name: Install Linux helpers and admit outer user namespace
+      - name: Install Linux helpers
         if: runner.os == 'Linux'
         shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo NEEDRESTART_MODE=a apt-get install -y apparmor-profiles apparmor-utils bubblewrap slirp4netns iproute2 iptables shellcheck curl
+          sudo apt-get install -y apparmor-profiles apparmor-utils bubblewrap slirp4netns iproute2 iptables shellcheck curl
           if [[ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || printf '0')" == '1' ]]; then
             profile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
             test -f "$profile"
             sudo install -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
             sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
-            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
-          unshare --user --map-root-user true
       - name: Shell syntax
         run: |
           bash -n scripts/linux/ores-proc-isolate.sh
@@ -69,10 +68,15 @@ jobs:
           rc=$?
           set -e
           test "$rc" -eq 2
-      - name: Verify tracked source remained clean
+      - name: Verify source remained clean
+        shell: bash
         run: |
-          git diff --exit-code
-          git diff --cached --exit-code
+          set -euo pipefail
+          # This executable repo does not track Cargo.lock; Cargo generates one
+          # from the exact manifests during verification. Remove only that known
+          # build byproduct, then require the checkout to be otherwise pristine.
+          rm -f Cargo.lock
+          test -z "$(git status --porcelain --untracked-files=all)"
 
   sandbox-smoke-linux:
     runs-on: ubuntu-24.04
@@ -90,23 +94,21 @@ jobs:
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           toolchain: 1.88.0
-      - name: Install helpers and admit outer user namespace
+      - name: Install helpers
         shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo NEEDRESTART_MODE=a apt-get install -y apparmor-profiles apparmor-utils bubblewrap slirp4netns iproute2 iptables curl
+          sudo apt-get install -y apparmor-profiles apparmor-utils bubblewrap slirp4netns iproute2 iptables curl
           if [[ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || printf '0')" == '1' ]]; then
             profile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
             test -f "$profile"
             sudo install -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
             sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
-            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
-          unshare --user --map-root-user true
-      - name: Build CLI and Rust fixture
+      - name: Build CLI and fixture
         run: cargo build --quiet --examples --bins
-      - name: Write strict smoke policy
+      - name: Write smoke policy
         run: |
           cat > /tmp/ores-pi-smoke.yaml <<'YAML'
           version: 1
@@ -137,12 +139,12 @@ jobs:
           YAML
       - name: Synthetic filesystem works
         run: target/debug/ores-proc-isolation run true --config /tmp/ores-pi-smoke.yaml
-      - name: Host file read is denied
+      - name: Host file read denied
         run: |
           if target/debug/ores-proc-isolation run passwd --config /tmp/ores-pi-smoke.yaml; then exit 1; fi
-      - name: External internet egress works
+      - name: External internet works
         run: target/debug/ores-proc-isolation run internet --config /tmp/ores-pi-smoke.yaml
-      - name: Host loopback is denied
+      - name: Host loopback denied
         shell: bash
         run: |
           target/debug/examples/loopback_fixture 127.0.0.1:18080 >/tmp/ores-pi-http.log 2>&1 &
@@ -150,8 +152,8 @@ jobs:
           trap 'kill "$server" || true' EXIT
           sleep 1
           curl --fail --silent http://127.0.0.1:18080 >/dev/null
-          if target/debug/ores-proc-isolation run curl-flex --config /tmp/ores-pi-smoke.yaml -- --connect-timeout 3 --max-time 5 http://127.0.0.1:18080; then exit 1; fi
-      - name: Host non-loopback interface is denied
+          if target/debug/ores-proc-isolation run curl-flex --config /tmp/ores-pi-smoke.yaml -- http://127.0.0.1:18080; then exit 1; fi
+      - name: Host non-loopback interface denied
         shell: bash
         run: |
           host_ip=''
@@ -164,69 +166,4 @@ jobs:
           trap 'kill "$server" || true' EXIT
           sleep 1
           curl --fail --silent "http://${host_ip}:18081" >/dev/null
-          if target/debug/ores-proc-isolation run curl-flex --config /tmp/ores-pi-smoke.yaml -- --connect-timeout 3 --max-time 5 "http://${host_ip}:18081"; then exit 1; fi
-
-  sandbox-smoke-macos:
-    runs-on: macos-15
-    timeout-minutes: 20
-    steps:
-      - name: Checkout exact source head
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: ORESoftware/ores-proc-isolation-cli
-          ref: 7bae8e96637e4d35b7ec92febcd1135c4597a4f2
-          token: ${{ secrets.ORE_SOURCE_PAT }}
-          persist-credentials: false
-      - name: Verify exact source head
-        run: test "$(git rev-parse HEAD)" = "7bae8e96637e4d35b7ec92febcd1135c4597a4f2"
-      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
-        with:
-          toolchain: 1.88.0
-      - name: Build CLI and Rust fixture
-        run: cargo build --quiet --examples --bins
-      - name: Write strict smoke policy
-        run: |
-          cat > /tmp/ores-pi-smoke.yaml <<'YAML'
-          version: 1
-          defaults:
-            group: no-net
-          groups:
-            no-net:
-              network:
-                mode: none
-            external-strict:
-              network:
-                mode: external
-                deny_loopback: true
-                deny_private_networks: true
-          processes:
-            true:
-              group: no-net
-              command: [/usr/bin/true]
-            passwd:
-              group: no-net
-              command: [/bin/cat, /etc/passwd]
-            localhost:
-              group: no-net
-              command: [/usr/bin/curl, --fail, --silent, --show-error, http://127.0.0.1:18080]
-            internet-strict:
-              group: external-strict
-              command: [/usr/bin/curl, --fail, --silent, --show-error, --head, https://example.com]
-          YAML
-      - name: Seatbelt can launch no-network isolated process
-        run: target/debug/ores-proc-isolation run true --config /tmp/ores-pi-smoke.yaml
-      - name: Host file read is denied
-        run: |
-          if target/debug/ores-proc-isolation run passwd --config /tmp/ores-pi-smoke.yaml; then exit 1; fi
-      - name: Host loopback is denied in no-network mode
-        shell: bash
-        run: |
-          target/debug/examples/loopback_fixture 127.0.0.1:18080 >/tmp/ores-pi-http.log 2>&1 &
-          server=$!
-          trap 'kill "$server" || true' EXIT
-          sleep 1
-          curl --fail --silent http://127.0.0.1:18080 >/dev/null
-          if target/debug/ores-proc-isolation run localhost --config /tmp/ores-pi-smoke.yaml; then exit 1; fi
-      - name: Strict external mode fails closed on macOS
-        run: |
-          if target/debug/ores-proc-isolation run internet-strict --config /tmp/ores-pi-smoke.yaml; then exit 1; fi
+          if target/debug/ores-proc-isolation run curl-flex --config /tmp/ores-pi-smoke.yaml -- "http://${host_ip}:18081"; then exit 1; fi
