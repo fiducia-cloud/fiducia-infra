@@ -1,0 +1,85 @@
+name: Canonical wave 3 exact-head certification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/canonical-formal-wave3-cert-20260925.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out certification harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install Python 3.13
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.13'
+
+      - name: Check out sidecar exact head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: canonical-cloud/canonical-sidecar.rs
+          ref: ca1fa5ea7c856293af0741c3b86b04e2a1cebd17
+          path: sidecar
+          persist-credentials: false
+          show-progress: false
+          fetch-depth: 1
+
+      - name: Check out ORM exact head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: canonical-cloud/canonical-orm-core
+          ref: 83a57aa2c1235e0e1ddeac2565da3226b1ce1e35
+          path: orm
+          persist-credentials: false
+          show-progress: false
+          fetch-depth: 1
+
+      - name: Check out sync exact head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: canonical-cloud/canonical-sync
+          ref: 63d2aa5484e0c0b7d0911b0824c2e6ef9c7c421d
+          path: sync
+          persist-credentials: false
+          show-progress: false
+          fetch-depth: 1
+
+      - name: Verify exact source identities and clean patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C sidecar rev-parse HEAD)" = "ca1fa5ea7c856293af0741c3b86b04e2a1cebd17"
+          test "$(git -C orm rev-parse HEAD)" = "83a57aa2c1235e0e1ddeac2565da3226b1ce1e35"
+          test "$(git -C sync rev-parse HEAD)" = "63d2aa5484e0c0b7d0911b0824c2e6ef9c7c421d"
+          git -C sidecar diff --check
+          git -C orm diff --check
+          git -C sync diff --check
+
+      - name: Byte-compile formal models
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile sidecar/conformance/sidecar_authority_model.py
+          python3 -m py_compile orm/conformance/transaction_visibility_model.py
+          python3 -m py_compile sync/conformance/dual_store_commit_model.py
+
+      - name: Execute exact formal models
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 sidecar/conformance/sidecar_authority_model.py
+          python3 orm/conformance/transaction_visibility_model.py
+          python3 sync/conformance/dual_store_commit_model.py
