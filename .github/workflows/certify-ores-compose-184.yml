@@ -15,7 +15,8 @@ jobs:
     timeout-minutes: 30
     env:
       SOURCE_REPO: ORESoftware/ores-compose
-      SOURCE_SHA: de0abaed54a2a7e8be80906be84aeea100854ed2
+      SOURCE_SHA: 8d2fc196310387eab680ed6c039552c2f75adef6
+      SOURCE_BASE_SHA: fb6d0b2aeb7d87c598e006bed050162b55e0c9f0
     steps:
       - name: Checkout exact source head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -24,15 +25,15 @@ jobs:
           ref: ${{ env.SOURCE_SHA }}
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Prove exact source head and reviewed delta
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
-          git diff --check HEAD^ HEAD
-          mapfile -t changed < <(git diff --name-only HEAD^ HEAD)
+          git diff --check "$SOURCE_BASE_SHA" "$SOURCE_SHA"
+          mapfile -t changed < <(git diff --name-only "$SOURCE_BASE_SHA" "$SOURCE_SHA")
           test "${#changed[@]}" -eq 2
           printf '%s\n' "${changed[@]}" | grep -Fx '.github/workflows/formal-model.yml'
           printf '%s\n' "${changed[@]}" | grep -Fx 'conformance/formal_model.rs'
