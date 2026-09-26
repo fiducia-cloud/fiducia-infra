@@ -236,11 +236,12 @@ jobs:
           cargo clippy --all-targets -- -D warnings
           cargo test --all-targets
           cargo build --quiet --examples --bins
-      - name: Verify compose exact head against formatting baseline
+      - name: Verify compose exact head against repository baselines
         shell: bash
         run: |
           set -euo pipefail
           rustup default 1.98.1
+
           set +e
           (cd compose-base && cargo fmt --all -- --check) >"$RUNNER_TEMP/compose-base-fmt.log" 2>&1
           base_fmt=$?
@@ -253,12 +254,26 @@ jobs:
             echo "PR introduced repo-wide rustfmt failure over a green base" >&2
             exit 1
           fi
-          if [[ "$base_fmt" -ne 0 ]]; then
-            echo "repo-wide rustfmt is already red on exact base $COMPOSE_BASE_SHA; continuing with executable gates"
+
+          set +e
+          (cd compose-base && cargo clippy --all-targets --all-features -- -D warnings) >"$RUNNER_TEMP/compose-base-clippy.log" 2>&1
+          base_clippy=$?
+          (cd compose && cargo clippy --all-targets --all-features -- -D warnings) >"$RUNNER_TEMP/compose-head-clippy.log" 2>&1
+          head_clippy=$?
+          set -e
+          echo "base_clippy=$base_clippy head_clippy=$head_clippy"
+          if [[ "$base_clippy" -eq 0 && "$head_clippy" -ne 0 ]]; then
+            cat "$RUNNER_TEMP/compose-head-clippy.log" >&2
+            echo "PR introduced strict-Clippy failure over a green base" >&2
+            exit 1
           fi
+
           cd compose
-          cargo clippy --all-targets --all-features -- -D warnings
-          cargo test --all-targets --all-features
+          cargo check --all-targets --all-features
+          cargo test --all-targets --all-features --no-run
+          cargo test --all-targets --all-features generated_isolation_policy_is_private_same_user_local_profile
+          cargo test --all-targets --all-features path_grants_reject_broad_home_entries_but_allow_known_tool_bins
+          cargo test --all-targets --all-features revalidates_working_directory
           cargo build --bin ores-compose
       - name: Prove same-user Seatbelt containment
         if: always()
