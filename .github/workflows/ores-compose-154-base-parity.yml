@@ -1,0 +1,73 @@
+name: ores-compose #154 base parity
+
+on:
+  push:
+    branches: [test/ores-compose-154-service-env-cert-20260922]
+    paths:
+      - '.github/workflows/ores-compose-154-base-parity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  COMPOSE_BASE: fb6d0b2aeb7d87c598e006bed050162b55e0c9f0
+  TJSV_SHA: c55b2af2af0b3cdfa39904f1e2504f6bf4b97284
+
+jobs:
+  parity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Require scoped source credential
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+      - name: Check out exact ores-compose base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.COMPOSE_BASE }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Prove exact base
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$COMPOSE_BASE"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22.16.0'
+      - name: Measure baseline TypeSpec and JSON Schema parity
+        id: parity
+        shell: bash
+        run: |
+          set +e
+          mkdir -p target
+          npx --yes \
+            --package="https://github.com/ORESoftware/typespec-json-schema-validator/archive/${TJSV_SHA}.tar.gz" \
+            tjsv check \
+            --typespec=contracts/typespec/main.tsp \
+            --schema=contracts/json-schema/contract.schema.json \
+            --instances=contracts/instances \
+            --report=target/compose-base-contract-parity.json \
+            2>&1 | tee target/compose-base-tjsv.log
+          status=${PIPESTATUS[0]}
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          test -f target/compose-base-contract-parity.json && cat target/compose-base-contract-parity.json
+          exit 0
+      - name: Retain baseline parity evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ores-compose-154-base-parity-${{ github.run_id }}
+          path: |
+            target/compose-base-contract-parity.json
+            target/compose-base-tjsv.log
+          if-no-files-found: error
+      - name: Record baseline status
+        shell: bash
+        run: echo "base_tjsv_status=${{ steps.parity.outputs.status }}"
