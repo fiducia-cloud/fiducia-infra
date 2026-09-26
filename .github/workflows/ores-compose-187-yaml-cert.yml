@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  COMPOSE_HEAD: a47d9996f63ba633a4836492d8bab43ef1c0f1ef
+  COMPOSE_HEAD: 2d5fbe9c7ef42d7112afc46f75cc184f521332f1
   COMPOSE_BASE: fbfad966f9770a9a8d3895880523280324b4ddc6
 
 jobs:
