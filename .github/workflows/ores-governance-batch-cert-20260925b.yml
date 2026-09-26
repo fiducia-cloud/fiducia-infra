@@ -14,8 +14,6 @@ jobs:
   archived-delete:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    env:
-      GITHUB_REPOSITORY: ORESoftware/ores-archived-and-delete-data
     steps:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
@@ -38,7 +36,7 @@ jobs:
           set -euo pipefail
           npm install --no-audit --no-fund
           npm run layout:check
-          node scripts/check-polyglot-governance.mjs
+          env -u GITHUB_REPOSITORY node scripts/check-polyglot-governance.mjs
           npm run safety:audit
           npm run contracts:check
       - name: Prove checkout unchanged
@@ -49,8 +47,6 @@ jobs:
   err-trace:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    env:
-      GITHUB_REPOSITORY: ORESoftware/ores-err-trace
     steps:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
@@ -72,7 +68,7 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/check-runtime-layout.mjs
-          node scripts/check-polyglot-governance.mjs
+          env -u GITHUB_REPOSITORY node scripts/check-polyglot-governance.mjs
           node scripts/check-runtime-contract-surfaces.mjs
       - name: Prove checkout unchanged
         run: |
@@ -82,8 +78,6 @@ jobs:
   desktop-bg:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    env:
-      GITHUB_REPOSITORY: ORESoftware/ores-desktop-bg-procs
     steps:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
@@ -104,7 +98,7 @@ jobs:
       - name: Contracts and participant parity
         run: |
           set -euo pipefail
-          node scripts/check-polyglot-governance.mjs
+          env -u GITHUB_REPOSITORY node scripts/check-polyglot-governance.mjs
           npm install --no-audit --no-fund
           npm run contracts:check
       - name: Prove checkout unchanged
@@ -115,8 +109,6 @@ jobs:
   mobile-bg:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    env:
-      GITHUB_REPOSITORY: ORESoftware/ores-mobile-bg-procs
     steps:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
@@ -137,7 +129,7 @@ jobs:
       - name: Contracts and participant parity
         run: |
           set -euo pipefail
-          node scripts/check-polyglot-governance.mjs
+          env -u GITHUB_REPOSITORY node scripts/check-polyglot-governance.mjs
           npm install --no-audit --no-fund
           npm run contracts:check
       - name: Prove checkout unchanged
