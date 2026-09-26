@@ -1,0 +1,98 @@
+name: proof-shared-auth-interfaces-v0.1.1-release
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prove-release-head:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      SOURCE_SHA: 1654cc7df48ca8d5ab956fbd645e4026428f6c59
+      ZED_CLI_REV: 6ad5713835183ef1f9cc7404ebf209106815f6ee
+    steps:
+      - name: Check out exact shared-auth interfaces head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: shared-auth/shared-auth-interfaces
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: source
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify exact source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C source rev-parse HEAD)" = "$SOURCE_SHA"
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "22"
+
+      - name: Install consumer-pinned Zed CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo install --git https://github.com/zed-pkg/zed-cli.git --rev "$ZED_CLI_REV" --locked zed-cli
+
+      - name: Validate private Zed package graph
+        working-directory: source
+        env:
+          ZED_PKG_GITHUB_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ZED_PKG_GITHUB_TOKEN"
+          zed validate
+
+      - name: Prove Rust contract projection
+        working-directory: source/generated/rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test --all-targets --locked
+
+      - name: Audit one-shot release workflow
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('.github/workflows/release-zed-v0.1.1.yml')
+          text = p.read_text()
+          required = [
+              'permissions:\n  contents: write',
+              "package['version'] == '0.1.1'",
+              "refs/tags/v0.1.1",
+              "tagged_commit",
+              'test "$tagged_commit" = "$GITHUB_SHA"',
+              "gh release create v0.1.1",
+          ]
+          for needle in required:
+              assert needle in text, f'missing release invariant: {needle}'
+          forbidden = ['--force', 'git tag -f', 'git push --force', 'deleteRef', 'DELETE "repos/', 'permissions:\n  contents: write\n  actions: write']
+          for needle in forbidden:
+              assert needle not in text, f'forbidden release behavior: {needle}'
+          assert 'paths:\n      - ".github/workflows/release-zed-v0.1.1.yml"' in text
+          PY
+
+      - name: Prove source checkout remained immutable
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C source rev-parse HEAD)" = "$SOURCE_SHA"
+          git -C source diff --exit-code
