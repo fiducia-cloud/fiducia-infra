@@ -178,7 +178,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     env:
-      PROC_SHA: d2db798eac9a5ae073dc7c543e5e341452d88d6d
+      PROC_SHA: 4f629b408a6de3443710e39c1cdaca1c34f3f7ae
       COMPOSE_SHA: d93a4108849ba37bbca155a8bb679abd2ab8b60f
     steps:
       - name: Checkout exact ores-compose head
