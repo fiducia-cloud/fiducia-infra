@@ -1,6 +1,15 @@
-name: ci
+name: certify ores-stack 278 governance
+
 on:
+  push:
+    branches:
+      - proof/ores-stack-278-governance-20260924
   pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/certify-ores-stack-278.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -8,8 +17,8 @@ permissions:
 env:
   SOURCE_REPO: ORESoftware/ores-stack
   SOURCE_BRANCH: feat/cli-contract-governance-v1-20260922
-  SOURCE_SHA: 7ea3f605818fe3dce78287a3a3222bf11241912f
-  SOURCE_MAIN_SHA: d46c07e0f91c2dbda9b2fee64bdd82f6d52fc1ef
+  SOURCE_SHA: 0d75749c9cf94c965ec5220b62e215eb0b4ee56d
+  SOURCE_MAIN_SHA: 2fd66cfaaf0d014f0e27cf29eae6a943928724c5
 
 jobs:
   certify:
@@ -28,7 +37,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: ORESoftware/ores-stack
-          ref: 7ea3f605818fe3dce78287a3a3222bf11241912f
+          ref: ${{ env.SOURCE_SHA }}
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 0
@@ -56,7 +65,8 @@ jobs:
         run: |
           set -euo pipefail
           cargo fmt --all
-          test -z "$(git diff -- crates/ores-stack-cli/src/contract_cli.rs crates/ores-stack-cli/src/entry.rs)"
+          git diff -- crates/ores-stack-cli/src/contract_cli.rs crates/ores-stack-cli/src/stack_cli_hardened.rs crates/ores-stack-cli/src/entry.rs
+          test -z "$(git diff -- crates/ores-stack-cli/src/contract_cli.rs crates/ores-stack-cli/src/stack_cli_hardened.rs crates/ores-stack-cli/src/entry.rs)"
           git reset --hard "$SOURCE_SHA" >/dev/null
           git clean -ffd >/dev/null
           test -z "$(git status --porcelain --untracked-files=all)"
@@ -80,7 +90,8 @@ jobs:
             sleep $((attempt * 5))
           done
           exit 1
-      - name: Remove Cargo git authentication before deterministic tests
+      - name: Remove Cargo git authentication
+        if: always()
         env:
           ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
         shell: bash
@@ -91,26 +102,30 @@ jobs:
           git config --global --unset-all net.git-fetch-with-cli || true
       - name: Check CLI with prefetched locked graph
         run: cargo check -p ores-stack-cli --all-targets --locked --offline
-      - name: Prove the remaining inherited RPC drift fixture on exact base
+      - name: Prove inherited RPC fixture failures on exact base
         shell: bash
         run: |
           set -euo pipefail
           git checkout --detach "$SOURCE_MAIN_SHA"
           set +e
-          cargo test -p ores-stack-cli sync_check_detects_generated_rpc_drift --locked 2>&1 | tee "$RUNNER_TEMP/base-rpc-drift.log"
-          rc=${PIPESTATUS[0]}
+          cargo test -p ores-stack-cli source_only_sync_and_check_need_no_client_fanout_arguments --locked --offline 2>&1 | tee "$RUNNER_TEMP/base-rpc-source-only.log"
+          rc1=${PIPESTATUS[0]}
+          cargo test -p ores-stack-cli sync_check_detects_generated_rpc_drift --locked --offline 2>&1 | tee "$RUNNER_TEMP/base-rpc-drift.log"
+          rc2=${PIPESTATUS[0]}
           set -e
-          test "$rc" -ne 0
+          test "$rc1" -ne 0
+          test "$rc2" -ne 0
+          grep -F 'REST route authority moved under src/routes/rest/**' "$RUNNER_TEMP/base-rpc-source-only.log"
           grep -F 'REST route authority moved under src/routes/rest/**' "$RUNNER_TEMP/base-rpc-drift.log"
 
           set +e
           cargo test -p ores-stack-cli generated_rest_route_compiles_against_pinned_operation_contract --locked --offline 2>&1 | tee "$RUNNER_TEMP/base-scaffold-rest.log"
-          rc2=${PIPESTATUS[0]}
-          cargo test -p ores-stack-cli generated_web_page_compiles_against_pinned_api_docs_contract --locked --offline 2>&1 | tee "$RUNNER_TEMP/base-scaffold-web.log"
           rc3=${PIPESTATUS[0]}
+          cargo test -p ores-stack-cli generated_web_page_compiles_against_pinned_api_docs_contract --locked --offline 2>&1 | tee "$RUNNER_TEMP/base-scaffold-web.log"
+          rc4=${PIPESTATUS[0]}
           set -e
-          test "$rc2" -ne 0
           test "$rc3" -ne 0
+          test "$rc4" -ne 0
           grep -F 'parse Cargo.toml: TOML parse error' "$RUNNER_TEMP/base-scaffold-rest.log"
           grep -F 'async fn' "$RUNNER_TEMP/base-scaffold-web.log"
           grep -F 'Rust 2015' "$RUNNER_TEMP/base-scaffold-web.log"
