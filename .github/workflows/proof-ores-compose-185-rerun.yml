@@ -1,9 +1,10 @@
 name: proof ores-compose 185 rerun
 
 on:
-  push:
-    branches:
-      - proof/ores-local-isolation-20260925
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/proof-ores-compose-185-rerun.yml'
   workflow_dispatch:
 
 permissions:
