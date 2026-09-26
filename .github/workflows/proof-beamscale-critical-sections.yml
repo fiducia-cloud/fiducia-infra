@@ -1,6 +1,9 @@
 name: proof BeamScale critical-section chain
 
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/proof-beamscale-critical-sections.yml'
   push:
     branches:
       - proof/beamscale-critical-sections-20260925
