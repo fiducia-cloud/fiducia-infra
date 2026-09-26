@@ -48,7 +48,16 @@ jobs:
           node_modules/.bin/tjsv --help >/dev/null
       - name: Run all contract parity checks
         shell: bash
-        run: npm run check:contracts
+        run: |
+          set -uo pipefail
+          if npm run check:contracts; then
+            exit 0
+          fi
+          echo '--- TJSV route-manifest report ---'
+          if [[ -f .ores-stack/route-manifest-schema-parity.json ]]; then
+            cat .ores-stack/route-manifest-schema-parity.json
+          fi
+          exit 1
       - name: Prove tracked source unchanged
         shell: bash
         run: |
