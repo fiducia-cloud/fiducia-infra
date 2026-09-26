@@ -1,0 +1,124 @@
+name: quaestor-interfaces #50 exact-head certification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/quaestor-interfaces-50-okla-payroll.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_HEAD: f535a57672b75081eb45ae1a35b77c71ff4e394b
+  SOURCE_BASE: 004e0a562a5d42050736eb6c5423d0d021a3cdb5
+  TJSV_HEAD: 813d5f021e02574f529a9553b670719f8f10d02c
+
+jobs:
+  certify-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Require scoped source credential
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+
+      - name: Check out exact Quaestor source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: quaestor-ledger/quaestor-interfaces
+          ref: ${{ env.SOURCE_HEAD }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Guard exact PR head and review scope
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
+          actual="$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/quaestor-ledger/quaestor-interfaces.git" refs/pull/50/head | cut -f1)"
+          test "$actual" = "$SOURCE_HEAD"
+          git cat-file -e "${SOURCE_BASE}^{commit}"
+          mapfile -t changed < <(git diff --name-only "$SOURCE_BASE" "$SOURCE_HEAD")
+          expected=(
+            .github/workflows/okla-payroll-contracts.yml
+            contracts/okla-payroll/README.md
+            contracts/okla-payroll/authored.schema.json
+            contracts/okla-payroll/instances/PayrollPostingIntent/invalid/numeric-money.json
+            contracts/okla-payroll/instances/PayrollPostingIntent/valid/balanced.json
+            contracts/okla-payroll/instances/SettlementOutcome/valid/succeeded.json
+            contracts/okla-payroll/main.tsp
+            contracts/okla-payroll/policy-fixtures.json
+            scripts/check-okla-payroll-contract.py
+          )
+          diff -u <(printf '%s\n' "${expected[@]}" | sort) <(printf '%s\n' "${changed[@]}" | sort)
+          git diff --check "$SOURCE_BASE" "$SOURCE_HEAD"
+
+      - name: Check Python policy syntax and fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/check-okla-payroll-contract.py
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          for path in Path("contracts/okla-payroll").rglob("*.json"):
+              json.loads(path.read_text())
+              print(path)
+          PY
+          python3 scripts/check-okla-payroll-contract.py --self-test
+
+      - name: Check out exact TJSV action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/typespec-json-schema-validator
+          ref: ${{ env.TJSV_HEAD }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          path: .github/actions/tjsv
+
+      - name: Compare peer TypeSpec and JSON Schema authorities
+        uses: ./.github/actions/tjsv
+        with:
+          typespec: contracts/okla-payroll/main.tsp
+          schema: contracts/okla-payroll/authored.schema.json
+          instances: contracts/okla-payroll/instances
+          report: .typespec-json-schema-validator/okla-payroll-report.json
+          contract_ir: .typespec-json-schema-validator/okla-payroll-contract-ir.json
+          output_dir: .typespec-json-schema-validator/okla-payroll-generated
+          int64_strategy: string
+          max_probes: '64'
+
+      - name: Require reviewed corpus evidence and parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e '
+            .status == "passed" and
+            .zeroUnexplainedFindings == true and
+            (.findings | length) == 0 and
+            (.differential.summary.reviewedAcceptedInstances // 0) >= 2 and
+            (.differential.summary.reviewedRejectedInstances // 0) >= 1
+          ' .typespec-json-schema-validator/okla-payroll-report.json
+
+      - name: Reconfirm immutable exact head
+        if: always()
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
+          test -z "$(git status --porcelain --untracked-files=no)"
+          actual="$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/quaestor-ledger/quaestor-interfaces.git" refs/pull/50/head | cut -f1)"
+          test "$actual" = "$SOURCE_HEAD"
+          echo QUAESTOR_INTERFACES_50_EXACT_HEAD_CERT_COMPLETE
