@@ -100,7 +100,7 @@ function sqlColumn([name, schema, required]) {
   if (name === 'id') parts.push('primary key default gen_random_uuid()');
   else if (name === 'occurred_at' || name === 'first_seen_at' || name === 'last_seen_at') parts.push('not null default now()');
   else if (name === 'occurrence_count') parts.push('not null default 1');
-  else if (schema?.type === 'array') parts.push(`not null default '[]'::jsonb`);
+  else if (schema?.type === 'array' && required) parts.push(`not null default '[]'::jsonb`);
   else if (required) parts.push('not null');
   if (name === 'policy') parts.push("check (policy in ('v1','dd-next-compat-v2'))");
   if (name === 'fingerprint') parts.push("check (fingerprint ~ '^[0-9a-f]{64}$|^dd-next-compat-v2:[0-9a-f]{64}$')");
