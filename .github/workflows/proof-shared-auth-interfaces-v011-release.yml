@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
-      SOURCE_SHA: 1654cc7df48ca8d5ab956fbd645e4026428f6c59
+      SOURCE_SHA: 185a154cefc3b883f8c1c4b62db8e7a15e3402df
       ZED_CLI_REV: 6ad5713835183ef1f9cc7404ebf209106815f6ee
     steps:
       - name: Check out exact shared-auth interfaces head
