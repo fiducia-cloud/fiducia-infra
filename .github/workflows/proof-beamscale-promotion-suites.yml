@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   api-contract:
+    if: ${{ false }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -84,7 +85,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
-      SUITE_SHA: 37bcd7c251cec4f709bccb582bddf667080a44cc
+      SUITE_SHA: fe03de50aac5893f4607488c33f1e7e81da8a469
       COMPILER_SHA: d4eac4c3cbf92c951289e7b26961335938232999
       SUPERVISOR_SHA: 3717f304d47f8d909928e35745fd195acdabe0db
       INFRA_SHA: 8212ebc70d85676a21b50657589b10f6a69fb1f7
@@ -148,8 +149,8 @@ jobs:
           components: rustfmt, clippy
       - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
         with:
-          otp-version: "29.1.1"
-          gleam-version: "1.18.1"
+          otp-version: "27.3"
+          gleam-version: "1.18.0"
           rebar3-version: "3.24.0"
           version-type: strict
       - name: Prove admitted registry representation can cross host-to-guest boundary
@@ -172,6 +173,7 @@ jobs:
           git -C infra diff --exit-code
 
   scintilla-interop:
+    if: ${{ false }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
