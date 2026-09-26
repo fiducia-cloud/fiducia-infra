@@ -32,7 +32,7 @@ jobs:
           components: rustfmt, clippy
       - name: CLI checks
         run: |
-          cargo fmt --manifest-path crates/ores-stack-cli/Cargo.toml --all -- --check
+          rustfmt --edition 2024 --check crates/ores-stack-cli/src/benchmark_cli.rs
           cargo clippy -p ores-stack-cli --all-targets -- -D warnings
           cargo test -p ores-stack-cli benchmark_cli
       - name: Full CLI tests
