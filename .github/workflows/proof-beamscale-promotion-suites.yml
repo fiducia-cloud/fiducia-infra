@@ -1,0 +1,84 @@
+name: proof-beamscale-promotion-suites
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  infra-zero-frame:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      SOURCE_SHA: 65b0d12ed416e078bda3292ac6e418a01377e57a
+    steps:
+      - name: Check out exact bmscl-infra fix head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: beamscale/bmscl-infra
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: source
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify exact source identity and invariant
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C source rev-parse HEAD)" = "$SOURCE_SHA"
+          grep -Fq 'if chunk.is_empty() {' source/modules/tenant_runtime/guest-agent/src/artifact_receive.rs
+          grep -Fq 'zero_length_frame_is_rejected_before_artifact_progress' source/modules/tenant_runtime/guest-agent/tests/artifact_receive.rs
+          grep -Fq 'execution_class: "phoenix".into()' source/modules/tenant_runtime/guest-agent/tests/artifact_receive.rs
+          grep -Fq 'struct ProxyConfig {' source/modules/tenant_runtime/guest-agent/src/main.rs
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          components: rustfmt, clippy
+
+      - name: Guest agent quality gates
+        working-directory: source
+        run: |
+          cargo fmt --manifest-path modules/tenant_runtime/guest-agent/Cargo.toml --all -- --check
+          cargo clippy --manifest-path modules/tenant_runtime/guest-agent/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path modules/tenant_runtime/guest-agent/Cargo.toml --all-targets
+
+      - name: Prove exact source checkout stayed clean
+        working-directory: source
+        run: git diff --exit-code
+
+  umbrella-full-matrix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      SOURCE_SHA: 7cdd0a0bd5a5f024de2add0156cd770cfd754d60
+    steps:
+      - name: Check out exact umbrella matrix head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: beamscale-test/bmscl-test-e2e
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: source
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify exact source identity
+        working-directory: source
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+
+      - name: Validate fail-closed promotion baseline
+        working-directory: source
+        run: |
+          python3 -m py_compile scripts/verify_baseline.py scripts/aggregate_test_org.py
+          python3 scripts/verify_baseline.py
+          grep -Fq 'phoenix.discovery-v2' test-matrix.yaml
+          grep -Fq 'performance.cold-start-control-plane' test-matrix.yaml
+          grep -Fq 'beamscale/bmscl-cli-gleam' evidence/source-lock.baseline.json
+
+      - name: Prove exact source checkout stayed clean
+        working-directory: source
+        run: git diff --exit-code
