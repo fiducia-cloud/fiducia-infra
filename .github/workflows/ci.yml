@@ -212,7 +212,6 @@ jobs:
       - name: Verify exact heads
         run: |
           test "$(git -C compose-base rev-parse HEAD)" = "$COMPOSE_BASE_SHA"
-          test "$(git -C compose-base rev-parse HEAD)" = "$COMPOSE_BASE_SHA"
           test "$(git -C compose rev-parse HEAD)" = "$COMPOSE_SHA"
           test "$(git -C isolation rev-parse HEAD)" = "$PROC_SHA"
       - name: Configure scoped private Git dependency access
@@ -382,5 +381,6 @@ jobs:
           git -C compose clean -ffd >/dev/null
           git -C isolation reset --hard "$PROC_SHA" >/dev/null
           git -C isolation clean -ffd >/dev/null
+          test "$(git -C compose-base rev-parse HEAD)" = "$COMPOSE_BASE_SHA"
           test "$(git -C compose rev-parse HEAD)" = "$COMPOSE_SHA"
           test "$(git -C isolation rev-parse HEAD)" = "$PROC_SHA"
