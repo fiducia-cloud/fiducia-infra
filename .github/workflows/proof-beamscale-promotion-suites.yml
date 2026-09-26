@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
-      SOURCE_SHA: cdc2edc7d8c3623d207361d7b19fd48851370965
+      SOURCE_SHA: 3d5a8d71299300dcf0c6a00163a78c3d9de55031
     steps:
       - name: Check out exact bmscl-infra fix head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
