@@ -87,6 +87,8 @@ jobs:
 
       - name: Enforce source-AST governance on exact head
         working-directory: source
+        env:
+          GITHUB_REPOSITORY: ORESoftware/ores-cli
         run: |
           set -euo pipefail
           node --check scripts/check-source-ast-governance.mjs
