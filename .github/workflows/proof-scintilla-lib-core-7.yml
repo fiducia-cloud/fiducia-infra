@@ -1,0 +1,45 @@
+name: proof-scintilla-lib-core-7
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_SHA: 8d098c8a0c7b256003e0725256b172fc59d65b41
+  REUSABLE_SHA: 5c22eeaf98a6948be5db015ca3c0c18eca4b8147
+
+jobs:
+  source-shape:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact Scintilla lib-core head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: scintilla-run/scintilla-lib-core
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+      - name: Verify exact source head and immutable reusable gate pin
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test -f .github/workflows/core-contract-baseline.yml
+          grep -F "uses: ORESoftware/typespec-json-schema-validator/.github/workflows/core-contract-baseline-reusable.yml@$REUSABLE_SHA" .github/workflows/core-contract-baseline.yml
+          grep -F '"contracts/**"' .github/workflows/core-contract-baseline.yml
+          grep -F '"typespec/**"' .github/workflows/core-contract-baseline.yml
+          grep -F '"schema/**"' .github/workflows/core-contract-baseline.yml
+          grep -F 'cron: "17 6 * * 2"' .github/workflows/core-contract-baseline.yml
+      - name: Prove source checkout unchanged
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
+
+  reusable-gate:
+    uses: ORESoftware/typespec-json-schema-validator/.github/workflows/core-contract-baseline-reusable.yml@5c22eeaf98a6948be5db015ca3c0c18eca4b8147
