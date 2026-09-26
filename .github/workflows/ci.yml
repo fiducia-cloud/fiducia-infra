@@ -178,7 +178,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     env:
-      PROC_SHA: c50f0576788fccca8a8d764aa08e2eaef235826f
+      PROC_SHA: dfcf76940ebf8203eae6853f82a8db86b7806362
       COMPOSE_SHA: d93a4108849ba37bbca155a8bb679abd2ab8b60f
       COMPOSE_BASE_SHA: fbfad966f9770a9a8d3895880523280324b4ddc6
     steps:
@@ -432,7 +432,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
-      SOURCE_SHA: c50f0576788fccca8a8d764aa08e2eaef235826f
+      SOURCE_SHA: dfcf76940ebf8203eae6853f82a8db86b7806362
     steps:
       - name: Checkout exact source head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
