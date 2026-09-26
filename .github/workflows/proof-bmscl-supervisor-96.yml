@@ -1,0 +1,104 @@
+name: proof-bmscl-supervisor-96
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_SHA: 9fb600525c8ebac8dc3ebe3ed027b3b3bb6836d0
+
+jobs:
+  supervisor-ci:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: beamscale/bmscl-supervisor
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+      - name: Verify exact source head
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
+        with:
+          otp-version: '27.3'
+          rebar3-version: '3.24.0'
+          gleam-version: '1.18.0'
+          version-type: strict
+      - name: Compile
+        run: rebar3 compile
+      - name: EUnit
+        run: rebar3 eunit
+      - name: Xref
+        run: rebar3 xref
+      - name: Prove Hosted Gleam ABI fixture
+        run: |
+          cd test/fixtures/hosted_abi
+          gleam build
+          beam_dir="$(dirname "$(find build -type f -name worker.beam -print -quit)")"
+          test -n "$beam_dir"
+          erl -noshell -pa "$beam_dir" -eval '
+            Request = {request, <<"POST">>, <<"/abi">>,
+                       [{<<"content-type">>, <<"application/octet-stream">>}],
+                       <<0,1,2>>},
+            Context = {context,
+                       {cluster_capability, <<"cluster">>},
+                       {some, {http_capability, <<"http">>}},
+                       {log_capability, <<"log">>},
+                       none,
+                       123},
+            {response, 201, Headers, <<0,1,2>>} = worker:handle(Request, Context),
+            true = lists:member({<<"x-method">>, <<"POST">>}, Headers),
+            true = lists:member({<<"x-url">>, <<"/abi">>}, Headers),
+            true = lists:member({<<"x-capabilities">>, <<"http-only">>}, Headers),
+            true = lists:member({<<"x-deadline">>, <<"123">>}, Headers),
+            halt(0).'
+      - name: Build self-contained OTP release
+        run: rebar3 release
+      - name: Smoke self-contained release files
+        run: |
+          rel=_build/default/rel/bmscl_supervisor
+          test -x "$rel/bin/bmscl_supervisor"
+          test -f "$rel/releases/0.1.0/start.boot"
+          test -n "$(find "$rel" -path '*/erts-*/bin/beam.smp' -type f -print -quit)"
+      - name: Prove source unchanged
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
+
+  bounded-model-check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: beamscale/bmscl-supervisor
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+      - name: Verify exact source head
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: stable
+      - name: Exhaust supervisor handoff state space
+        run: |
+          rustc --edition=2021 -D warnings conformance/formal_model.rs -o "$RUNNER_TEMP/formal-model"
+          "$RUNNER_TEMP/formal-model"
+      - name: Exhaust durable critical-section failover state space
+        run: |
+          rustc --edition=2021 -D warnings conformance/critical_section_formal_model.rs -o "$RUNNER_TEMP/critical-section-formal-model"
+          "$RUNNER_TEMP/critical-section-formal-model"
+      - name: Prove source unchanged
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
