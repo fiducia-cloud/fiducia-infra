@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 55
     env:
-      API_SHA: 20980a377cf531f78c340154100c1e8ecfaa19a3
+      API_SHA: 61c35c05d45637086f7c93b2d421fe5653fc46f9
       WORKER_SHA: de4459547d6410f972914f0ba62933d487437f4c
       CLIENTS_SHA: 95deb2e6608a57fd178e81bc600a811121392ec7
     steps:
