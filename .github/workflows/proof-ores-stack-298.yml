@@ -1,0 +1,72 @@
+name: proof-ores-stack-298
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/proof-ores-stack-298.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_SHA: ac444015e9591de92ad408984cf72548227c7da2
+
+jobs:
+  contract-toolchain:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact ORES Stack head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-stack
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+      - name: Verify exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git diff --check
+          grep -F 'typespec-json-schema-validator/archive/2f6a5e1564c2a52af0e61e5b47a983b145b28884.tar.gz' package.json
+          grep -F 'check:route-manifest' package.json | grep -F -- '--int64-strategy=number'
+          grep -F '@minValue(1)' contracts/route-manifest.tsp
+          grep -F '@maxValue(9007199254740991)' contracts/route-manifest.tsp
+          grep -F '"maximum": 9007199254740991' contracts/route-manifest.schema.json
+          grep -F '"minimum": 1' contracts/route-manifest.schema.json
+          grep -F '"anyOf": [' contracts/route-manifest.schema.json
+      - name: Install Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+      - name: Install pinned contract toolchain
+        shell: bash
+        run: npm install --no-audit --no-fund --no-package-lock
+      - name: Verify pinned TJSV executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x node_modules/.bin/tjsv
+          node_modules/.bin/tjsv --help >/dev/null
+      - name: Run all contract parity checks
+        shell: bash
+        run: |
+          set -uo pipefail
+          if npm run check:contracts; then
+            exit 0
+          fi
+          echo '--- TJSV route-manifest report ---'
+          if [[ -f .ores-stack/route-manifest-schema-parity.json ]]; then
+            cat .ores-stack/route-manifest-schema-parity.json
+          fi
+          exit 1
+      - name: Prove tracked source unchanged
+        shell: bash
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
