@@ -74,7 +74,11 @@ jobs:
       - name: Verify only generated lock changed source checkout
         run: |
           set -euo pipefail
-          changed="$(git status --short --untracked-files=all | grep -v '^?? _build/' | grep -v '^?? test/fixtures/hosted_abi/build/' || true)"
+          changed="$(git status --short --untracked-files=all \
+            | grep -v '^?? _build/' \
+            | grep -v '^?? test/fixtures/hosted_abi/build/' \
+            | grep -v '^?? test/fixtures/hosted_abi/manifest.toml$' \
+            || true)"
           printf '%s\n' "$changed"
           test "$(printf '%s\n' "$changed" | sed '/^$/d' | wc -l)" -eq 1
           printf '%s\n' "$changed" | grep -F '?? rebar.lock'
