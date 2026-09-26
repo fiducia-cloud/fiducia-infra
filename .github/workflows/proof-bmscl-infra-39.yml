@@ -1,0 +1,193 @@
+name: proof-bmscl-infra-39
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  INFRA_SHA: 3d5a8d71299300dcf0c6a00163a78c3d9de55031
+  COMPILER_SHA: d4eac4c3cbf92c951289e7b26961335938232999
+  SUPERVISOR_SHA: 3717f304d47f8d909928e35745fd195acdabe0db
+  HARNESS_SHA: fedf8631cbc3c509c388c18eaded97c7d9e7bb09
+
+jobs:
+  runtime-host-ci:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      BMSCL_RUNTIME_BACKEND: mock
+    steps:
+      - name: Check out exact bmscl-infra head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: beamscale/bmscl-infra
+          ref: ${{ env.INFRA_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+      - name: Verify exact source head
+        run: test "$(git rev-parse HEAD)" = "$INFRA_SHA"
+      - name: Validate bare-process isolation policy
+        run: |
+          set -euo pipefail
+          ruby <<'RUBY'
+          require "yaml"
+          cfg = YAML.safe_load(File.read("deploy/baremetal/.ores-proc-isolation.yaml"), permitted_classes: [], permitted_symbols: [], aliases: false)
+          abort "version must be 1" unless cfg["version"] == 1
+          groups = cfg.fetch("groups")
+          processes = cfg.fetch("processes")
+          default_group = cfg.fetch("defaults").fetch("group")
+          abort "default group is undefined" unless groups.key?(default_group)
+          processes.each do |name, spec|
+            group = spec.fetch("group")
+            abort "#{name}: undefined group #{group}" unless groups.key?(group)
+            members = Array(groups.fetch(group)["members"])
+            abort "#{name}: missing from #{group}.members" unless members.include?(name)
+            command = spec.fetch("command")
+            abort "#{name}: command must be non-empty argv" unless command.is_a?(Array) && !command.empty? && command.all? { |part| part.is_a?(String) && !part.empty? }
+          end
+          groups.each do |group_name, spec|
+            network = spec.fetch("network")
+            abort "#{group_name}: network mode must remain external" unless network["mode"] == "external"
+            abort "#{group_name}: loopback must be denied" unless network["deny_loopback"] == true
+            abort "#{group_name}: private networks must be denied" unless network["deny_private_networks"] == true
+            Array(spec["members"]).each do |member|
+              abort "#{group_name}: member #{member} missing process" unless processes.key?(member)
+              abort "#{group_name}: member #{member} points elsewhere" unless processes.fetch(member).fetch("group") == group_name
+            end
+          end
+          RUBY
+      - name: Validate deployment documentation invariants
+        run: |
+          set -euo pipefail
+          grep -q 'two independent' deploy/README.md
+          grep -q 'NixOS' deploy/baremetal/README.md
+          grep -q 'ores-proc-isolation' deploy/baremetal/README.md
+          grep -q 'Kubernetes' deploy/k8s/README.md
+          grep -q 'Firecracker execution pool' deploy/README.md
+          grep -q 'single_tenant_microvm' deploy/firecracker/runtime-host-contract.json
+          grep -q '"phoenix"' deploy/firecracker/runtime-host-contract.json
+          grep -q '"durable_actor"' deploy/firecracker/runtime-host-contract.json
+          grep -q 'BEAM' README.md
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: stable
+          components: rustfmt,clippy
+      - name: Runtime host gates
+        run: |
+          cargo clippy --manifest-path modules/tenant_runtime/runtime-host/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path modules/tenant_runtime/runtime-host/Cargo.toml --all-targets
+          cargo fmt --manifest-path modules/tenant_runtime/runtime-host/Cargo.toml --all -- --check
+      - name: Guest agent gates
+        run: |
+          cargo clippy --manifest-path modules/tenant_runtime/guest-agent/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path modules/tenant_runtime/guest-agent/Cargo.toml --all-targets
+          cargo fmt --manifest-path modules/tenant_runtime/guest-agent/Cargo.toml --all -- --check
+      - name: Validate guest image build contract
+        run: |
+          bash -n modules/tenant_runtime/guest-image/build-rootfs.sh
+          python3 -m json.tool modules/tenant_runtime/guest-image/guest-image-manifest.schema.json >/dev/null
+          grep -q '^ExecStart=/opt/beamscale/supervisor/bin/bmscl_supervisor foreground$' modules/tenant_runtime/guest-image/systemd/bmscl-supervisor.service
+          grep -q '^ExecStart=/opt/beamscale/bin/bmscl-guest-agent$' modules/tenant_runtime/guest-image/systemd/bmscl-guest-agent.service
+      - name: Exhaust tenant placement state space
+        run: |
+          rustc --edition=2021 -D warnings conformance/formal_model.rs -o "$RUNNER_TEMP/formal-model"
+          "$RUNNER_TEMP/formal-model"
+      - name: Prove source unchanged
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
+
+  artifact-promotion-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out exact promotion harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: beamscale-test/bmscl-test-artifact-supervisor-e2e
+          ref: ${{ env.HARNESS_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+      - name: Verify exact harness and source lock
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$HARNESS_SHA"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          lock = json.loads(Path('source-lock.json').read_text())['sources']
+          assert lock == {
+              'beamscale/bmscl-compiler': 'd4eac4c3cbf92c951289e7b26961335938232999',
+              'beamscale/bmscl-supervisor': '3717f304d47f8d909928e35745fd195acdabe0db',
+              'beamscale/bmscl-infra': '3d5a8d71299300dcf0c6a00163a78c3d9de55031',
+          }
+          PY
+          python3 -m py_compile scripts/check_delivery_hardening.py
+          bash -n scripts/run.sh
+      - name: Check out exact compiler
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: beamscale/bmscl-compiler
+          ref: ${{ env.COMPILER_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: compiler
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Check out exact supervisor
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: beamscale/bmscl-supervisor
+          ref: ${{ env.SUPERVISOR_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: supervisor
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Check out exact infra fix
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: beamscale/bmscl-infra
+          ref: ${{ env.INFRA_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: infra
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify exact production identities
+        run: |
+          test "$(git -C compiler rev-parse HEAD)" = "$COMPILER_SHA"
+          test "$(git -C supervisor rev-parse HEAD)" = "$SUPERVISOR_SHA"
+          test "$(git -C infra rev-parse HEAD)" = "$INFRA_SHA"
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: stable
+          components: rustfmt,clippy
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
+        with:
+          otp-version: '27.3'
+          gleam-version: '1.18.0'
+          rebar3-version: '3.24.0'
+          version-type: strict
+      - name: Prove admitted representation reaches guest safely
+        run: python3 scripts/check_delivery_hardening.py --infra-dir infra
+      - name: Run guest receiver gates
+        run: |
+          cargo clippy --manifest-path infra/modules/tenant_runtime/guest-agent/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path infra/modules/tenant_runtime/guest-agent/Cargo.toml --all-targets
+          cargo fmt --manifest-path infra/modules/tenant_runtime/guest-agent/Cargo.toml --all -- --check
+      - name: Run signed compiler-supervisor compatibility proof
+        env:
+          BMSCL_COMPILER_DIR: ${{ github.workspace }}/compiler
+          BMSCL_SUPERVISOR_DIR: ${{ github.workspace }}/supervisor
+        run: bash scripts/run.sh
+      - name: Prove production checkouts stayed clean
+        run: |
+          git -C compiler diff --exit-code
+          git -C supervisor diff --exit-code
+          git -C infra diff --exit-code
