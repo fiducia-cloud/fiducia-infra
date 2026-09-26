@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 env:
-  SOURCE_SHA: 1add2d469b18fa390b8a1ca7085e09ada3f1add9
+  SOURCE_SHA: 2d318159bcd9ea86a98ef143cc5ff2a205902326
 
 jobs:
   supervisor-build-lock:
