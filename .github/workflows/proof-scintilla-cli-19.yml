@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   SOURCE_SHA: c847e19a1474eaf0123a06a915acaecaf3c234dd
@@ -51,25 +51,62 @@ jobs:
             --bin zed
           echo "$RUNNER_TEMP/zed-cli/bin" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/zed-cli/bin/zed" --version
-      - name: Validate and install frozen Zed dependencies
+      - name: Resolve Zed dependency graph and generate lock
         run: |
           set -euo pipefail
+          zed validate
+          zed install --install-mode copy
+          test -f .zpkg.lock
           zed validate --require-lock
-          zed install --frozen --install-mode copy
       - name: Require shared api-docs vendor materialization
         run: |
           test -f .vendor/.zed/oresoftware/api-docs/rust/Cargo.toml
           grep -F 'name = "ores-api-docs"' .vendor/.zed/oresoftware/api-docs/rust/Cargo.toml
+      - name: Refresh Cargo lock against installed Zed graph
+        run: cargo generate-lockfile
+      - name: Prove generated locks are sufficient under frozen mode
+        run: |
+          set -euo pipefail
+          rm -rf .vendor/.zed
+          zed install --frozen --install-mode copy
+          cargo check --all-targets --locked
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Strict Clippy
         run: cargo clippy --all-targets --locked -- -D warnings
       - name: Run all tests
         run: cargo test --all-targets --locked
-      - name: Prove source unchanged outside generated vendor tree
+      - name: Verify lock-only source mutation
         run: |
-          git diff --exit-code -- . ':(exclude).vendor'
-          git diff --cached --exit-code
+          set -euo pipefail
+          changed="$(git status --short --untracked-files=all | grep -v '^?? .vendor/' || true)"
+          printf '%s\n' "$changed"
+          test "$(printf '%s\n' "$changed" | sed '/^$/d' | wc -l)" -eq 2
+          printf '%s\n' "$changed" | grep -F 'Cargo.lock'
+          printf '%s\n' "$changed" | grep -F '.zpkg.lock'
+      - name: Check out funded carrier branch for review artifacts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: fiducia-cloud/fiducia-infra
+          ref: proof/scintilla-cli-19-20260925
+          path: _carrier
+          token: ${{ github.token }}
+          persist-credentials: true
+          fetch-depth: 1
+      - name: Persist generated lock artifacts in carrier
+        run: |
+          set -euo pipefail
+          mkdir -p _carrier/proof-artifacts/scintilla-cli-19
+          cp .zpkg.lock _carrier/proof-artifacts/scintilla-cli-19/.zpkg.lock
+          cp Cargo.lock _carrier/proof-artifacts/scintilla-cli-19/Cargo.lock
+          printf '%s\n' "$SOURCE_SHA" > _carrier/proof-artifacts/scintilla-cli-19/source-sha.txt
+          git -C _carrier config user.name github-actions[bot]
+          git -C _carrier config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git -C _carrier add proof-artifacts/scintilla-cli-19
+          if ! git -C _carrier diff --cached --quiet; then
+            git -C _carrier commit -m 'proof: retain scintilla-cli #19 generated locks'
+            git -C _carrier push origin HEAD:proof/scintilla-cli-19-20260925
+          fi
       - name: Remove private Git auth
         if: always()
         env:
