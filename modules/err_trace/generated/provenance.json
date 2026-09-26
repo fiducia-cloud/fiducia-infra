@@ -1,0 +1,26 @@
+{
+  "schema": "ores.err-trace.storage-provenance/v1",
+  "source": {
+    "repository": "ORESoftware/ores-err-trace",
+    "commit": "dbcee673aef6a3dbc478d28a87715871b4cd9584",
+    "typespecBlob": "6536556490bd3f7556f78fd4533335cd3da21a43",
+    "jsonSchemaBlob": "f52ec9f0ca9512edb5c45f9b028f86cc3a1d7889",
+    "generatorBlob": "3bfb0a3e7b48aecdaff32a2e125fb53292873bde"
+  },
+  "tjsvCommit": "db0f1e66b2a65cad43c909aa558ae00c6a91578c",
+  "contractIrId": "33049ebc66627573e47dd707ce25a9f78e5074c240a0eb5d82f5d23a19863e01",
+  "parityReceiptRunId": "a416cf986bcb48c2332e12d20bb358fe300ea470867ec41b87d3ec9244172356",
+  "proof": {
+    "repository": "fiducia-cloud/fiducia-infra",
+    "pullRequest": 228,
+    "workflowRunId": 36269011099,
+    "artifactId": 10915041704,
+    "artifactDigest": "sha256:b820f673e5f5db014b0fb14b4d478954328dd7612867e00c32e1314e91c5e019"
+  },
+  "outputs": {
+    "postgres": "ad30e99da2e8dd24a7b11ca7251fce9725a0f607d09ca34ff8b05b87b91f44d3",
+    "diesel": "132ddf452e344e222568e35b2e290091f9e9f19a446240022341eeb278f02f21",
+    "seaorm": "73ed44c146b32af605cb1c6e38893c146b1e6e1e61173c8d9d801239f5444df6"
+  },
+  "vendoredPostgresPath": "modules/err_trace/generated/20260916_ores_err_trace.postgres.sql"
+}
