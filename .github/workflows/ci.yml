@@ -172,3 +172,95 @@ jobs:
       # `npm test` with FIDUCIA_E2E_BASE_URL=http://localhost:8090.
       - name: overlay builds
         run: kubectl kustomize kind/overlay >/dev/null
+  prove-ores-err-trace:
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'ci/prove-ores-err-trace-')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      ORES_ERR_TRACE_SOURCE_SHA: aa0885b2a60803cfcde5c8772fa543f8bd5ad507
+      TJSV_SHA: db0f1e66b2a65cad43c909aa558ae00c6a91578c
+    steps:
+      - name: Check out exact proof head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+
+      - name: Verify copied upstream Git blobs
+        run: |
+          set -euo pipefail
+          test "$(git hash-object tmp/proofs/ores-err-trace/contracts/typespec/main.tsp)" = "6536556490bd3f7556f78fd4533335cd3da21a43"
+          test "$(git hash-object tmp/proofs/ores-err-trace/contracts/json-schema/contract.schema.json)" = "f52ec9f0ca9512edb5c45f9b028f86cc3a1d7889"
+          test "$(git hash-object tmp/proofs/ores-err-trace/scripts/generate-storage-projections.mjs)" = "119228264de2cef1f1197b9dff862b86f5ebf438"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+
+      - name: Build parity receipt and admissible Contract IR
+        uses: ORESoftware/typespec-json-schema-validator@db0f1e66b2a65cad43c909aa558ae00c6a91578c
+        with:
+          typespec: tmp/proofs/ores-err-trace/contracts/typespec/main.tsp
+          schema: tmp/proofs/ores-err-trace/contracts/json-schema/contract.schema.json
+          report: tmp/proofs/ores-err-trace/evidence/report.json
+          contract_ir: tmp/proofs/ores-err-trace/evidence/contract-ir.json
+          output_dir: tmp/proofs/ores-err-trace/evidence/generated
+          int64_strategy: number
+
+      - name: Re-verify Contract IR against exact copied inputs
+        uses: ORESoftware/typespec-json-schema-validator/actions/verify-contract-ir@db0f1e66b2a65cad43c909aa558ae00c6a91578c
+        with:
+          contract_ir: tmp/proofs/ores-err-trace/evidence/contract-ir.json
+          report: tmp/proofs/ores-err-trace/evidence/report.json
+          typespec: tmp/proofs/ores-err-trace/contracts/typespec/main.tsp
+          schema: tmp/proofs/ores-err-trace/contracts/json-schema/contract.schema.json
+          generated_schema: tmp/proofs/ores-err-trace/evidence/generated/typespec.generated.schema.json
+          expected_declarations: '["Ores.ErrTrace.FingerprintPolicy","Ores.ErrTrace.ErrorEvent","Ores.ErrTrace.FingerprintEnvelope","Ores.ErrTrace.DedupeRecordResult","Ores.ErrTrace.CoordinationOperation","Ores.ErrTrace.CoordinationIntent"]'
+          verification: tmp/proofs/ores-err-trace/evidence/consumer-verification.json
+
+      - name: Generate SQL, Diesel, and SeaORM projections
+        run: node tmp/proofs/ores-err-trace/scripts/generate-storage-projections.mjs --contract-ir=tmp/proofs/ores-err-trace/evidence/contract-ir.json --out=tmp/proofs/ores-err-trace/generated/storage
+
+      - name: Prove deterministic regeneration
+        run: node tmp/proofs/ores-err-trace/scripts/generate-storage-projections.mjs --contract-ir=tmp/proofs/ores-err-trace/evidence/contract-ir.json --out=tmp/proofs/ores-err-trace/generated/storage --check
+
+      - name: Verify manifest hashes bind all projections
+        run: |
+          node --input-type=module <<'NODE'
+          import { createHash } from 'node:crypto';
+          import { readFile } from 'node:fs/promises';
+          const root = 'tmp/proofs/ores-err-trace/generated/storage';
+          const manifest = JSON.parse(await readFile(root + '/projection-manifest.json', 'utf8'));
+          if (!manifest.contractIrId) throw new Error('missing contractIrId');
+          const outputs = {
+            postgres: root + '/postgres/001_ores_err_trace.sql',
+            diesel: root + '/diesel/schema.rs',
+            seaorm: root + '/seaorm/entities.rs',
+          };
+          for (const [name, path] of Object.entries(outputs)) {
+            const bytes = await readFile(path);
+            const digest = createHash('sha256').update(bytes).digest('hex');
+            if (digest !== manifest.outputs?.[name]) {
+              throw new Error(name + ' digest mismatch: ' + digest + ' != ' + manifest.outputs?.[name]);
+            }
+          }
+          console.log(JSON.stringify({
+            sourceSha: process.env.ORES_ERR_TRACE_SOURCE_SHA,
+            tjsvSha: process.env.TJSV_SHA,
+            contractIrId: manifest.contractIrId,
+            parityReceiptRunId: manifest.parityReceiptRunId,
+            outputs: manifest.outputs
+          }, null, 2));
+          NODE
+
+      - name: Retain parity and generated projection evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ores-err-trace-proof-${{ env.ORES_ERR_TRACE_SOURCE_SHA }}
+          path: |
+            tmp/proofs/ores-err-trace/evidence/
+            tmp/proofs/ores-err-trace/generated/storage/
+          if-no-files-found: error
