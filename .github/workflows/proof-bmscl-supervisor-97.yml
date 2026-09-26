@@ -1,0 +1,102 @@
+name: proof-bmscl-supervisor-97
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  SOURCE_SHA: 1add2d469b18fa390b8a1ca7085e09ada3f1add9
+
+jobs:
+  supervisor-build-lock:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out exact supervisor baseline head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: beamscale/bmscl-supervisor
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+      - name: Verify exact source head
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
+        with:
+          otp-version: '27.3'
+          rebar3-version: '3.27.0'
+          gleam-version: '1.18.0'
+          version-type: strict
+      - name: Resolve dependencies and generate lock
+        run: |
+          set -euo pipefail
+          rebar3 compile
+          test -s rebar.lock
+      - name: EUnit
+        run: rebar3 eunit
+      - name: Xref
+        run: rebar3 xref
+      - name: Prove Hosted Gleam ABI fixture
+        run: |
+          cd test/fixtures/hosted_abi
+          gleam build
+          beam_dir="$(dirname "$(find build -type f -name worker.beam -print -quit)")"
+          test -n "$beam_dir"
+          erl -noshell -pa "$beam_dir" -eval '
+            Request = {request, <<"POST">>, <<"/abi">>,
+                       [{<<"content-type">>, <<"application/octet-stream">>}],
+                       <<0,1,2>>},
+            Context = {context,
+                       {cluster_capability, <<"cluster">>},
+                       {some, {http_capability, <<"http">>}},
+                       {log_capability, <<"log">>},
+                       none,
+                       123},
+            {response, 201, Headers, <<0,1,2>>} = worker:handle(Request, Context),
+            true = lists:member({<<"x-method">>, <<"POST">>}, Headers),
+            true = lists:member({<<"x-url">>, <<"/abi">>}, Headers),
+            true = lists:member({<<"x-capabilities">>, <<"http-only">>}, Headers),
+            true = lists:member({<<"x-deadline">>, <<"123">>}, Headers),
+            halt(0).'
+      - name: Build and smoke self-contained OTP release
+        run: |
+          rebar3 release
+          rel=_build/default/rel/bmscl_supervisor
+          test -x "$rel/bin/bmscl_supervisor"
+          test -f "$rel/releases/0.1.0/start.boot"
+          test -n "$(find "$rel" -path '*/erts-*/bin/beam.smp' -type f -print -quit)"
+      - name: Verify only generated lock changed source checkout
+        run: |
+          set -euo pipefail
+          changed="$(git status --short --untracked-files=all | grep -v '^?? _build/' | grep -v '^?? test/fixtures/hosted_abi/build/' || true)"
+          printf '%s\n' "$changed"
+          test "$(printf '%s\n' "$changed" | sed '/^$/d' | wc -l)" -eq 1
+          printf '%s\n' "$changed" | grep -F '?? rebar.lock'
+      - name: Check out carrier branch for generated lock evidence
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: fiducia-cloud/fiducia-infra
+          ref: proof/bmscl-supervisor-97-20260925
+          path: _carrier
+          token: ${{ github.token }}
+          persist-credentials: true
+          fetch-depth: 1
+      - name: Persist generated rebar lock
+        run: |
+          set -euo pipefail
+          mkdir -p _carrier/proof-artifacts/bmscl-supervisor-97
+          cp rebar.lock _carrier/proof-artifacts/bmscl-supervisor-97/rebar.lock
+          printf '%s\n' "$SOURCE_SHA" > _carrier/proof-artifacts/bmscl-supervisor-97/source-sha.txt
+          git -C _carrier config user.name github-actions[bot]
+          git -C _carrier config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git -C _carrier add proof-artifacts/bmscl-supervisor-97
+          if ! git -C _carrier diff --cached --quiet; then
+            git -C _carrier commit -m 'proof: retain bmscl-supervisor #97 rebar lock'
+            git -C _carrier push origin HEAD:proof/bmscl-supervisor-97-20260925
+          fi
