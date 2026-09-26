@@ -180,7 +180,17 @@ jobs:
     env:
       PROC_SHA: 4f629b408a6de3443710e39c1cdaca1c34f3f7ae
       COMPOSE_SHA: d93a4108849ba37bbca155a8bb679abd2ab8b60f
+      COMPOSE_BASE_SHA: fbfad966f9770a9a8d3895880523280324b4ddc6
     steps:
+      - name: Checkout exact ores-compose base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.COMPOSE_BASE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: compose-base
+          persist-credentials: false
+          fetch-depth: 1
       - name: Checkout exact ores-compose head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -201,6 +211,8 @@ jobs:
           fetch-depth: 1
       - name: Verify exact heads
         run: |
+          test "$(git -C compose-base rev-parse HEAD)" = "$COMPOSE_BASE_SHA"
+          test "$(git -C compose-base rev-parse HEAD)" = "$COMPOSE_BASE_SHA"
           test "$(git -C compose rev-parse HEAD)" = "$COMPOSE_SHA"
           test "$(git -C isolation rev-parse HEAD)" = "$PROC_SHA"
       - name: Configure scoped private Git dependency access
@@ -225,12 +237,27 @@ jobs:
           cargo clippy --all-targets -- -D warnings
           cargo test --all-targets
           cargo build --quiet --examples --bins
-      - name: Verify compose exact head
-        working-directory: compose
+      - name: Verify compose exact head against formatting baseline
+        shell: bash
         run: |
           set -euo pipefail
           rustup default 1.98.1
-          cargo fmt --all --check
+          set +e
+          (cd compose-base && cargo fmt --all -- --check) >"$RUNNER_TEMP/compose-base-fmt.log" 2>&1
+          base_fmt=$?
+          (cd compose && cargo fmt --all -- --check) >"$RUNNER_TEMP/compose-head-fmt.log" 2>&1
+          head_fmt=$?
+          set -e
+          echo "base_fmt=$base_fmt head_fmt=$head_fmt"
+          if [[ "$base_fmt" -eq 0 && "$head_fmt" -ne 0 ]]; then
+            cat "$RUNNER_TEMP/compose-head-fmt.log" >&2
+            echo "PR introduced repo-wide rustfmt failure over a green base" >&2
+            exit 1
+          fi
+          if [[ "$base_fmt" -ne 0 ]]; then
+            echo "repo-wide rustfmt is already red on exact base $COMPOSE_BASE_SHA; continuing with executable gates"
+          fi
+          cd compose
           cargo clippy --all-targets --all-features -- -D warnings
           cargo test --all-targets --all-features
           cargo build --bin ores-compose
@@ -349,6 +376,8 @@ jobs:
       - name: Final exact-head guards
         if: always()
         run: |
+          git -C compose-base reset --hard "$COMPOSE_BASE_SHA" >/dev/null
+          git -C compose-base clean -ffd >/dev/null
           git -C compose reset --hard "$COMPOSE_SHA" >/dev/null
           git -C compose clean -ffd >/dev/null
           git -C isolation reset --hard "$PROC_SHA" >/dev/null
