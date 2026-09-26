@@ -85,10 +85,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
-      SUITE_SHA: fe03de50aac5893f4607488c33f1e7e81da8a469
+      SUITE_SHA: 9dcf980aeee1b74178032c108ef2187660eb18c4
       COMPILER_SHA: d4eac4c3cbf92c951289e7b26961335938232999
       SUPERVISOR_SHA: 3717f304d47f8d909928e35745fd195acdabe0db
-      INFRA_SHA: 8212ebc70d85676a21b50657589b10f6a69fb1f7
+      INFRA_SHA: 79799921835fe035f354a3e4c4607bb103fca8e9
     steps:
       - name: Check out exact artifact-supervisor suite head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -117,7 +117,7 @@ jobs:
           path: supervisor
           persist-credentials: false
           fetch-depth: 1
-      - name: Check out exact merged guest-transfer revision
+      - name: Check out exact merged admitted-artifact delivery revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: beamscale/bmscl-infra
@@ -141,7 +141,7 @@ jobs:
           assert sources == {
               'beamscale/bmscl-compiler': 'd4eac4c3cbf92c951289e7b26961335938232999',
               'beamscale/bmscl-supervisor': '3717f304d47f8d909928e35745fd195acdabe0db',
-              'beamscale/bmscl-infra': '8212ebc70d85676a21b50657589b10f6a69fb1f7',
+              'beamscale/bmscl-infra': '79799921835fe035f354a3e4c4607bb103fca8e9',
           }
           PY
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
