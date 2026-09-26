@@ -1,0 +1,87 @@
+name: proof-ores-cli-418
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/proof-ores-cli-418.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_SHA: 61d4301a40d4e6ead2f7dcc30d8c2380c7653007
+  TJSV_SHA: bd503465dab8c5148fee722b443ed04ff126c9bf
+
+jobs:
+  governance-and-source-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out exact ores-cli head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-cli
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+      - name: Verify exact candidate and source lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git diff --check
+          jq -e --arg sha "$TJSV_SHA" '.schema == "ores.tjsv-source-lock/v1" and .repository == "ORESoftware/typespec-json-schema-validator" and .revision == $sha' tjsv/source-lock.json >/dev/null
+      - name: Install Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22.16.0'
+          package-manager-cache: false
+      - name: Enforce source-AST participant governance
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check scripts/check-source-ast-governance.mjs
+          env -u GITHUB_REPOSITORY node scripts/check-source-ast-governance.mjs
+      - name: Check out immutable TJSV authority
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/typespec-json-schema-validator
+          ref: ${{ env.TJSV_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: tmp/tjsv
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+      - name: Install immutable TJSV dependencies
+        working-directory: tmp/tjsv
+        run: npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+      - name: Compare independent source-audit authorities
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/source-audit-generated"
+          node tmp/tjsv/bin/typespec-json-schema-validator.mjs check \
+            --typespec=contracts/source-audit/main.tsp \
+            --schema=contracts/source-audit/authored.schema.json \
+            --mapping=contracts/source-audit/tjsv.mapping.json \
+            --instances=contracts/source-audit/instances \
+            --report="$RUNNER_TEMP/source-audit-report.json" \
+            --contract-ir="$RUNNER_TEMP/source-audit-contract-ir.json" \
+            --output-dir="$RUNNER_TEMP/source-audit-generated"
+          jq -e '.status == "passed" and .zeroUnexplainedFindings == true and .differential.summary.divergences == 0 and .differential.summary.refusals == 0' "$RUNNER_TEMP/source-audit-report.json" >/dev/null
+          jq -e '.schema == "ores.typespec-json-schema-validator.contract-ir/v1" and .status == "passed" and .admissible == true and .editableAuthority == false' "$RUNNER_TEMP/source-audit-contract-ir.json" >/dev/null
+      - name: Prove authored governance and authorities unchanged
+        shell: bash
+        run: |
+          git diff --exit-code -- \
+            contracts/source-audit/main.tsp \
+            contracts/source-audit/authored.schema.json \
+            contracts/source-audit/tjsv.mapping.json \
+            conformance/source-ast-participants.v1.json \
+            governance/source-ast-participants.v1.json \
+            scripts/check-source-ast-governance.mjs \
+            tjsv/source-lock.json
