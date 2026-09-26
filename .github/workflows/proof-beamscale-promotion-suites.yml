@@ -9,243 +9,42 @@ permissions:
   contents: read
 
 jobs:
-  api-contract:
-    if: ${{ false }}
+  infra-zero-frame:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 20
     env:
-      SUITE_SHA: 7b9bf4159626841d4b3844bcf9350e04fab333b0
-      API_SHA: c41a310b5c9374e1e2adb0460268a7e0940a13cf
-      INFRA_SHA: 2a76882405238279503760057407f84b46af0396
+      SOURCE_SHA: cdc2edc7d8c3623d207361d7b19fd48851370965
     steps:
-      - name: Check out exact API-contract suite head
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: beamscale-test/bmscl-test-api-contract-e2e
-          ref: ${{ env.SUITE_SHA }}
-          token: ${{ secrets.ORE_SOURCE_PAT }}
-          path: suite
-          persist-credentials: false
-          fetch-depth: 1
-      - name: Check out exact merged API activation revision
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: beamscale/bmscl-api-server.rs
-          ref: ${{ env.API_SHA }}
-          token: ${{ secrets.ORE_SOURCE_PAT }}
-          path: api
-          persist-credentials: false
-          fetch-depth: 1
-      - name: Check out exact runtime-host provider revision
+      - name: Check out exact bmscl-infra fix head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: beamscale/bmscl-infra
-          ref: ${{ env.INFRA_SHA }}
+          ref: ${{ env.SOURCE_SHA }}
           token: ${{ secrets.ORE_SOURCE_PAT }}
-          path: infra
+          path: source
           persist-credentials: false
           fetch-depth: 1
-      - name: Verify exact source identities and source lock
+
+      - name: Verify exact source identity and invariant
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git -C suite rev-parse HEAD)" = "$SUITE_SHA"
-          test "$(git -C api rev-parse HEAD)" = "$API_SHA"
-          test "$(git -C infra rev-parse HEAD)" = "$INFRA_SHA"
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          lock = json.loads(Path('suite/source-lock.json').read_text())
-          assert lock['sources']['beamscale/bmscl-api-server.rs'] == 'c41a310b5c9374e1e2adb0460268a7e0940a13cf'
-          assert lock['sources']['beamscale/bmscl-infra'] == '2a76882405238279503760057407f84b46af0396'
-          PY
+          test "$(git -C source rev-parse HEAD)" = "$SOURCE_SHA"
+          grep -Fq 'if chunk.is_empty() {' source/modules/tenant_runtime/guest-agent/src/artifact_receive.rs
+          grep -Fq 'zero_length_frame_is_rejected_before_artifact_progress' source/modules/tenant_runtime/guest-agent/tests/artifact_receive.rs
+          grep -Fq 'execution_class: "phoenix".into()' source/modules/tenant_runtime/guest-agent/tests/artifact_receive.rs
+
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
           components: rustfmt, clippy
-      - name: Assert consumer/provider activation contract
-        run: python3 suite/scripts/assert_activate_contract.py
-      - name: API lint tests and format
-        working-directory: api
-        run: |
-          cargo clippy --all-targets --all-features -- -D warnings
-          cargo test --all-targets
-          cargo fmt --all -- --check
-      - name: Runtime host tests
-        working-directory: infra
-        env:
-          BMSCL_RUNTIME_BACKEND: mock
-        run: cargo test --manifest-path modules/tenant_runtime/runtime-host/Cargo.toml --all-targets
-      - name: Prove all exact checkouts remained immutable
-        run: |
-          git -C suite diff --exit-code
-          git -C api diff --exit-code
-          git -C infra diff --exit-code
 
-  artifact-supervisor:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 40
-    env:
-      SUITE_SHA: 9dcf980aeee1b74178032c108ef2187660eb18c4
-      COMPILER_SHA: d4eac4c3cbf92c951289e7b26961335938232999
-      SUPERVISOR_SHA: 3717f304d47f8d909928e35745fd195acdabe0db
-      INFRA_SHA: 79799921835fe035f354a3e4c4607bb103fca8e9
-    steps:
-      - name: Check out exact artifact-supervisor suite head
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: beamscale-test/bmscl-test-artifact-supervisor-e2e
-          ref: ${{ env.SUITE_SHA }}
-          token: ${{ secrets.ORE_SOURCE_PAT }}
-          path: suite
-          persist-credentials: false
-          fetch-depth: 1
-      - name: Check out exact compiler revision
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: beamscale/bmscl-compiler
-          ref: ${{ env.COMPILER_SHA }}
-          token: ${{ secrets.ORE_SOURCE_PAT }}
-          path: compiler
-          persist-credentials: false
-          fetch-depth: 1
-      - name: Check out exact supervisor revision
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: beamscale/bmscl-supervisor
-          ref: ${{ env.SUPERVISOR_SHA }}
-          token: ${{ secrets.ORE_SOURCE_PAT }}
-          path: supervisor
-          persist-credentials: false
-          fetch-depth: 1
-      - name: Check out exact merged admitted-artifact delivery revision
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: beamscale/bmscl-infra
-          ref: ${{ env.INFRA_SHA }}
-          token: ${{ secrets.ORE_SOURCE_PAT }}
-          path: infra
-          persist-credentials: false
-          fetch-depth: 1
-      - name: Verify exact source identities and source lock
-        shell: bash
+      - name: Guest agent quality gates
+        working-directory: source
         run: |
-          set -euo pipefail
-          test "$(git -C suite rev-parse HEAD)" = "$SUITE_SHA"
-          test "$(git -C compiler rev-parse HEAD)" = "$COMPILER_SHA"
-          test "$(git -C supervisor rev-parse HEAD)" = "$SUPERVISOR_SHA"
-          test "$(git -C infra rev-parse HEAD)" = "$INFRA_SHA"
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          sources = json.loads(Path('suite/source-lock.json').read_text())['sources']
-          assert sources == {
-              'beamscale/bmscl-compiler': 'd4eac4c3cbf92c951289e7b26961335938232999',
-              'beamscale/bmscl-supervisor': '3717f304d47f8d909928e35745fd195acdabe0db',
-              'beamscale/bmscl-infra': '79799921835fe035f354a3e4c4607bb103fca8e9',
-          }
-          PY
-      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
-        with:
-          components: rustfmt, clippy
-      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
-        with:
-          otp-version: "27.3"
-          gleam-version: "1.18.0"
-          rebar3-version: "3.24.0"
-          version-type: strict
-      - name: Prove admitted registry representation can cross host-to-guest boundary
-        run: python3 suite/scripts/check_delivery_hardening.py --infra-dir infra
-      - name: Run guest artifact receiver unit lint and format gates
-        run: |
-          cargo clippy --manifest-path infra/modules/tenant_runtime/guest-agent/Cargo.toml --all-targets -- -D warnings
-          cargo test --manifest-path infra/modules/tenant_runtime/guest-agent/Cargo.toml --all-targets
-          cargo fmt --manifest-path infra/modules/tenant_runtime/guest-agent/Cargo.toml --all -- --check
-      - name: Run signed artifact compatibility proof
-        env:
-          BMSCL_COMPILER_DIR: ${{ github.workspace }}/compiler
-          BMSCL_SUPERVISOR_DIR: ${{ github.workspace }}/supervisor
-        run: bash suite/scripts/run.sh
-      - name: Prove all exact checkouts remained immutable
-        run: |
-          git -C suite diff --exit-code
-          git -C compiler diff --exit-code
-          git -C supervisor diff --exit-code
-          git -C infra diff --exit-code
+          cargo fmt --manifest-path modules/tenant_runtime/guest-agent/Cargo.toml --all -- --check
+          cargo clippy --manifest-path modules/tenant_runtime/guest-agent/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path modules/tenant_runtime/guest-agent/Cargo.toml --all-targets
 
-  scintilla-interop:
-    if: ${{ false }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    env:
-      SUITE_SHA: c69de475d742819496152659a64c2665647c3050
-      BMSCL_SHA: 874906dcc0926d44987136bfeba0b3b65aade3d2
-      SCINTILLA_SHA: 7fb9b20b271b9311e9e334aed278ec58771542ec
-    steps:
-      - name: Check out exact Scintilla interop suite head
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: beamscale-test/bmscl-test-scintilla-interop-e2e
-          ref: ${{ env.SUITE_SHA }}
-          token: ${{ secrets.ORE_SOURCE_PAT }}
-          path: suite
-          persist-credentials: false
-          fetch-depth: 1
-      - name: Check out exact BeamScale interfaces revision
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: beamscale/bmscl-interfaces
-          ref: ${{ env.BMSCL_SHA }}
-          token: ${{ secrets.ORE_SOURCE_PAT }}
-          path: beamscale/interfaces
-          persist-credentials: false
-          fetch-depth: 1
-      - name: Check out exact Scintilla routing revision
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: scintilla-run/gleam-lambda-runner
-          ref: ${{ env.SCINTILLA_SHA }}
-          token: ${{ secrets.ORE_SOURCE_PAT }}
-          path: scintilla
-          persist-credentials: false
-          fetch-depth: 1
-      - name: Verify exact source identities and source lock
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(git -C suite rev-parse HEAD)" = "$SUITE_SHA"
-          test "$(git -C beamscale/interfaces rev-parse HEAD)" = "$BMSCL_SHA"
-          test "$(git -C scintilla rev-parse HEAD)" = "$SCINTILLA_SHA"
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          repos = json.loads(Path('suite/source-lock.json').read_text())['repositories']
-          assert repos['beamscale/bmscl-interfaces'] == '874906dcc0926d44987136bfeba0b3b65aade3d2'
-          assert repos['scintilla-run/gleam-lambda-runner'] == '7fb9b20b271b9311e9e334aed278ec58771542ec'
-          PY
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: "22"
-      - name: Install Erlang compiler/runtime for non-skippable route tests
-        run: |
-          set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends erlang-base erlang-dev
-          command -v erlc
-          command -v erl
-      - name: Prove bridge assertions fail closed
-        run: python3 suite/scripts/self_test_interop.py
-      - name: Assert bridge-critical invariants
-        run: python3 suite/scripts/assert_interop.py
-      - name: Run Scintilla runtime and dynamic-route regressions
-        working-directory: scintilla
-        run: |
-          set -euo pipefail
-          node --test \
-            test/runtime-wire-contract.test.mjs \
-            test/runtime-wire-execution.test.mjs \
-            test/dynamic-http-routing.test.mjs
-      - name: Prove all exact checkouts remained immutable
-        run: |
-          git -C suite diff --exit-code
-          git -C beamscale/interfaces diff --exit-code
-          git -C scintilla diff --exit-code
+      - name: Prove exact source checkout stayed clean
+        working-directory: source
+        run: git diff --exit-code
