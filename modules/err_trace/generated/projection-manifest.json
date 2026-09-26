@@ -1,0 +1,161 @@
+{
+  "schema": "ores.err-trace.storage-projection/v1",
+  "contractIrSchema": "ores.typespec-json-schema-validator.contract-ir/v1",
+  "contractIrId": "33049ebc66627573e47dd707ce25a9f78e5074c240a0eb5d82f5d23a19863e01",
+  "parityReceiptRunId": "a416cf986bcb48c2332e12d20bb358fe300ea470867ec41b87d3ec9244172356",
+  "generator": {
+    "name": "ores-err-trace/generate-storage-projections.mjs",
+    "version": 1
+  },
+  "tables": {
+    "ores_err_trace_fingerprints": [
+      {
+        "name": "id",
+        "sqlType": "uuid",
+        "required": true
+      },
+      {
+        "name": "policy",
+        "sqlType": "text",
+        "required": true
+      },
+      {
+        "name": "fingerprint",
+        "sqlType": "text",
+        "required": true
+      },
+      {
+        "name": "service",
+        "sqlType": "text",
+        "required": true
+      },
+      {
+        "name": "occurrence_count",
+        "sqlType": "bigint",
+        "required": true
+      },
+      {
+        "name": "first_seen_at",
+        "sqlType": "timestamptz",
+        "required": true
+      },
+      {
+        "name": "last_seen_at",
+        "sqlType": "timestamptz",
+        "required": true
+      }
+    ],
+    "ores_err_trace_events": [
+      {
+        "name": "id",
+        "sqlType": "uuid",
+        "required": true
+      },
+      {
+        "name": "policy",
+        "sqlType": "text",
+        "required": true
+      },
+      {
+        "name": "fingerprint",
+        "sqlType": "text",
+        "required": true
+      },
+      {
+        "name": "environment",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "error_code",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "error_list",
+        "sqlType": "jsonb",
+        "required": false
+      },
+      {
+        "name": "error_type",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "exception_type",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "file_name",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "message",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "operation",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "release_sha",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "repository",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "routine_id",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "runtime",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "service",
+        "sqlType": "text",
+        "required": true
+      },
+      {
+        "name": "severity",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "source",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "top_frame",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "trace_id",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "occurred_at",
+        "sqlType": "timestamptz",
+        "required": true
+      }
+    ]
+  },
+  "outputs": {
+    "postgres": "ad30e99da2e8dd24a7b11ca7251fce9725a0f607d09ca34ff8b05b87b91f44d3",
+    "diesel": "132ddf452e344e222568e35b2e290091f9e9f19a446240022341eeb278f02f21",
+    "seaorm": "73ed44c146b32af605cb1c6e38893c146b1e6e1e61173c8d9d801239f5444df6"
+  }
+}
