@@ -364,16 +364,20 @@ jobs:
           services:
             sleeper:
               runtime: host
-              command: ["/bin/sleep", "30"]
+              command: ["/bin/sh", "-c", "echo $ > service.pid; exec /bin/sleep 30"]
               working_dir: service
           YAML
           export ORES_COMPOSE_PROCESS_ISOLATION=required
           export ORES_PROC_ISOLATION_BIN="$GITHUB_WORKSPACE/isolation/target/debug/ores-proc-isolation"
           "$GITHUB_WORKSPACE/compose/target/debug/ores-compose"             --skip-zed-pkg             --skip-rpc-gen             --skip-source-sync             up "$root/.ores-compose.yaml" >"$RUNNER_TEMP/compose-proof.log" 2>&1 &
           compose_pid=$!
+          target_pid=''
           cleanup() {
             kill -INT "$compose_pid" 2>/dev/null || true
             wait "$compose_pid" 2>/dev/null || true
+            if [[ -n "$target_pid" ]]; then
+              kill "$target_pid" 2>/dev/null || true
+            fi
           }
           trap cleanup EXIT
           ready=0
@@ -394,8 +398,21 @@ jobs:
             exit 1
           fi
           grep -q '"event":"process_isolation_enabled"' "$RUNNER_TEMP/compose-proof.log"
+          target_pid="$(cat "$root/service/service.pid")"
+          kill -0 "$target_pid"
           kill -INT "$compose_pid"
           wait "$compose_pid"
+          for _ in {1..20}; do
+            if ! kill -0 "$target_pid" 2>/dev/null; then
+              target_pid=''
+              break
+            fi
+            sleep 0.1
+          done
+          if [[ -n "$target_pid" ]] && kill -0 "$target_pid" 2>/dev/null; then
+            echo "sandboxed service pid $target_pid survived ores-compose shutdown" >&2
+            exit 1
+          fi
           trap - EXIT
       - name: Final exact-head guards
         if: always()
