@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
-      SOURCE_SHA: 779269d7c5748e535e17c1fd0f9f8fa37e7ab4ca
+      SOURCE_SHA: 65b0d12ed416e078bda3292ac6e418a01377e57a
     steps:
       - name: Check out exact bmscl-infra fix head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -45,6 +45,39 @@ jobs:
           cargo fmt --manifest-path modules/tenant_runtime/guest-agent/Cargo.toml --all -- --check
           cargo clippy --manifest-path modules/tenant_runtime/guest-agent/Cargo.toml --all-targets -- -D warnings
           cargo test --manifest-path modules/tenant_runtime/guest-agent/Cargo.toml --all-targets
+
+      - name: Prove exact source checkout stayed clean
+        working-directory: source
+        run: git diff --exit-code
+
+  umbrella-full-matrix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      SOURCE_SHA: 7cdd0a0bd5a5f024de2add0156cd770cfd754d60
+    steps:
+      - name: Check out exact umbrella matrix head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: beamscale-test/bmscl-test-e2e
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: source
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify exact source identity
+        working-directory: source
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+
+      - name: Validate fail-closed promotion baseline
+        working-directory: source
+        run: |
+          python3 -m py_compile scripts/verify_baseline.py scripts/aggregate_test_org.py
+          python3 scripts/verify_baseline.py
+          grep -Fq 'phoenix.discovery-v2' test-matrix.yaml
+          grep -Fq 'performance.cold-start-control-plane' test-matrix.yaml
+          grep -Fq 'beamscale/bmscl-cli-gleam' evidence/source-lock.baseline.json
 
       - name: Prove exact source checkout stayed clean
         working-directory: source
