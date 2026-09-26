@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: 0ed8cb608edd26f39a97bbffd1f426c621fc0fb7
+  SOURCE_SHA: 63675d95a2686952dae0751b6424bd3dca81955b
 
 jobs:
   contract-toolchain:
