@@ -1,0 +1,114 @@
+name: proof-scintilla-cli-19
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  SOURCE_SHA: c847e19a1474eaf0123a06a915acaecaf3c234dd
+  ZED_CLI_REV: dbd63f1d87d12c2e8cb9a8c600fae9b79f94e559
+  CARGO_TERM_COLOR: always
+
+jobs:
+  docs-adapter:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out exact Scintilla CLI head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: scintilla-run/scintilla-cli
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+      - name: Verify exact source head
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: stable
+          components: clippy,rustfmt
+      - name: Configure read-only auth for private Git dependencies
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+          echo 'CARGO_NET_GIT_FETCH_WITH_CLI=true' >> "$GITHUB_ENV"
+      - name: Build audited Zed CLI
+        run: |
+          set -euo pipefail
+          cargo install \
+            --locked \
+            --git https://github.com/zed-pkg/zed-cli.git \
+            --rev "$ZED_CLI_REV" \
+            --root "$RUNNER_TEMP/zed-cli" \
+            --bin zed
+          echo "$RUNNER_TEMP/zed-cli/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/zed-cli/bin/zed" --version
+      - name: Resolve Zed dependency graph and generate lock
+        run: |
+          set -euo pipefail
+          zed validate
+          zed install --install-mode copy
+          test -f .zpkg.lock
+          zed validate --require-lock
+      - name: Require shared api-docs vendor materialization
+        run: |
+          test -f .vendor/.zed/oresoftware/api-docs/rust/Cargo.toml
+          grep -F 'name = "ores-api-docs"' .vendor/.zed/oresoftware/api-docs/rust/Cargo.toml
+      - name: Refresh Cargo lock against installed Zed graph
+        run: cargo generate-lockfile
+      - name: Prove generated locks are sufficient under frozen mode
+        run: |
+          set -euo pipefail
+          rm -rf .vendor/.zed
+          zed install --frozen --install-mode copy
+          cargo check --all-targets --locked
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Strict Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Run all tests
+        run: cargo test --all-targets --locked
+      - name: Verify lock-only source mutation
+        run: |
+          set -euo pipefail
+          changed="$(git status --short --untracked-files=all | grep -v '^?? .vendor/' || true)"
+          printf '%s\n' "$changed"
+          test "$(printf '%s\n' "$changed" | sed '/^$/d' | wc -l)" -eq 2
+          printf '%s\n' "$changed" | grep -F 'Cargo.lock'
+          printf '%s\n' "$changed" | grep -F '.zpkg.lock'
+      - name: Check out funded carrier branch for review artifacts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: fiducia-cloud/fiducia-infra
+          ref: proof/scintilla-cli-19-20260925
+          path: _carrier
+          token: ${{ github.token }}
+          persist-credentials: true
+          fetch-depth: 1
+      - name: Persist generated lock artifacts in carrier
+        run: |
+          set -euo pipefail
+          mkdir -p _carrier/proof-artifacts/scintilla-cli-19
+          cp .zpkg.lock _carrier/proof-artifacts/scintilla-cli-19/.zpkg.lock
+          cp Cargo.lock _carrier/proof-artifacts/scintilla-cli-19/Cargo.lock
+          printf '%s\n' "$SOURCE_SHA" > _carrier/proof-artifacts/scintilla-cli-19/source-sha.txt
+          git -C _carrier config user.name github-actions[bot]
+          git -C _carrier config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git -C _carrier add proof-artifacts/scintilla-cli-19
+          if ! git -C _carrier diff --cached --quiet; then
+            git -C _carrier commit -m 'proof: retain scintilla-cli #19 generated locks'
+            git -C _carrier push origin HEAD:proof/scintilla-cli-19-20260925
+          fi
+      - name: Remove private Git auth
+        if: always()
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: git config --global --unset-all url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf || true
