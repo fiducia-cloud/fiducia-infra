@@ -1,4 +1,4 @@
-name: ORE governance exact-head certification
+name: ORE archived-data exact-head certification
 
 on:
   pull_request:
@@ -18,18 +18,18 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: '22'
-      - name: Check out exact head
+      - name: Check out exact repair head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/ores-archived-and-delete-data
-          ref: 68a5c856436845111ce6a92c2c7ddd2a138ecbab
+          ref: 8deb6266a43644fdf683590f4f5314c609d1ddca
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 1
           show-progress: false
       - name: Verify exact source
         run: |
-          test "$(git rev-parse HEAD)" = '68a5c856436845111ce6a92c2c7ddd2a138ecbab'
+          test "$(git rev-parse HEAD)" = '8deb6266a43644fdf683590f4f5314c609d1ddca'
           git diff --check
       - name: Contract and governance admission
         run: |
@@ -38,99 +38,6 @@ jobs:
           npm run layout:check
           env -u GITHUB_REPOSITORY node scripts/check-polyglot-governance.mjs
           npm run safety:audit
-          npm run contracts:check
-      - name: Prove checkout unchanged
-        run: |
-          git diff --exit-code
-          git diff --cached --exit-code
-
-  err-trace:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: '22'
-      - name: Check out exact head
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: ORESoftware/ores-err-trace
-          ref: f8edc2d7c842606b74e0075108af397987860354
-          token: ${{ secrets.ORE_SOURCE_PAT }}
-          persist-credentials: false
-          fetch-depth: 1
-          show-progress: false
-      - name: Verify exact source
-        run: |
-          test "$(git rev-parse HEAD)" = 'f8edc2d7c842606b74e0075108af397987860354'
-          git diff --check
-      - name: Governed runtime surfaces
-        run: |
-          set -euo pipefail
-          node scripts/check-runtime-layout.mjs
-          env -u GITHUB_REPOSITORY node scripts/check-polyglot-governance.mjs
-          node scripts/check-runtime-contract-surfaces.mjs
-      - name: Prove checkout unchanged
-        run: |
-          git diff --exit-code
-          git diff --cached --exit-code
-
-  desktop-bg:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: '22'
-      - name: Check out exact head
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: ORESoftware/ores-desktop-bg-procs
-          ref: 4bddcbe92b5e941f414cade837bab7259747e250
-          token: ${{ secrets.ORE_SOURCE_PAT }}
-          persist-credentials: false
-          fetch-depth: 1
-          show-progress: false
-      - name: Verify exact source
-        run: |
-          test "$(git rev-parse HEAD)" = '4bddcbe92b5e941f414cade837bab7259747e250'
-          git diff --check
-      - name: Contracts and participant parity
-        run: |
-          set -euo pipefail
-          env -u GITHUB_REPOSITORY node scripts/check-polyglot-governance.mjs
-          npm install --no-audit --no-fund
-          npm run contracts:check
-      - name: Prove checkout unchanged
-        run: |
-          git diff --exit-code
-          git diff --cached --exit-code
-
-  mobile-bg:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: '22'
-      - name: Check out exact head
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: ORESoftware/ores-mobile-bg-procs
-          ref: 62b7b3a8ad0160dbf66f4c473ff524bdfd3efb60
-          token: ${{ secrets.ORE_SOURCE_PAT }}
-          persist-credentials: false
-          fetch-depth: 1
-          show-progress: false
-      - name: Verify exact source
-        run: |
-          test "$(git rev-parse HEAD)" = '62b7b3a8ad0160dbf66f4c473ff524bdfd3efb60'
-          git diff --check
-      - name: Contracts and participant parity
-        run: |
-          set -euo pipefail
-          env -u GITHUB_REPOSITORY node scripts/check-polyglot-governance.mjs
-          npm install --no-audit --no-fund
           npm run contracts:check
       - name: Prove checkout unchanged
         run: |
