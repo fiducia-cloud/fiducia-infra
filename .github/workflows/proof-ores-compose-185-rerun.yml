@@ -1,0 +1,145 @@
+name: proof ores-compose 185 rerun
+
+on:
+  push:
+    branches:
+      - proof/ores-local-isolation-20260925
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  COMPOSE_SHA: d6eff87505b5d7c9d9fe0f6d7b1299a82b2106ce
+  PROC_SHA: 0909bd6dd94685488a27d3328c7454c0b8fc0e02
+
+jobs:
+  compose-rust:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact ores-compose head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.COMPOSE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify exact source head
+        run: test "$(git rev-parse HEAD)" = "$COMPOSE_SHA"
+      - name: Configure scoped private Git dependency access
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Install reviewed Rust components
+        run: |
+          rustup toolchain install 1.98.1 --profile minimal --component rustfmt,clippy
+          rustup default 1.98.1
+      - name: Verify exact branch
+        run: |
+          cargo fmt --all --check
+          cargo clippy --all-targets --all-features -- -D warnings
+          cargo test --all-targets --all-features
+      - name: Final exact-head guard
+        if: always()
+        run: test "$(git rev-parse HEAD)" = "$COMPOSE_SHA"
+
+  compose-macos-e2e:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact ores-compose head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.COMPOSE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: compose
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Checkout certified process-isolation head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-proc-isolation-cli
+          ref: ${{ env.PROC_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: isolation
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify exact heads
+        run: |
+          test "$(git -C compose rev-parse HEAD)" = "$COMPOSE_SHA"
+          test "$(git -C isolation rev-parse HEAD)" = "$PROC_SHA"
+      - name: Configure scoped private Git dependency access
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Build and test exact compose head on macOS
+        run: |
+          rustup toolchain install 1.98.1 --profile minimal
+          rustup default 1.98.1
+          cargo build --manifest-path isolation/Cargo.toml --bin ores-proc-isolation
+          cargo test --manifest-path compose/Cargo.toml --all-targets --all-features
+          cargo build --manifest-path compose/Cargo.toml --bin ores-compose
+      - name: Run ores-compose through required same-user isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/ores-compose-local-proof"
+          mkdir -p "$root/service"
+          cat >"$root/.ores-compose.yaml" <<'YAML'
+          schema_version: ores.compose.v1
+          project: local-proof
+          allow_lazy_start: false
+          services:
+            sleeper:
+              runtime: host
+              command: ["/bin/sleep", "30"]
+              working_dir: service
+          YAML
+          export ORES_COMPOSE_PROCESS_ISOLATION=required
+          export ORES_PROC_ISOLATION_BIN="$GITHUB_WORKSPACE/isolation/target/debug/ores-proc-isolation"
+          "$GITHUB_WORKSPACE/compose/target/debug/ores-compose" \
+            --skip-zed-pkg \
+            --skip-rpc-gen \
+            --skip-source-sync \
+            up "$root/.ores-compose.yaml" >"$RUNNER_TEMP/compose-proof.log" 2>&1 &
+          compose_pid=$!
+          cleanup() {
+            kill -INT "$compose_pid" 2>/dev/null || true
+            wait "$compose_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          ready=0
+          for _ in {1..60}; do
+            if grep -q '"event":"compose_ready"' "$RUNNER_TEMP/compose-proof.log"; then
+              ready=1
+              break
+            fi
+            if ! kill -0 "$compose_pid" 2>/dev/null; then
+              cat "$RUNNER_TEMP/compose-proof.log" >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          if [[ "$ready" != 1 ]]; then
+            cat "$RUNNER_TEMP/compose-proof.log" >&2
+            echo "compose did not become ready through ores-proc-isolation" >&2
+            exit 1
+          fi
+          grep -q '"event":"process_isolation_enabled"' "$RUNNER_TEMP/compose-proof.log"
+          kill -INT "$compose_pid"
+          wait "$compose_pid"
+          trap - EXIT
+      - name: Final exact-head guards
+        if: always()
+        run: |
+          test "$(git -C compose rev-parse HEAD)" = "$COMPOSE_SHA"
+          test "$(git -C isolation rev-parse HEAD)" = "$PROC_SHA"
