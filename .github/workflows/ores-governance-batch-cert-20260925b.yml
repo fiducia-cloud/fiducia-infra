@@ -22,14 +22,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/ores-archived-and-delete-data
-          ref: 8deb6266a43644fdf683590f4f5314c609d1ddca
+          ref: 93f9a47649b064a9bfcc31bc0ec0468d3075eee7
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 1
           show-progress: false
       - name: Verify exact source
         run: |
-          test "$(git rev-parse HEAD)" = '8deb6266a43644fdf683590f4f5314c609d1ddca'
+          test "$(git rev-parse HEAD)" = '93f9a47649b064a9bfcc31bc0ec0468d3075eee7'
           git diff --check
       - name: Contract and governance admission
         run: |
