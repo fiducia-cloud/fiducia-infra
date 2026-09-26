@@ -1,0 +1,60 @@
+name: proof-ores-stack-zpkg-head
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prove-zpkg-head:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      ORES_STACK_SHA: 29c47cd9476855339391febd552c60f7fb727d26
+      ZED_CLI_REV: 6ad5713835183ef1f9cc7404ebf209106815f6ee
+    steps:
+      - name: Check out exact ores-stack fix head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-stack
+          ref: ${{ env.ORES_STACK_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: ores-stack
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Prove source identity and one-file change
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C ores-stack rev-parse HEAD)" = "$ORES_STACK_SHA"
+          test "$(git -C ores-stack diff --name-only HEAD^ HEAD)" = ".zpkg.toml"
+          git -C ores-stack diff --check HEAD^ HEAD
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+
+      - name: Install the consumer-pinned Zed CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo install --git https://github.com/zed-pkg/zed-cli.git --rev "$ZED_CLI_REV" --locked zed-cli
+
+      - name: Validate ores-stack package authority
+        working-directory: ores-stack
+        env:
+          ZED_PKG_GITHUB_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ZED_PKG_GITHUB_TOKEN"
+          zed validate
+
+      - name: Prove no source mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C ores-stack rev-parse HEAD)" = "$ORES_STACK_SHA"
+          git -C ores-stack diff --exit-code
