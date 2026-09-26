@@ -361,6 +361,7 @@ jobs:
           cat >"$root/.ores-compose.yaml" <<'YAML'
           schema_version: ores.compose.v1
           project: local-proof
+          allow_lazy_start: false
           services:
             sleeper:
               runtime: host
