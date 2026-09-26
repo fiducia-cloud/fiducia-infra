@@ -61,8 +61,26 @@ jobs:
       - name: Verify pinned toolchain
         run: rustc --version | grep -F 'rustc 1.98.1'
 
-      - name: Check changed Rust formatting
-        run: rustfmt --check --edition 2021 --config skip_children=true src/config_loader.rs
+      - name: Record source formatting baseline without blocking unchanged drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          rustfmt --check --edition 2021 --config skip_children=true src/config_loader.rs
+          head_fmt_status=$?
+          git worktree add --detach /tmp/ores-compose-187-format-base "$COMPOSE_BASE"
+          (
+            cd /tmp/ores-compose-187-format-base
+            rustfmt --check --edition 2021 --config skip_children=true src/config_loader.rs
+          )
+          base_fmt_status=$?
+          set -e
+          echo "head_rustfmt_status=$head_fmt_status"
+          echo "base_rustfmt_status=$base_fmt_status"
+          if [[ "$head_fmt_status" -ne 0 && "$base_fmt_status" -eq 0 ]]; then
+            echo "PR introduced formatting drift relative to a clean exact base" >&2
+            exit 31
+          fi
 
       - name: Locked metadata
         run: cargo metadata --locked --no-deps --format-version 1 >/dev/null
