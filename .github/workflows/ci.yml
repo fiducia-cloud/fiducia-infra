@@ -177,7 +177,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
-      ORES_ERR_TRACE_SOURCE_SHA: 405f3b0b6bd4f8cb913f7d26d9474423d4201809
+      ORES_ERR_TRACE_SOURCE_SHA: dbcee673aef6a3dbc478d28a87715871b4cd9584
       TJSV_SHA: db0f1e66b2a65cad43c909aa558ae00c6a91578c
     steps:
       - name: Check out exact proof head
@@ -193,7 +193,7 @@ jobs:
           set -euo pipefail
           test "$(git hash-object tmp/proofs/ores-err-trace/contracts/typespec/main.tsp)" = "6536556490bd3f7556f78fd4533335cd3da21a43"
           test "$(git hash-object tmp/proofs/ores-err-trace/contracts/json-schema/contract.schema.json)" = "f52ec9f0ca9512edb5c45f9b028f86cc3a1d7889"
-          test "$(git hash-object tmp/proofs/ores-err-trace/scripts/generate-storage-projections.mjs)" = "d114e14f266912097d0f16c059b85193d73b64bb"
+          test "$(git hash-object tmp/proofs/ores-err-trace/scripts/generate-storage-projections.mjs)" = "3bfb0a3e7b48aecdaff32a2e125fb53292873bde"
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
