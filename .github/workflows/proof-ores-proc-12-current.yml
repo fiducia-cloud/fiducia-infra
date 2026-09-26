@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: 816b99fa773a838b332c6a44e53179b4d83ef08d
+  SOURCE_SHA: 6c32be23e67f3bd17779b8f0cefaa83fe58d61f3
 
 jobs:
   rust-and-policy:
