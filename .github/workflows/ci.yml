@@ -261,6 +261,7 @@ jobs:
           cargo test --all-targets --all-features
           cargo build --bin ores-compose
       - name: Prove same-user Seatbelt containment
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
