@@ -11,82 +11,29 @@ permissions:
   contents: read
 
 jobs:
-  certify:
+  archived-delete:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 15
+    env:
+      GITHUB_REPOSITORY: ORESoftware/ores-archived-and-delete-data
     steps:
-      - name: Check out certification harness
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          persist-credentials: false
-          show-progress: false
-
-      - name: Install Node 22
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: '22'
-
-      - name: Check out archived/delete exact head
+      - name: Check out exact head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/ores-archived-and-delete-data
           ref: 68a5c856436845111ce6a92c2c7ddd2a138ecbab
           token: ${{ secrets.ORE_SOURCE_PAT }}
-          path: archived
           persist-credentials: false
-          show-progress: false
           fetch-depth: 1
-
-      - name: Check out err-trace exact head
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: ORESoftware/ores-err-trace
-          ref: f8edc2d7c842606b74e0075108af397987860354
-          token: ${{ secrets.ORE_SOURCE_PAT }}
-          path: err-trace
-          persist-credentials: false
           show-progress: false
-          fetch-depth: 1
-
-      - name: Check out desktop-bg exact head
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: ORESoftware/ores-desktop-bg-procs
-          ref: 4bddcbe92b5e941f414cade837bab7259747e250
-          token: ${{ secrets.ORE_SOURCE_PAT }}
-          path: desktop
-          persist-credentials: false
-          show-progress: false
-          fetch-depth: 1
-
-      - name: Check out mobile-bg exact head
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: ORESoftware/ores-mobile-bg-procs
-          ref: 62b7b3a8ad0160dbf66f4c473ff524bdfd3efb60
-          token: ${{ secrets.ORE_SOURCE_PAT }}
-          path: mobile
-          persist-credentials: false
-          show-progress: false
-          fetch-depth: 1
-
-      - name: Verify immutable source identities
-        shell: bash
+      - name: Verify exact source
         run: |
-          set -euo pipefail
-          test "$(git -C archived rev-parse HEAD)" = "68a5c856436845111ce6a92c2c7ddd2a138ecbab"
-          test "$(git -C err-trace rev-parse HEAD)" = "f8edc2d7c842606b74e0075108af397987860354"
-          test "$(git -C desktop rev-parse HEAD)" = "4bddcbe92b5e941f414cade837bab7259747e250"
-          test "$(git -C mobile rev-parse HEAD)" = "62b7b3a8ad0160dbf66f4c473ff524bdfd3efb60"
-          git -C archived diff --check
-          git -C err-trace diff --check
-          git -C desktop diff --check
-          git -C mobile diff --check
-
-      - name: Certify archived/delete contract and governance admission
-        working-directory: archived
-        shell: bash
+          test "$(git rev-parse HEAD)" = '68a5c856436845111ce6a92c2c7ddd2a138ecbab'
+          git diff --check
+      - name: Contract and governance admission
         run: |
           set -euo pipefail
           npm install --no-audit --no-fund
@@ -94,30 +41,106 @@ jobs:
           node scripts/check-polyglot-governance.mjs
           npm run safety:audit
           npm run contracts:check
+      - name: Prove checkout unchanged
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
 
-      - name: Certify err-trace governed runtime surfaces
-        working-directory: err-trace
-        shell: bash
+  err-trace:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GITHUB_REPOSITORY: ORESoftware/ores-err-trace
+    steps:
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+      - name: Check out exact head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-err-trace
+          ref: f8edc2d7c842606b74e0075108af397987860354
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+      - name: Verify exact source
+        run: |
+          test "$(git rev-parse HEAD)" = 'f8edc2d7c842606b74e0075108af397987860354'
+          git diff --check
+      - name: Governed runtime surfaces
         run: |
           set -euo pipefail
           node scripts/check-runtime-layout.mjs
           node scripts/check-polyglot-governance.mjs
           node scripts/check-runtime-contract-surfaces.mjs
+      - name: Prove checkout unchanged
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
 
-      - name: Certify desktop contracts and participant parity
-        working-directory: desktop
-        shell: bash
+  desktop-bg:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GITHUB_REPOSITORY: ORESoftware/ores-desktop-bg-procs
+    steps:
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+      - name: Check out exact head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-desktop-bg-procs
+          ref: 4bddcbe92b5e941f414cade837bab7259747e250
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+      - name: Verify exact source
+        run: |
+          test "$(git rev-parse HEAD)" = '4bddcbe92b5e941f414cade837bab7259747e250'
+          git diff --check
+      - name: Contracts and participant parity
         run: |
           set -euo pipefail
           node scripts/check-polyglot-governance.mjs
           npm install --no-audit --no-fund
           npm run contracts:check
+      - name: Prove checkout unchanged
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
 
-      - name: Certify mobile contracts and participant parity
-        working-directory: mobile
-        shell: bash
+  mobile-bg:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GITHUB_REPOSITORY: ORESoftware/ores-mobile-bg-procs
+    steps:
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+      - name: Check out exact head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-mobile-bg-procs
+          ref: 62b7b3a8ad0160dbf66f4c473ff524bdfd3efb60
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+      - name: Verify exact source
+        run: |
+          test "$(git rev-parse HEAD)" = '62b7b3a8ad0160dbf66f4c473ff524bdfd3efb60'
+          git diff --check
+      - name: Contracts and participant parity
         run: |
           set -euo pipefail
           node scripts/check-polyglot-governance.mjs
           npm install --no-audit --no-fund
           npm run contracts:check
+      - name: Prove checkout unchanged
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
