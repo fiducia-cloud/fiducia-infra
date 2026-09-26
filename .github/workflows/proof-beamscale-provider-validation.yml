@@ -1,0 +1,100 @@
+name: proof-beamscale-provider-validation
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GLEAM_SHA: 89181180cda0540cb766c710cd1dcffc3ff13944
+  RUST_SHA: 14d5a35814d729d6fdf393c7ca39892b62d01860
+
+jobs:
+  gleam-provider-validation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: beamscale/bmscl-cli-gleam
+          ref: ${{ env.GLEAM_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+      - name: Verify exact source head
+        run: test "$(git rev-parse HEAD)" = "$GLEAM_SHA"
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
+        with:
+          otp-version: "27"
+          gleam-version: "1.15.0"
+          rebar3-version: "3.24"
+      - run: gleam deps download
+      - run: gleam format --check src
+      - run: gleam check
+      - run: gleam build
+      - name: Provider validation regressions
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/provider-tests"
+          erlc -DTEST -o "$RUNNER_TEMP/provider-tests" \
+            src/bmscl_deploy_ffi.erl \
+            src/bmscl_provider_bundle_ffi.erl \
+            src/bmscl_provider_deploy_ffi.erl
+          erlc -o "$RUNNER_TEMP/provider-tests" test/bmscl_provider_deploy_tests.erl
+          erl -noshell -pa "$RUNNER_TEMP/provider-tests" \
+            -eval 'case eunit:test(bmscl_provider_deploy_tests, [verbose]) of ok -> halt(0); _ -> halt(1) end.'
+      - name: Dev snapshot regressions
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/dev-tests"
+          erlc -DTEST -o "$RUNNER_TEMP/dev-tests" src/bmscl_dev_ffi.erl
+          erlc -o "$RUNNER_TEMP/dev-tests" test/bmscl_dev_state_tests.erl
+          erl -noshell -pa "$RUNNER_TEMP/dev-tests" \
+            -eval 'case eunit:test(bmscl_dev_state_tests, [verbose]) of ok -> halt(0); _ -> halt(1) end.'
+      - name: Prove source unchanged
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
+
+  rust-provider-validation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: beamscale/bmscl-cli
+          ref: ${{ env.RUST_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+      - name: Verify exact source head
+        run: test "$(git rev-parse HEAD)" = "$RUST_SHA"
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: stable
+          components: rustfmt,clippy
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
+        with:
+          otp-version: "29.1.1"
+          version-type: strict
+      - name: Compile persistent Erlang dev bridge
+        run: |
+          mkdir -p "$RUNNER_TEMP/bmscl-dev-bridge"
+          erlc -o "$RUNNER_TEMP/bmscl-dev-bridge" support/bmscl_dev_bridge.erl
+          test -f "$RUNNER_TEMP/bmscl-dev-bridge/bmscl_dev_bridge.beam"
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo test --all-targets
+      - run: cargo fmt --all -- --check
+      - name: Exhaust deployment admission state space
+        run: |
+          rustc --edition=2021 -D warnings conformance/formal_model.rs -o "$RUNNER_TEMP/formal-model"
+          "$RUNNER_TEMP/formal-model"
+      - name: Prove source unchanged
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
