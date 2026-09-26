@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 env:
-  CLI_HEAD: '61d4301a40d4e6ead2f7dcc30d8c2380c7653007'
+  CLI_HEAD: '22ecb41507cc35086a691072478b623e961b963f'
   TJSV_SHA: 'bd503465dab8c5148fee722b443ed04ff126c9bf'
 
 jobs:
@@ -88,7 +88,7 @@ jobs:
       - name: Enforce source-AST governance on exact head
         working-directory: source
         env:
-          GITHUB_REPOSITORY: ORESoftware/ores-cli
+          ORES_SOURCE_REPOSITORY: ORESoftware/ores-cli
         run: |
           set -euo pipefail
           node --check scripts/check-source-ast-governance.mjs
