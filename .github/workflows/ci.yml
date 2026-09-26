@@ -178,9 +178,9 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     env:
-      PROC_SHA: 0909bd6dd94685488a27d3328c7454c0b8fc0e02
-      COMPOSE_SHA: 75ad9c23ae4255a0b71bc6633d1cfb5802fc8c8a
-      COMPOSE_BASE_SHA: fbfad966f9770a9a8d3895880523280324b4ddc6
+      PROC_SHA: 83c69f7599e4da210dfa7838a9a516b7f38a4d64
+      COMPOSE_SHA: 6069c51b64143b5a3528d5e6e494a0b32aa97bf2
+      COMPOSE_BASE_SHA: 26e331f458c9802727802514b380ff49ebc7270a
     steps:
       - name: Checkout exact ores-compose base
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -433,7 +433,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
-      SOURCE_SHA: 0909bd6dd94685488a27d3328c7454c0b8fc0e02
+      SOURCE_SHA: 83c69f7599e4da210dfa7838a9a516b7f38a4d64
     steps:
       - name: Checkout exact source head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
