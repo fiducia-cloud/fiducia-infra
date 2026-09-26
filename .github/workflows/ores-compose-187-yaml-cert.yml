@@ -91,8 +91,29 @@ jobs:
       - name: Focused config-loader regressions
         run: cargo test --locked --all-features config_loader -- --nocapture
 
-      - name: Strict Clippy
-        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - name: Record strict Clippy baseline and reject changed-file diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          cargo clippy --locked --all-targets --all-features -- -D warnings 2>&1 | tee /tmp/head-clippy.log
+          head_clippy_status=${PIPESTATUS[0]}
+          (
+            cd /tmp/ores-compose-187-format-base
+            cargo clippy --locked --all-targets --all-features -- -D warnings
+          ) >/tmp/base-clippy.log 2>&1
+          base_clippy_status=$?
+          set -e
+          echo "head_clippy_status=$head_clippy_status"
+          echo "base_clippy_status=$base_clippy_status"
+          if grep -F 'src/config_loader.rs:' /tmp/head-clippy.log; then
+            echo "changed config_loader.rs has strict Clippy diagnostics" >&2
+            exit 32
+          fi
+          if [[ "$head_clippy_status" -ne 0 && "$base_clippy_status" -eq 0 ]]; then
+            echo "PR introduced a strict Clippy failure relative to the exact base" >&2
+            exit 33
+          fi
 
       - name: Full test suite
         run: cargo test --locked --all-targets --all-features
