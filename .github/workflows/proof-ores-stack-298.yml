@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: f6e41acd2a99cbea44087e9c86087305eb3ec2cb
+  SOURCE_SHA: 9f71eefc57a74554cac838ead4891d303aed3f2e
 
 jobs:
   contract-toolchain:
@@ -36,6 +36,7 @@ jobs:
           grep -F 'typespec-json-schema-validator/archive/2f6a5e1564c2a52af0e61e5b47a983b145b28884.tar.gz' package.json
           grep -F 'check:route-manifest' package.json | grep -F -- '--int64-strategy=number'
           grep -F 'revalidateSecs: uint64 | null;' contracts/route-manifest.tsp
+          grep -F '"revalidateSecs": { "type": ["integer", "null"], "minimum": 0, "maximum": 18446744073709551615 }' contracts/route-manifest.schema.json
       - name: Install Node 22
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
