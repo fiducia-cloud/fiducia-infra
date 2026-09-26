@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 35
     env:
       SOURCE_REPO: ORESoftware/ores-proc-isolation-cli
-      SOURCE_SHA: 7361ddbb527eb34dba1b6fdc1266fe3466e55f73
+      SOURCE_SHA: 4a727c4f20b95f7222093325fdcbae544b514f74
     steps:
       - name: Checkout exact source head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
