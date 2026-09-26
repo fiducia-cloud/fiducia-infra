@@ -1,0 +1,125 @@
+name: proof-vector-retrieval-private-deps
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prove-vector-retrieval-heads:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      API_SHA: 736fcc5962f8e1bb7963384b359621860cc53591
+      WORKER_SHA: 4241456b354668f0e5da2ac5ac54968d4dc815cb
+      CLIENTS_SHA: 95deb2e6608a57fd178e81bc600a811121392ec7
+    steps:
+      - name: Check out exact API head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ores-vector-embedding/ores-vector-embedding-api-server.rs
+          ref: ${{ env.API_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: api
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Check out exact retrieval-worker head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ores-vector-embedding/ores-vector-embedding-lambdas
+          ref: ${{ env.WORKER_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: worker
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Check out exact clients head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ores-vector-embedding/ores-vector-embedding-clients
+          ref: ${{ env.CLIENTS_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: clients
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify exact source identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C api rev-parse HEAD)" = "$API_SHA"
+          test "$(git -C worker rev-parse HEAD)" = "$WORKER_SHA"
+          test "$(git -C clients rev-parse HEAD)" = "$CLIENTS_SHA"
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "22"
+
+      - name: Resolve API private Zed graph exactly as the source repo does
+        working-directory: api
+        env:
+          ZED_PKG_GITHUB_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ZED_PKG_GITHUB_TOKEN"
+          bash scripts/install-zed-deps.sh
+
+      - name: Test API retrieval boundary
+        working-directory: api
+        run: |
+          set -euo pipefail
+          cargo test --all-targets
+          cargo clippy --all-targets -- -D warnings
+          cargo fmt --all -- --check
+
+      - name: Resolve worker private Zed graph exactly as the source repo does
+        working-directory: worker
+        env:
+          ZED_PKG_GITHUB_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ZED_PKG_GITHUB_TOKEN"
+          bash scripts/install-zed-deps.sh
+
+      - name: Test authorized retrieval worker
+        working-directory: worker
+        run: |
+          set -euo pipefail
+          cargo test --all-targets
+          cargo clippy --all-targets -- -D warnings
+          cargo fmt --all -- --check
+
+      - name: Resolve clients private Zed graph exactly as the source repo does
+        working-directory: clients
+        env:
+          ZED_PKG_GITHUB_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ZED_PKG_GITHUB_TOKEN"
+          bash scripts/install-zed-deps.sh
+
+      - name: Test client contract projection and parity
+        working-directory: clients
+        run: |
+          set -euo pipefail
+          npm install
+          npm test
+
+      - name: Prove source heads remained immutable
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C api rev-parse HEAD)" = "$API_SHA"
+          test "$(git -C worker rev-parse HEAD)" = "$WORKER_SHA"
+          test "$(git -C clients rev-parse HEAD)" = "$CLIENTS_SHA"
+          git -C api diff --exit-code
+          git -C worker diff --exit-code
+          git -C clients diff --exit-code
