@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
-      SOURCE_SHA: 3d5a8d71299300dcf0c6a00163a78c3d9de55031
+      SOURCE_SHA: 779269d7c5748e535e17c1fd0f9f8fa37e7ab4ca
     steps:
       - name: Check out exact bmscl-infra fix head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -33,6 +33,7 @@ jobs:
           grep -Fq 'if chunk.is_empty() {' source/modules/tenant_runtime/guest-agent/src/artifact_receive.rs
           grep -Fq 'zero_length_frame_is_rejected_before_artifact_progress' source/modules/tenant_runtime/guest-agent/tests/artifact_receive.rs
           grep -Fq 'execution_class: "phoenix".into()' source/modules/tenant_runtime/guest-agent/tests/artifact_receive.rs
+          grep -Fq 'struct ProxyConfig {' source/modules/tenant_runtime/guest-agent/src/main.rs
 
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
