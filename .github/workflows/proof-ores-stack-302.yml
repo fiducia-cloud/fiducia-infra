@@ -1,0 +1,41 @@
+name: proof ores-stack 302
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/proof-ores-stack-302.yml'
+  push:
+    branches:
+      - proof/ores-stack-302-20260925
+
+permissions:
+  contents: read
+
+jobs:
+  exact-head:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SOURCE_SHA: 363ed3a0d757d058de90a55ed86a12f153e52d68
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-stack
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+      - run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
+      - name: CLI checks
+        run: |
+          rustfmt --edition 2024 --check crates/ores-stack-cli/src/benchmark_cli.rs
+          cargo clippy -p ores-stack-cli --all-targets -- -D warnings
+          cargo test -p ores-stack-cli benchmark_cli
+      - name: Full CLI tests
+        run: cargo test -p ores-stack-cli
+      - if: always()
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
