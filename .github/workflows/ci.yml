@@ -320,6 +320,9 @@ jobs:
               group: local
               command: [/bin/sh, -c, "printf denied > escape/escaped.txt"]
               working_directory: /tmp/ores-proof-work
+            local-curl:
+              group: local
+              command: [/usr/bin/curl, --fail, --silent, http://127.0.0.1:18082]
           YAML
           actual="$(isolation/target/debug/ores-proc-isolation run identity --config /tmp/ores-proof-policy.yaml)"
           test "$actual" = "$(id -u)"
@@ -335,6 +338,12 @@ jobs:
             exit 1
           fi
           test ! -e /tmp/ores-proof-outside/escaped.txt
+          isolation/target/debug/examples/loopback_fixture 127.0.0.1:18082 >"$RUNNER_TEMP/ores-local-loopback.log" 2>&1 &
+          server_pid=$!
+          sleep 1
+          isolation/target/debug/ores-proc-isolation run local-curl --config /tmp/ores-proof-policy.yaml >/dev/null
+          kill "$server_pid" 2>/dev/null || true
+          wait "$server_pid" 2>/dev/null || true
           sleep 30 &
           host_pid=$!
           trap 'kill "$host_pid" 2>/dev/null || true' EXIT
