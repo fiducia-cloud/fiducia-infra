@@ -50,7 +50,7 @@ function deref(schema) {
 
 function sqlType(name, schema) {
   schema = deref(schema);
-  if (name === 'id' || name.endsWith('_id')) return 'uuid';
+  if (name === 'id') return 'uuid';
   if (name.endsWith('_at')) return 'timestamptz';
   if (schema?.type === 'integer') return 'bigint';
   if (schema?.type === 'boolean') return 'boolean';
@@ -113,7 +113,7 @@ const sql = `-- GENERATED. DO NOT EDIT.\n-- Source: parity-admissible TypeSpec +
 function dieselTable(name, cols) {
   const lines = cols.map(([col, schema, required]) => {
     let t = dieselType(col, schema);
-    if (!required && col !== 'id' && !col.endsWith('_at') && schema?.type !== 'array') t = `Nullable<${t}>`;
+    if (!required && col !== 'id' && !col.endsWith('_at')) t = `Nullable<${t}>`;
     return `        ${col} -> ${t},`;
   });
   return `diesel::table! {\n    ${name} (id) {\n${lines.join('\n')}\n    }\n}`;
@@ -122,7 +122,7 @@ const diesel = `// GENERATED. DO NOT EDIT. contract_ir_id=${ir.irId}\n${dieselTa
 
 function seaField([name, schema, required]) {
   let ty = ({ Uuid: 'Uuid', DateTimeWithTime: 'DateTimeWithTime', BigInt: 'i64', Boolean: 'bool', Json: 'Json', Text: 'String' })[seaType(name, schema)];
-  if (!required && name !== 'id' && !name.endsWith('_at') && schema?.type !== 'array') ty = `Option<${ty}>`;
+  if (!required && name !== 'id' && !name.endsWith('_at')) ty = `Option<${ty}>`;
   const attrs = name === 'id' ? '#[sea_orm(primary_key, auto_increment = false)]\n    ' : '';
   return `    ${attrs}pub ${name}: ${ty},`;
 }
