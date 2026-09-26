@@ -1,4 +1,4 @@
-name: proof ores-compose 185 rerun
+name: proof ores-compose 195 rerun
 
 on:
   pull_request:
@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 env:
-  COMPOSE_SHA: 75ad9c23ae4255a0b71bc6633d1cfb5802fc8c8a
-  PROC_SHA: 0909bd6dd94685488a27d3328c7454c0b8fc0e02
+  COMPOSE_SHA: 6069c51b64143b5a3528d5e6e494a0b32aa97bf2
+  PROC_SHA: 83c69f7599e4da210dfa7838a9a516b7f38a4d64
 
 jobs:
   compose-rust:
