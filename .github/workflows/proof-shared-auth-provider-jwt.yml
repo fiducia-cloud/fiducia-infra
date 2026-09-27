@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  SHARED_AUTH_SOURCE_SHA: c720f19ea974ed57a5d562813edb23f81c6eb37d
+  SHARED_AUTH_SOURCE_SHA: 322559cc22e23fce222de9674769ac8498cf3ad1
 
 jobs:
   provider-jwt:
