@@ -1,0 +1,17 @@
+name: proof ORES comparisons runtime all 18
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/proof-ores-comparisons-runtime-18.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-18:
+    uses: ORESoftware/ores-comparisons/.github/workflows/runtime-all-18.yml@ebcd846ee5c7f5f5ea7f49d402f0db57407974c1
+    secrets:
+      COMPARISON_REPO_READ_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
