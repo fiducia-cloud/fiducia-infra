@@ -9,39 +9,163 @@
   },
   "tables": {
     "ores_err_trace_fingerprints": [
-      {"name":"id","sqlType":"uuid","required":true},
-      {"name":"policy","sqlType":"text","required":true},
-      {"name":"fingerprint","sqlType":"text","required":true},
-      {"name":"service","sqlType":"text","required":true},
-      {"name":"occurrence_count","sqlType":"bigint","required":true},
-      {"name":"first_seen_at","sqlType":"timestamptz","required":true},
-      {"name":"last_seen_at","sqlType":"timestamptz","required":true}
+      {
+        "name": "id",
+        "sqlType": "uuid",
+        "required": true
+      },
+      {
+        "name": "policy",
+        "sqlType": "text",
+        "required": true
+      },
+      {
+        "name": "fingerprint",
+        "sqlType": "text",
+        "required": true
+      },
+      {
+        "name": "service",
+        "sqlType": "text",
+        "required": true
+      },
+      {
+        "name": "occurrence_count",
+        "sqlType": "bigint",
+        "required": true
+      },
+      {
+        "name": "first_seen_at",
+        "sqlType": "timestamptz",
+        "required": true
+      },
+      {
+        "name": "last_seen_at",
+        "sqlType": "timestamptz",
+        "required": true
+      }
     ],
     "ores_err_trace_events": [
-      {"name":"id","sqlType":"uuid","required":true},
-      {"name":"policy","sqlType":"text","required":true},
-      {"name":"fingerprint","sqlType":"text","required":true},
-      {"name":"environment","sqlType":"text","required":false},
-      {"name":"error_code","sqlType":"text","required":false},
-      {"name":"error_list","sqlType":"jsonb","required":false},
-      {"name":"error_type","sqlType":"text","required":false},
-      {"name":"exception_type","sqlType":"text","required":false},
-      {"name":"file_name","sqlType":"text","required":false},
-      {"name":"message","sqlType":"text","required":false},
-      {"name":"operation","sqlType":"text","required":false},
-      {"name":"otel_span_id","sqlType":"text","required":false},
-      {"name":"otel_trace_id","sqlType":"text","required":false},
-      {"name":"parent_trace_id","sqlType":"text","required":false},
-      {"name":"release_sha","sqlType":"text","required":false},
-      {"name":"repository","sqlType":"text","required":false},
-      {"name":"routine_id","sqlType":"text","required":false},
-      {"name":"runtime","sqlType":"text","required":false},
-      {"name":"service","sqlType":"text","required":true},
-      {"name":"severity","sqlType":"text","required":false},
-      {"name":"source","sqlType":"text","required":false},
-      {"name":"top_frame","sqlType":"text","required":false},
-      {"name":"trace_id","sqlType":"text","required":false},
-      {"name":"occurred_at","sqlType":"timestamptz","required":true}
+      {
+        "name": "id",
+        "sqlType": "uuid",
+        "required": true
+      },
+      {
+        "name": "policy",
+        "sqlType": "text",
+        "required": true
+      },
+      {
+        "name": "fingerprint",
+        "sqlType": "text",
+        "required": true
+      },
+      {
+        "name": "environment",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "error_code",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "error_list",
+        "sqlType": "jsonb",
+        "required": false
+      },
+      {
+        "name": "error_type",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "exception_type",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "file_name",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "message",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "operation",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "otel_span_id",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "otel_trace_id",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "parent_trace_id",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "release_sha",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "repository",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "routine_id",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "runtime",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "service",
+        "sqlType": "text",
+        "required": true
+      },
+      {
+        "name": "severity",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "source",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "top_frame",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "trace_id",
+        "sqlType": "text",
+        "required": false
+      },
+      {
+        "name": "occurred_at",
+        "sqlType": "timestamptz",
+        "required": true
+      }
     ]
   },
   "outputs": {
