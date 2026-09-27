@@ -33,7 +33,7 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           git diff --check
-          git grep -n 'unsafe' -- '*.rs' && exit 1 || true
+          grep -F 'unsafe_code = "forbid"' Cargo.toml
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           toolchain: 1.88.0
