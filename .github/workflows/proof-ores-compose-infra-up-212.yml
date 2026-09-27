@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  COMPOSE_SHA: 790d22cc9711c8f954075dc580ce309f6b9b202b
+  COMPOSE_SHA: e6bac6a97ff05a46444664032b79be48604722a6
 
 jobs:
   rust-and-postgres:
@@ -69,7 +69,7 @@ jobs:
           cleanup() {
             kill -INT "$pid" 2>/dev/null || true
             wait "$pid" 2>/dev/null || true
-            docker ps -aq --filter 'ancestor=postgres:16-alpine' | xargs -r docker rm -f || true
+            docker ps -aq --filter 'ancestor=postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea' | xargs -r docker rm -f || true
           }
           trap cleanup EXIT
 
@@ -101,7 +101,7 @@ jobs:
           trap - EXIT
 
           cat "$log"
-          if docker ps -a --format '{{.Image}} {{.Names}}' | grep -q 'postgres:16-alpine'; then
+          if docker ps -a --format '{{.Image}} {{.Names}}' | grep -q 'postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea'; then
             echo "PostgreSQL OCI resource leaked after clean shutdown" >&2
             docker ps -a
             exit 1
