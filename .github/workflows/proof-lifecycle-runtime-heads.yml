@@ -12,7 +12,7 @@ permissions:
 
 env:
   BEAMSCALE_SOURCE_SHA: f07999a74e8c49cbea728b6cacd49dad8868e1a1
-  SCINTILLA_SOURCE_SHA: bc83c0c967e4b1ebd112b47629cd801e012a22f9
+  SCINTILLA_SOURCE_SHA: e1691ce66b2377f3757ad2eb05cc10d6df7324a1
 
 jobs:
   beamscale-supervisor:
@@ -92,7 +92,19 @@ jobs:
         working-directory: scintilla
         run: gleam format --check src/gleam_lambda_runner/actors.gleam
 
-      - name: Compile changed lifecycle surface with warnings as errors
+      - name: Prove durable workflow activity uses lifecycle admission
+        working-directory: scintilla
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F 'lambda_invocation_observer:invoke(' src/workflow_engine.erl
+          if grep -F 'lambda_child_runner:invoke(' src/workflow_engine.erl; then
+            echo 'workflow_engine must not bypass lifecycle admission for durable activities' >&2
+            exit 1
+          fi
+          grep -F 'FOR UPDATE SKIP LOCKED' src/workflow_store.erl
+
+      - name: Compile changed lifecycle and durable-work surfaces with warnings as errors
         working-directory: scintilla
         shell: bash
         run: |
@@ -105,6 +117,7 @@ jobs:
             src/lambda_host_lifecycle_socket.erl \
             src/lambda_invocation_observer.erl \
             src/lambda_runtime_supervisor.erl \
+            src/workflow_engine.erl \
             test/lambda_host_lifecycle_tests.erl \
             test/lambda_host_lifecycle_socket_tests.erl
 
