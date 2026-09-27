@@ -179,7 +179,7 @@ jobs:
     env:
       PROOF_ROOT: tmp/proofs/ores-err-trace-correlation
       TJSV_SHA: db0f1e66b2a65cad43c909aa558ae00c6a91578c
-      UPSTREAM_SHA: 2a50884cf82b16f2b49e7ab116a6a5d4028035a7
+      UPSTREAM_SHA: b2faec2f57a1fcd1f28cf738e24de6af63078d0b
     steps:
       - name: Check out exact proof head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -201,15 +201,15 @@ jobs:
           test "$(git hash-object "$root/src/gleam/src/ores_err_trace_ffi.erl")" = "97bc4ac384c3a0e6ca4199d428948111e5e9be58"
           test "$(git hash-object "$root/src/gleam/test/ores_err_trace_test.gleam")" = "47f503c484e22fd67cace2ff449d3a2ac8885712"
           test "$(git hash-object "$root/src/golang/errtrace.go")" = "1cffbf14d574bd113a54e5f8521808b401b3aef5"
-          test "$(git hash-object "$root/src/golang/errtrace_test.go")" = "e9fb600f114aaaa97103644a9ace355e17a80670"
+          test "$(git hash-object "$root/src/golang/errtrace_test.go")" = "e2961c68c1b9c97479393f2275c8108c6a23d674"
           test "$(git hash-object "$root/src/golang/go.mod")" = "5ab8e82275458a9247a04d59109a743ec7e8901e"
           test "$(git hash-object "$root/src/golang/public_api_test.go")" = "8cc7f398afb49aeab23cae8425969338e1ae62aa"
           test "$(git hash-object "$root/src/rust/Cargo.toml")" = "cc1776f3f1775bc23e0288891bf5541b79e99a7b"
           test "$(git hash-object "$root/src/rust/src/contract.rs")" = "6abb826d9122491b82115eb54f752c7ff657a103"
-          test "$(git hash-object "$root/src/rust/src/lib.rs")" = "a09b20b9f2138b8a595fce9955a0658c7d8662fb"
-          test "$(git hash-object "$root/src/rust/tests/contract_surface.rs")" = "6a635fd2cda4a95395a86bad6482f05cc91ae047"
-          test "$(git hash-object "$root/src/rust/tests/dd_compat.rs")" = "2306d1ff9ce3c9a36d3f0a2ad9c75fc969ef686c"
-          test "$(git hash-object "$root/src/rust/tests/parity.rs")" = "f0fad765ed5e956d976c124371e1227003a76495"
+          test "$(git hash-object "$root/src/rust/src/lib.rs")" = "2acd762283b1a495e8e64a4f3e2907e4dab811fa"
+          test "$(git hash-object "$root/src/rust/tests/contract_surface.rs")" = "bd0741d57140f7638b85c45db414805c0066b0e0"
+          test "$(git hash-object "$root/src/rust/tests/dd_compat.rs")" = "0c872aed40daa0d612155935abf83f3dd4168d63"
+          test "$(git hash-object "$root/src/rust/tests/parity.rs")" = "aae8f2d25bd9c16f2b56535eb53f4de6082e98ef"
           test "$(git hash-object "$root/src/typescript/package.json")" = "69883bc304892d99124bc12a5a1f8ae65bf25f69"
           test "$(git hash-object "$root/src/typescript/src/index.test.ts")" = "8f2a09d92ef4277bec8e78b7e28430c937bd98fb"
           test "$(git hash-object "$root/src/typescript/src/index.ts")" = "a032c467567ab45f2b3ca962f750b5e121132bd4"
@@ -273,7 +273,7 @@ jobs:
       - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
         with:
           otp-version: '27'
-          gleam-version: '1.6.2'
+          gleam-version: '1.14.0'
           rebar3-version: '3'
       - name: Test Gleam
         working-directory: tmp/proofs/ores-err-trace-correlation/src/gleam
