@@ -1,0 +1,45 @@
+name: proof ORES compose governance 229
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/proof-ores-compose-229-governance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_SHA: 8be228be209b32b049a61250006c4e8c1d5cefb6
+
+jobs:
+  governance-conformance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact ores-compose head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify exact source head
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+
+      - name: Validate governance and conformance authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s governance/README.md
+          python3 -m json.tool conformance/cases/local-process-isolation.v1.json >/dev/null
+          grep -q "governance/\*\*" .github/workflows/conformance-boundary.yml
+          node --check conformance/check.mjs
+          node conformance/check.mjs
+
+      - name: Final exact-head guard
+        if: always()
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
