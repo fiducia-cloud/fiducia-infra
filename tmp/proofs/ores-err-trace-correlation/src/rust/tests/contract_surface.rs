@@ -47,12 +47,10 @@ fn public_contract_surface_is_externally_usable() {
         &envelope.fingerprint,
     );
     assert!(singleton.requires_lock);
-    assert!(
-        singleton
-            .lock_key
-            .as_ref()
-            .is_some_and(|key| key.chars().count() <= 512)
-    );
+    assert!(singleton
+        .lock_key
+        .as_ref()
+        .is_some_and(|key| key.chars().count() <= 512));
 }
 
 #[test]
