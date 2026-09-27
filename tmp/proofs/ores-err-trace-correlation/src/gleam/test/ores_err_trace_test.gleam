@@ -74,7 +74,10 @@ pub fn contract_dto_surface_test() {
   )
   singleton.requires_lock |> should.equal(True)
   case singleton.lock_key {
-    Some(key) -> (string.length(key) <= 512) |> should.equal(True)
+    Some(key) -> {
+      let within_limit = string.length(key) <= 512
+      within_limit |> should.equal(True)
+    }
     None -> should.fail()
   }
 }
