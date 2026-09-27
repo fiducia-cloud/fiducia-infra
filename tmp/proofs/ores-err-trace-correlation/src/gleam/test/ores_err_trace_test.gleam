@@ -1,5 +1,6 @@
 import gleam/option.{None, Some}
 import gleam/string
+import gleeunit
 import gleeunit/should
 import ores_err_trace
 
@@ -179,4 +180,9 @@ pub fn coordination_policy_test() {
   |> string.length
   |> fn(length) { length <= 512 }
   |> should.equal(True)
+}
+
+
+pub fn main() {
+  gleeunit.main()
 }
