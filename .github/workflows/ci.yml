@@ -172,3 +172,25 @@ jobs:
       # `npm test` with FIDUCIA_E2E_BASE_URL=http://localhost:8090.
       - name: overlay builds
         run: kubectl kustomize kind/overlay >/dev/null
+  prove-ores-err-trace-generator-tests:
+    if: github.event_name == 'pull_request' && github.head_ref == 'ci/prove-ores-err-trace-generator-tests'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact proof head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+      - name: Verify copied upstream Git blobs
+        run: |
+          set -euo pipefail
+          test "$(git hash-object tmp/proofs/ores-err-trace-test-root/scripts/generate-storage-projections.mjs)" = "3bfb0a3e7b48aecdaff32a2e125fb53292873bde"
+          test "$(git hash-object tmp/proofs/ores-err-trace-test-root/test/storage-projections.test.mjs)" = "ab307d9ac3ad8666c1ae538bd1d92424c2660ded"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+      - name: Run storage projection generator regression suite
+        run: node --test tmp/proofs/ores-err-trace-test-root/test/storage-projections.test.mjs
