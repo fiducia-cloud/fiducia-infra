@@ -179,7 +179,7 @@ jobs:
     env:
       PROOF_ROOT: tmp/proofs/ores-err-trace-correlation
       TJSV_SHA: db0f1e66b2a65cad43c909aa558ae00c6a91578c
-      UPSTREAM_SHA: c572a27ab9caf5a6555c93f70a973eeaa8f864ae
+      UPSTREAM_SHA: 3cf3e9e5b9824eeed65d1c0e1b8f094a1a568f8c
     steps:
       - name: Check out exact proof head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -193,8 +193,8 @@ jobs:
         run: |
           set -euo pipefail
           root="$PROOF_ROOT"
-          test "$(git hash-object "$root/contracts/json-schema/contract.schema.json")" = "eb6defa50b7809798ff003280e0267959a78063d"
-          test "$(git hash-object "$root/contracts/typespec/main.tsp")" = "fb0ef53a990f6a60993bbfdad84e72515015b4dd"
+          test "$(git hash-object "$root/contracts/json-schema/contract.schema.json")" = "7b8a1a6aa2f3a1bb439e5c4f42eb9f3f25e1a718"
+          test "$(git hash-object "$root/contracts/typespec/main.tsp")" = "a4b8bfb815fbbc3581ddfc50ab14f4a47077da5d"
           test "$(git hash-object "$root/scripts/generate-storage-projections.mjs")" = "ab5dc743f2c03f5f84e2a4dd21c2af0a42ff898e"
           test "$(git hash-object "$root/src/gleam/gleam.toml")" = "62ba6202454f8ec09ea514ee23da656e4a39a507"
           test "$(git hash-object "$root/src/gleam/src/ores_err_trace.gleam")" = "473c43463214dc74e4da4d0a6c7fedb49949dfe3"
