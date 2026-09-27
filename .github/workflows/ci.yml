@@ -290,4 +290,5 @@ jobs:
             tmp/proofs/ores-err-trace-correlation/src/rust/src/
             tmp/proofs/ores-err-trace-correlation/src/rust/tests/
             tmp/proofs/ores-err-trace-correlation/src/golang/
+            tmp/proofs/ores-err-trace-correlation/src/golang/
           if-no-files-found: error
