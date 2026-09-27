@@ -172,3 +172,128 @@ jobs:
       # `npm test` with FIDUCIA_E2E_BASE_URL=http://localhost:8090.
       - name: overlay builds
         run: kubectl kustomize kind/overlay >/dev/null
+  prove-ores-err-trace-additive-upgrade:
+    if: github.event_name == 'pull_request' && github.head_ref == 'ci/prove-ores-err-trace-additive-upgrade'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      PROOF_ROOT: tmp/proofs/ores-err-trace-additive-upgrade
+      UPSTREAM_SHA: d40f82b53650a8b848876f9ac5e0b57f7dc946f8
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ores_err_trace
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ores_err_trace
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ores_err_trace"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Check out exact proof head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+
+      - name: Verify exact copied Git blobs
+        run: |
+          set -euo pipefail
+          root="$PROOF_ROOT"
+          test "$(git hash-object "$root/scripts/generate-storage-projections.mjs")" = "4efaed037d90b48c73bc00d3a3a299c4e9112361"
+          test "$(git hash-object "$root/test/storage-projections.test.mjs")" = "769b28ef4a43419fdfb94d646244e65742f7621c"
+          test "$(git hash-object "$root/contracts/typespec/main.tsp")" = "a4b8bfb815fbbc3581ddfc50ab14f4a47077da5d"
+          test "$(git hash-object "$root/contracts/json-schema/contract.schema.json")" = "7b8a1a6aa2f3a1bb439e5c4f42eb9f3f25e1a718"
+          test "$(git hash-object "$root/fixtures/pre_otel_projection.sql")" = "3cd353a86161f4b1c043abbc379e0cb6c86c39c7"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+
+      - name: Run storage generator regression suite
+        run: node --test "$PROOF_ROOT/test/storage-projections.test.mjs"
+
+      - name: Build parity-admitted Contract IR
+        uses: ORESoftware/typespec-json-schema-validator@db0f1e66b2a65cad43c909aa558ae00c6a91578c
+        with:
+          typespec: tmp/proofs/ores-err-trace-additive-upgrade/contracts/typespec/main.tsp
+          schema: tmp/proofs/ores-err-trace-additive-upgrade/contracts/json-schema/contract.schema.json
+          report: tmp/proofs/ores-err-trace-additive-upgrade/evidence/report.json
+          contract_ir: tmp/proofs/ores-err-trace-additive-upgrade/evidence/contract-ir.json
+          output_dir: tmp/proofs/ores-err-trace-additive-upgrade/evidence/generated
+          int64_strategy: number
+
+      - name: Generate and check upgrade-safe storage projection
+        run: |
+          set -euo pipefail
+          node "$PROOF_ROOT/scripts/generate-storage-projections.mjs"             --contract-ir="$PROOF_ROOT/evidence/contract-ir.json"             --out="$PROOF_ROOT/generated/storage"
+          node "$PROOF_ROOT/scripts/generate-storage-projections.mjs"             --contract-ir="$PROOF_ROOT/evidence/contract-ir.json"             --out="$PROOF_ROOT/generated/storage"             --check
+          grep -q 'add column if not exists "parent_trace_id" text;' "$PROOF_ROOT/generated/storage/postgres/001_ores_err_trace.sql"
+          grep -q 'add column if not exists "otel_trace_id" text;' "$PROOF_ROOT/generated/storage/postgres/001_ores_err_trace.sql"
+          grep -q 'add column if not exists "otel_span_id" text;' "$PROOF_ROOT/generated/storage/postgres/001_ores_err_trace.sql"
+
+      - name: Install pre-OTel generated schema and seed data
+        run: |
+          set -euo pipefail
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$PROOF_ROOT/fixtures/pre_otel_projection.sql"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          insert into public.ores_err_trace_fingerprints(policy, fingerprint, service)
+          values ('v1', repeat('a', 64), 'api');
+          insert into public.ores_err_trace_events(policy, fingerprint, service, trace_id, message)
+          values ('v1', repeat('a', 64), 'api', 'ores-trace-existing', 'existing row');
+          SQL
+
+      - name: Upgrade populated schema in place
+        run: |
+          set -euo pipefail
+          projection="$PROOF_ROOT/generated/storage/postgres/001_ores_err_trace.sql"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$projection"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$projection"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          do $proof$
+          declare
+            present integer;
+            row_count integer;
+          begin
+            select count(*) into present
+            from information_schema.columns
+            where table_schema='public'
+              and table_name='ores_err_trace_events'
+              and column_name in ('parent_trace_id','otel_trace_id','otel_span_id');
+            if present <> 3 then raise exception 'missing additive OTel columns: %', present; end if;
+
+            select count(*) into row_count from public.ores_err_trace_events;
+            if row_count <> 1 then raise exception 'pre-existing rows were not preserved: %', row_count; end if;
+
+            update public.ores_err_trace_events
+            set parent_trace_id='ores-trace-ParentTraceA12',
+                otel_trace_id='11111111111111111111111111111111',
+                otel_span_id='1111111111111111';
+
+            if not exists (
+              select 1 from pg_indexes
+              where schemaname='public'
+                and indexname='ores_err_trace_events_otel_trace_idx'
+            ) then
+              raise exception 'missing OTel trace index';
+            end if;
+          end
+          $proof$;
+          SQL
+
+      - name: Retain additive-upgrade evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ores-err-trace-additive-upgrade-${{ env.UPSTREAM_SHA }}
+          path: |
+            tmp/proofs/ores-err-trace-additive-upgrade/evidence/
+            tmp/proofs/ores-err-trace-additive-upgrade/generated/storage/
+          if-no-files-found: error
