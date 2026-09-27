@@ -56,9 +56,13 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
           show-progress: false
-      - name: Install immutable TJSV dependencies
+      - name: Install immutable TJSV dependency closure
         working-directory: tmp/tjsv
-        run: npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --omit=dev --no-audit --no-fund
+          test -f node_modules/@oresoftware/f2e/clients/nodejs/build/Release/flags2env.node
       - name: Compare independent source-audit authorities
         shell: bash
         run: |
