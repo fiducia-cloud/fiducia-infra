@@ -25,8 +25,8 @@ func TestPreferredFingerprintIgnoresOccurrenceMetadata(t *testing.T) {
 		Service: "api", ExceptionType: "DbError", Message: "failed id 123456",
 		TopFrame: "db.go:10:2", Operation: "worker", TraceID: "ores-trace-a",
 		ParentTraceID: "ores-trace-ParentTraceA12",
-		OTelTraceID: "11111111111111111111111111111111",
-		OTelSpanID: "1111111111111111", ReleaseSHA: "aaa",
+		OTelTraceID:   "11111111111111111111111111111111",
+		OTelSpanID:    "1111111111111111", ReleaseSHA: "aaa",
 	}
 	b := a
 	b.TraceID = "ores-trace-b"
