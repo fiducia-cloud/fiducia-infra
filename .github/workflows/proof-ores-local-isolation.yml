@@ -10,8 +10,8 @@ permissions:
   contents: read
 
 env:
-  PROC_SHA: baa183733aa53c1c607446a2905ae55e7c5cdf47
-  COMPOSE_SHA: 3c0499c3b2902dd50cbb957565b0dde2672275f2
+  PROC_SHA: da20b90ca5cad00a20d34c6de676151627c23632
+  COMPOSE_SHA: e630a8480755e1846f70bdf0f13a7566c2cb5457
 
 jobs:
   proc-macos:
