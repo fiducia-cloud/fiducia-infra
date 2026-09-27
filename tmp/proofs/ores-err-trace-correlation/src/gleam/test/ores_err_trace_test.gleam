@@ -1,4 +1,5 @@
 import gleam/option.{None, Some}
+import gleam/list
 import gleam/string
 import gleeunit
 import gleeunit/should
@@ -177,7 +178,8 @@ pub fn coordination_policy_test() {
   |> should.equal(True)
 
   ores_err_trace.lock_key_for_fingerprint(string.repeat("🙂", 1000), string.repeat("f", 64))
-  |> string.length
+  |> string.to_graphemes
+  |> list.length
   |> fn(length) { length <= 512 }
   |> should.equal(True)
 }
