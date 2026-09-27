@@ -1,4 +1,4 @@
-name: proof ORES comparisons cached-rpc v2 manifests
+name: proof ORES comparisons hardened manifest deltas
 
 on:
   pull_request:
@@ -12,12 +12,13 @@ permissions:
 
 env:
   COMPOSE_SHA: 4e790084f09bc5e69a91859e86810070897ec6f9
-  CACHED_BEAM_SHA: fbc7dc213997a8478678f298e8900aa7fb792e59
-  CACHED_ORES_SHA: 0a455fb18a8d2012da5aacd34a44b7bb12f35f96
-  CACHED_SCINT_SHA: 702330b84d0b6daa95a59e6c6266941368981524
+  CACHED_BEAM_SHA: fbc7dc2f3210241df6d111e057d18129b41b780e
+  CACHED_ORES_SHA: 0a455fb9fd64ecbd51c3f5e7eb63dc444590806d
+  CACHED_SCINT_SHA: 702330b0d52c3407ac982507b072266c1f53e30c
+  OPERATIONS_SCINT_SHA: c40c162cbfd927864c5f598c8339312f25cad976
 
 jobs:
-  validate-cached-rpc-v2:
+  validate-hardened-deltas:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -61,6 +62,16 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
+      - name: Checkout operations Scintilla authority
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ores-dummy-org-3/.github
+          ref: ${{ env.OPERATIONS_SCINT_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: manifests/operations/scintilla-run
+          persist-credentials: false
+          fetch-depth: 1
+
       - name: Verify immutable source heads
         shell: bash
         run: |
@@ -69,6 +80,7 @@ jobs:
           test "$(git -C manifests/cached-rpc/beamscale rev-parse HEAD)" = "$CACHED_BEAM_SHA"
           test "$(git -C manifests/cached-rpc/ores-stack rev-parse HEAD)" = "$CACHED_ORES_SHA"
           test "$(git -C manifests/cached-rpc/scintilla-run rev-parse HEAD)" = "$CACHED_SCINT_SHA"
+          test "$(git -C manifests/operations/scintilla-run rev-parse HEAD)" = "$OPERATIONS_SCINT_SHA"
 
       - name: Configure scoped private Git dependency access
         env:
@@ -92,7 +104,7 @@ jobs:
         working-directory: compose
         run: cargo build --locked --bin ores-compose
 
-      - name: Check and plan cached-rpc v2 authorities
+      - name: Check and plan hardened authorities
         shell: bash
         run: |
           set -euo pipefail
@@ -100,7 +112,8 @@ jobs:
           for manifest in \
             manifests/cached-rpc/beamscale/.ores-compose.yaml \
             manifests/cached-rpc/ores-stack/.ores-compose.yaml \
-            manifests/cached-rpc/scintilla-run/.ores-compose.yaml
+            manifests/cached-rpc/scintilla-run/.ores-compose.yaml \
+            manifests/operations/scintilla-run/.ores-compose.yaml
           do
             echo "=== check $manifest ==="
             "$binary" check "$manifest"
@@ -117,3 +130,4 @@ jobs:
           test "$(git -C manifests/cached-rpc/beamscale rev-parse HEAD)" = "$CACHED_BEAM_SHA"
           test "$(git -C manifests/cached-rpc/ores-stack rev-parse HEAD)" = "$CACHED_ORES_SHA"
           test "$(git -C manifests/cached-rpc/scintilla-run rev-parse HEAD)" = "$CACHED_SCINT_SHA"
+          test "$(git -C manifests/operations/scintilla-run rev-parse HEAD)" = "$OPERATIONS_SCINT_SHA"
