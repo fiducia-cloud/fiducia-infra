@@ -1,4 +1,4 @@
-name: proof ORES comparisons cached-rpc infra manifests
+name: proof ORES comparisons all 18 infra manifests
 
 on:
   pull_request:
@@ -12,14 +12,29 @@ permissions:
 
 env:
   COMPOSE_SHA: 4e790084f09bc5e69a91859e86810070897ec6f9
-  BEAMSCALE_SHA: d96ce0ab1b72e7e00854d4f0d5d13e2f189a58d2
-  ORES_STACK_SHA: bfffb9334feee4c9ff67bb60c3fe28ed3e3786ca
-  SCINTILLA_SHA: 1b94e21f7167e8b9ffbb27ff06cdc91ec077cb7f
+  COLLAB_BEAM_SHA: 34ac562ffdc864e62d9f913c5d40191a2d484252
+  COLLAB_ORES_SHA: f1eaf588e03214192fce48f93e25b55346a90c36
+  COLLAB_SCINT_SHA: 1dad5363b638d8adc1395c26c7c186dd3021a87f
+  COMMERCE_BEAM_SHA: af9c2a9740bf1b2ef1edb5a6b3c01630529b9fa1
+  COMMERCE_ORES_SHA: 982c26337bb2d15a3b51f5746ba4acbb230c047e
+  COMMERCE_SCINT_SHA: f7679d986450234341d353c9d6ce00156c5e8857
+  OPERATIONS_BEAM_SHA: 11290ee3bd0eb335cda9bd570bda168bac4b606e
+  OPERATIONS_ORES_SHA: 20c1d27097ea178a05e15663f14f4779fb976fe3
+  OPERATIONS_SCINT_SHA: 13bbabac78a1bdc6d96d19502919aab0a889352e
+  CACHED_BEAM_SHA: d96ce0ab1b72e7e00854d4f0d5d13e2f189a58d2
+  CACHED_ORES_SHA: bfffb9334feee4c9ff67bb60c3fe28ed3e3786ca
+  CACHED_SCINT_SHA: 1b94e21f7167e8b9ffbb27ff06cdc91ec077cb7f
+  FORMS_BEAM_SHA: 52612a30969a6237043206067d86fedee33b50ef
+  FORMS_ORES_SHA: 3dad8b014eef4a0d8e1a8dfbf4b66e01382579b4
+  FORMS_SCINT_SHA: d851de13217eddef1cd7b5e7fa6423d39f5791b3
+  HTTP_BEAM_SHA: c719172cb03c8c8fc6f058fa73625bfc238cc2cd
+  HTTP_ORES_SHA: 7e5b2725bcdcc978cc900d8a95b869c302b1d834
+  HTTP_SCINT_SHA: 97f414bab5374451716a90cfabcaeb3ddbaea169
 
 jobs:
-  validate-cached-rpc:
+  validate-all-18:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Checkout exact ores-compose head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -31,33 +46,183 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - name: Checkout BeamScale cached-rpc authority
+      - name: Checkout collaboration BeamScale authority
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          repository: ores-dummy-org-4/.github
-          ref: ${{ env.BEAMSCALE_SHA }}
+          repository: ores-dummy-org-1/.github
+          ref: ${{ env.COLLAB_BEAM_SHA }}
           token: ${{ secrets.ORE_SOURCE_PAT }}
-          path: manifests/beamscale
+          path: manifests/collaboration/beamscale
           persist-credentials: false
           fetch-depth: 1
 
-      - name: Checkout ORES Stack cached-rpc authority
+      - name: Checkout collaboration ORES Stack authority
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          repository: ores-dummy-org-4/.github
-          ref: ${{ env.ORES_STACK_SHA }}
+          repository: ores-dummy-org-1/.github
+          ref: ${{ env.COLLAB_ORES_SHA }}
           token: ${{ secrets.ORE_SOURCE_PAT }}
-          path: manifests/ores-stack
+          path: manifests/collaboration/ores-stack
           persist-credentials: false
           fetch-depth: 1
 
-      - name: Checkout Scintilla cached-rpc authority
+      - name: Checkout collaboration Scintilla authority
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ores-dummy-org-1/.github
+          ref: ${{ env.COLLAB_SCINT_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: manifests/collaboration/scintilla-run
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout commerce BeamScale authority
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ores-dummy-org-2/.github
+          ref: ${{ env.COMMERCE_BEAM_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: manifests/commerce/beamscale
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout commerce ORES Stack authority
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ores-dummy-org-2/.github
+          ref: ${{ env.COMMERCE_ORES_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: manifests/commerce/ores-stack
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout commerce Scintilla authority
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ores-dummy-org-2/.github
+          ref: ${{ env.COMMERCE_SCINT_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: manifests/commerce/scintilla-run
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout operations BeamScale authority
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ores-dummy-org-3/.github
+          ref: ${{ env.OPERATIONS_BEAM_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: manifests/operations/beamscale
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout operations ORES Stack authority
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ores-dummy-org-3/.github
+          ref: ${{ env.OPERATIONS_ORES_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: manifests/operations/ores-stack
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout operations Scintilla authority
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ores-dummy-org-3/.github
+          ref: ${{ env.OPERATIONS_SCINT_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: manifests/operations/scintilla-run
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout cached-rpc BeamScale authority
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ores-dummy-org-4/.github
-          ref: ${{ env.SCINTILLA_SHA }}
+          ref: ${{ env.CACHED_BEAM_SHA }}
           token: ${{ secrets.ORE_SOURCE_PAT }}
-          path: manifests/scintilla-run
+          path: manifests/cached-rpc/beamscale
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout cached-rpc ORES Stack authority
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ores-dummy-org-4/.github
+          ref: ${{ env.CACHED_ORES_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: manifests/cached-rpc/ores-stack
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout cached-rpc Scintilla authority
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ores-dummy-org-4/.github
+          ref: ${{ env.CACHED_SCINT_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: manifests/cached-rpc/scintilla-run
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout forms-chat BeamScale authority
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ores-dummy-org-5/.github
+          ref: ${{ env.FORMS_BEAM_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: manifests/forms-chat-workflow/beamscale
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout forms-chat ORES Stack authority
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ores-dummy-org-5/.github
+          ref: ${{ env.FORMS_ORES_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: manifests/forms-chat-workflow/ores-stack
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout forms-chat Scintilla authority
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ores-dummy-org-5/.github
+          ref: ${{ env.FORMS_SCINT_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: manifests/forms-chat-workflow/scintilla-run
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout HTTP-observability BeamScale authority
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ores-dummy-org-6/.github
+          ref: ${{ env.HTTP_BEAM_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: manifests/http-observability/beamscale
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout HTTP-observability ORES Stack authority
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ores-dummy-org-6/.github
+          ref: ${{ env.HTTP_ORES_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: manifests/http-observability/ores-stack
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout HTTP-observability Scintilla authority
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ores-dummy-org-6/.github
+          ref: ${{ env.HTTP_SCINT_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: manifests/http-observability/scintilla-run
           persist-credentials: false
           fetch-depth: 1
 
@@ -65,10 +230,28 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git -C compose rev-parse HEAD)" = "$COMPOSE_SHA"
-          test "$(git -C manifests/beamscale rev-parse HEAD)" = "$BEAMSCALE_SHA"
-          test "$(git -C manifests/ores-stack rev-parse HEAD)" = "$ORES_STACK_SHA"
-          test "$(git -C manifests/scintilla-run rev-parse HEAD)" = "$SCINTILLA_SHA"
+          check_head() {
+            test "$(git -C "$1" rev-parse HEAD)" = "$2"
+          }
+          check_head compose "$COMPOSE_SHA"
+          check_head manifests/collaboration/beamscale "$COLLAB_BEAM_SHA"
+          check_head manifests/collaboration/ores-stack "$COLLAB_ORES_SHA"
+          check_head manifests/collaboration/scintilla-run "$COLLAB_SCINT_SHA"
+          check_head manifests/commerce/beamscale "$COMMERCE_BEAM_SHA"
+          check_head manifests/commerce/ores-stack "$COMMERCE_ORES_SHA"
+          check_head manifests/commerce/scintilla-run "$COMMERCE_SCINT_SHA"
+          check_head manifests/operations/beamscale "$OPERATIONS_BEAM_SHA"
+          check_head manifests/operations/ores-stack "$OPERATIONS_ORES_SHA"
+          check_head manifests/operations/scintilla-run "$OPERATIONS_SCINT_SHA"
+          check_head manifests/cached-rpc/beamscale "$CACHED_BEAM_SHA"
+          check_head manifests/cached-rpc/ores-stack "$CACHED_ORES_SHA"
+          check_head manifests/cached-rpc/scintilla-run "$CACHED_SCINT_SHA"
+          check_head manifests/forms-chat-workflow/beamscale "$FORMS_BEAM_SHA"
+          check_head manifests/forms-chat-workflow/ores-stack "$FORMS_ORES_SHA"
+          check_head manifests/forms-chat-workflow/scintilla-run "$FORMS_SCINT_SHA"
+          check_head manifests/http-observability/beamscale "$HTTP_BEAM_SHA"
+          check_head manifests/http-observability/ores-stack "$HTTP_ORES_SHA"
+          check_head manifests/http-observability/scintilla-run "$HTTP_SCINT_SHA"
 
       - name: Configure scoped private Git dependency access
         env:
@@ -86,30 +269,40 @@ jobs:
           rustup toolchain install 1.98.1 --profile minimal
           rustup default 1.98.1
 
-      - name: Build exact ores-compose
+      - name: Build exact ores-compose once
         working-directory: compose
         run: cargo build --locked --bin ores-compose
 
-      - name: Check and plan BeamScale authority
+      - name: Check and plan all 18 authorities
         shell: bash
         run: |
           set -euo pipefail
-          compose/target/debug/ores-compose check manifests/beamscale/.ores-compose.yaml
-          compose/target/debug/ores-compose plan manifests/beamscale/.ores-compose.yaml
-
-      - name: Check and plan ORES Stack authority
-        shell: bash
-        run: |
-          set -euo pipefail
-          compose/target/debug/ores-compose check manifests/ores-stack/.ores-compose.yaml
-          compose/target/debug/ores-compose plan manifests/ores-stack/.ores-compose.yaml
-
-      - name: Check and plan Scintilla authority
-        shell: bash
-        run: |
-          set -euo pipefail
-          compose/target/debug/ores-compose check manifests/scintilla-run/.ores-compose.yaml
-          compose/target/debug/ores-compose plan manifests/scintilla-run/.ores-compose.yaml
+          binary="$GITHUB_WORKSPACE/compose/target/debug/ores-compose"
+          for manifest in \
+            manifests/collaboration/beamscale/.ores-compose.yaml \
+            manifests/collaboration/ores-stack/.ores-compose.yaml \
+            manifests/collaboration/scintilla-run/.ores-compose.yaml \
+            manifests/commerce/beamscale/.ores-compose.yaml \
+            manifests/commerce/ores-stack/.ores-compose.yaml \
+            manifests/commerce/scintilla-run/.ores-compose.yaml \
+            manifests/operations/beamscale/.ores-compose.yaml \
+            manifests/operations/ores-stack/.ores-compose.yaml \
+            manifests/operations/scintilla-run/.ores-compose.yaml \
+            manifests/cached-rpc/beamscale/.ores-compose.yaml \
+            manifests/cached-rpc/ores-stack/.ores-compose.yaml \
+            manifests/cached-rpc/scintilla-run/.ores-compose.yaml \
+            manifests/forms-chat-workflow/beamscale/.ores-compose.yaml \
+            manifests/forms-chat-workflow/ores-stack/.ores-compose.yaml \
+            manifests/forms-chat-workflow/scintilla-run/.ores-compose.yaml \
+            manifests/http-observability/beamscale/.ores-compose.yaml \
+            manifests/http-observability/ores-stack/.ores-compose.yaml \
+            manifests/http-observability/scintilla-run/.ores-compose.yaml
+          do
+            echo "=== check $manifest ==="
+            "$binary" check "$manifest"
+            echo "=== plan $manifest ==="
+            "$binary" plan "$manifest"
+          done
 
       - name: Final exact-head guards
         if: always()
@@ -117,6 +310,21 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git -C compose rev-parse HEAD)" = "$COMPOSE_SHA"
-          test "$(git -C manifests/beamscale rev-parse HEAD)" = "$BEAMSCALE_SHA"
-          test "$(git -C manifests/ores-stack rev-parse HEAD)" = "$ORES_STACK_SHA"
-          test "$(git -C manifests/scintilla-run rev-parse HEAD)" = "$SCINTILLA_SHA"
+          test "$(git -C manifests/collaboration/beamscale rev-parse HEAD)" = "$COLLAB_BEAM_SHA"
+          test "$(git -C manifests/collaboration/ores-stack rev-parse HEAD)" = "$COLLAB_ORES_SHA"
+          test "$(git -C manifests/collaboration/scintilla-run rev-parse HEAD)" = "$COLLAB_SCINT_SHA"
+          test "$(git -C manifests/commerce/beamscale rev-parse HEAD)" = "$COMMERCE_BEAM_SHA"
+          test "$(git -C manifests/commerce/ores-stack rev-parse HEAD)" = "$COMMERCE_ORES_SHA"
+          test "$(git -C manifests/commerce/scintilla-run rev-parse HEAD)" = "$COMMERCE_SCINT_SHA"
+          test "$(git -C manifests/operations/beamscale rev-parse HEAD)" = "$OPERATIONS_BEAM_SHA"
+          test "$(git -C manifests/operations/ores-stack rev-parse HEAD)" = "$OPERATIONS_ORES_SHA"
+          test "$(git -C manifests/operations/scintilla-run rev-parse HEAD)" = "$OPERATIONS_SCINT_SHA"
+          test "$(git -C manifests/cached-rpc/beamscale rev-parse HEAD)" = "$CACHED_BEAM_SHA"
+          test "$(git -C manifests/cached-rpc/ores-stack rev-parse HEAD)" = "$CACHED_ORES_SHA"
+          test "$(git -C manifests/cached-rpc/scintilla-run rev-parse HEAD)" = "$CACHED_SCINT_SHA"
+          test "$(git -C manifests/forms-chat-workflow/beamscale rev-parse HEAD)" = "$FORMS_BEAM_SHA"
+          test "$(git -C manifests/forms-chat-workflow/ores-stack rev-parse HEAD)" = "$FORMS_ORES_SHA"
+          test "$(git -C manifests/forms-chat-workflow/scintilla-run rev-parse HEAD)" = "$FORMS_SCINT_SHA"
+          test "$(git -C manifests/http-observability/beamscale rev-parse HEAD)" = "$HTTP_BEAM_SHA"
+          test "$(git -C manifests/http-observability/ores-stack rev-parse HEAD)" = "$HTTP_ORES_SHA"
+          test "$(git -C manifests/http-observability/scintilla-run rev-parse HEAD)" = "$HTTP_SCINT_SHA"
