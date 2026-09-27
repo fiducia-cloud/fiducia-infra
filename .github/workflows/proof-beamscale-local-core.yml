@@ -31,7 +31,7 @@ jobs:
             exit 2
           }
       - id: lock
-        run: echo "sha=$(jq -er '.sources[\"beamscale/bmscl-supervisor\"]' "$LOCK_FILE")" >> "$GITHUB_OUTPUT"
+        run: echo "sha=$(jq -er '.sources["beamscale/bmscl-supervisor"]' "$LOCK_FILE")" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: beamscale/bmscl-supervisor
@@ -83,7 +83,7 @@ jobs:
           }
       - id: lock
         shell: bash
-        run: echo "sha=$(jq -er '.sources[\"beamscale/beamscale-desktop-daemon\"]' "$LOCK_FILE")" >> "$GITHUB_OUTPUT"
+        run: echo "sha=$(jq -er '.sources["beamscale/beamscale-desktop-daemon"]' "$LOCK_FILE")" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: beamscale/beamscale-desktop-daemon
@@ -129,7 +129,7 @@ jobs:
             exit 2
           }
       - id: lock
-        run: echo "sha=$(jq -er '.sources[\"beamscale/beamscale-desktop-daemon\"]' "$LOCK_FILE")" >> "$GITHUB_OUTPUT"
+        run: echo "sha=$(jq -er '.sources["beamscale/beamscale-desktop-daemon"]' "$LOCK_FILE")" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: beamscale/beamscale-desktop-daemon
@@ -303,7 +303,7 @@ jobs:
             exit 2
           }
       - id: lock
-        run: echo "sha=$(jq -er '.sources[\"beamscale/bmscl-cli\"]' "$LOCK_FILE")" >> "$GITHUB_OUTPUT"
+        run: echo "sha=$(jq -er '.sources["beamscale/bmscl-cli"]' "$LOCK_FILE")" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: beamscale/bmscl-cli
@@ -355,7 +355,7 @@ jobs:
             exit 2
           }
       - id: lock
-        run: echo "sha=$(jq -er '.sources[\"beamscale/bmscl-cli-gleam\"]' "$LOCK_FILE")" >> "$GITHUB_OUTPUT"
+        run: echo "sha=$(jq -er '.sources["beamscale/bmscl-cli-gleam"]' "$LOCK_FILE")" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: beamscale/bmscl-cli-gleam
@@ -405,7 +405,7 @@ jobs:
             exit 2
           }
       - id: lock
-        run: echo "sha=$(jq -er '.sources[\"beamscale/bmscl-desktop-app.rs\"]' "$LOCK_FILE")" >> "$GITHUB_OUTPUT"
+        run: echo "sha=$(jq -er '.sources["beamscale/bmscl-desktop-app.rs"]' "$LOCK_FILE")" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: beamscale/bmscl-desktop-app.rs
