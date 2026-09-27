@@ -1,0 +1,70 @@
+name: proof ores-compose baseline regression
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/proof-ores-compose-baseline-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  BASE_SHA: 53054982beb47cb4ee52e92978ae6600e64aff91
+  HEAD_SHA: 3f90a1e8bd9c3ec2c8cfa9d82ee3569c3d7d8a5b
+
+jobs:
+  oversized-argv-baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact lint head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.HEAD_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: head
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Checkout exact base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.BASE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: base
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify exact heads
+        run: |
+          test "$(git -C head rev-parse HEAD)" = "$HEAD_SHA"
+          test "$(git -C base rev-parse HEAD)" = "$BASE_SHA"
+      - name: Configure scoped private Git dependency access
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Install reviewed Rust toolchain
+        run: |
+          rustup toolchain install 1.98.1 --profile minimal
+          rustup default 1.98.1
+      - name: Prove regression reproduces on base and lint head
+        shell: bash
+        run: |
+          set +e
+          cargo test --manifest-path head/Cargo.toml --test deep_config_execution oversized_argv_fails_before_process_planning -- --exact
+          head_rc=$?
+          cargo test --manifest-path base/Cargo.toml --test deep_config_execution oversized_argv_fails_before_process_planning -- --exact
+          base_rc=$?
+          set -e
+          test "$head_rc" -ne 0
+          test "$base_rc" -ne 0
+      - name: Final exact-head guards
+        if: always()
+        run: |
+          test "$(git -C head rev-parse HEAD)" = "$HEAD_SHA"
+          test "$(git -C base rev-parse HEAD)" = "$BASE_SHA"
