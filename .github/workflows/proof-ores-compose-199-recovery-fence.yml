@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: 600ee0aa6f5a36ae912b0d9bb45fe30a607bd78a
+  SOURCE_SHA: 1f3463298da527b08106bd3144da32ac59416281
 
 jobs:
   recovery-fencing:
