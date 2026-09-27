@@ -277,11 +277,12 @@ pub fn fingerprint_envelope(event: ErrorEvent, policy: FingerprintPolicy) -> Fin
 }
 
 pub fn lock_key_for_fingerprint(service: String, fingerprint: String) -> String {
-  "oresoftware/err-trace/fingerprint:"
-  <> normalize_ident_ffi(service)
-  <> ":"
-  <> fingerprint
-  |> truncate_512
+  let key =
+    "oresoftware/err-trace/fingerprint:"
+    <> normalize_ident_ffi(service)
+    <> ":"
+    <> fingerprint
+  truncate_512(key)
 }
 
 pub fn requires_coordination(operation: CoordinationOperation) -> Bool {
