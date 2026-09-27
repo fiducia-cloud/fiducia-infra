@@ -99,7 +99,7 @@ jobs:
         run: |
           set -euo pipefail
           cargo test --locked --test safety_cache_path_isolation
-          cargo test --locked --test dependency_safety_cache
+          cargo test --locked --test dependency_safety_vectors
 
       - name: Preserve generated lock as review evidence
         if: always()
