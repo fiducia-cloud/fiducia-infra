@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 env:
-  COMPOSE_SHA: 01f0d2cc5d9e72896acb2de8366b37ccf9510903
-  PROC_SHA: 4b54f5a2b8375e2a4475ccaca3c91afea26e84fd
+  COMPOSE_SHA: e630a8480755e1846f70bdf0f13a7566c2cb5457
+  PROC_SHA: da20b90ca5cad00a20d34c6de676151627c23632
 
 jobs:
   compose-rust:
