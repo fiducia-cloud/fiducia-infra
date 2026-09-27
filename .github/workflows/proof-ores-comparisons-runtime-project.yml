@@ -31,6 +31,7 @@ jobs:
       SCENARIO: ${{ inputs.scenario }}
       COMPARISONS_SHA: ${{ inputs.comparisons_sha }}
       CROSS_REPO_READ_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+      ZED_PKG_GITHUB_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
 
     steps:
       - name: Checkout exact ores-comparisons head
