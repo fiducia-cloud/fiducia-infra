@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  BEAMSCALE_SOURCE_SHA: c45a1ec93ade07344a2a777115869d1eeee9f8f8
+  BEAMSCALE_SOURCE_SHA: d90deb2f5675eeacd81555c9246660cd913530ee
   SCINTILLA_SOURCE_SHA: 86a76647e4fafff02333bb9f363dc1ee112301ca
 
 jobs:
@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - name: Checkout exact BeamScale PR head
+      - name: Checkout exact BeamScale main head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: beamscale/bmscl-supervisor
@@ -84,8 +84,9 @@ jobs:
       - name: Install Scintilla toolchain
         uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
         with:
-          otp-version: '27'
+          otp-version: '27.3'
           gleam-version: '1.17.0'
+          version-type: strict
 
       - name: Check changed Gleam formatting
         working-directory: scintilla
