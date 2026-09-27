@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: 4f3a5431fb4e5f8b3ecc818f3eb5606255aab9cc
+  SOURCE_SHA: 00cb6b9311d05f17fe6a82661e9f709b7a631f2b
 
 jobs:
   contract-toolchain:
@@ -35,14 +35,9 @@ jobs:
           git diff --check
           grep -F 'typespec-json-schema-validator/archive/2f6a5e1564c2a52af0e61e5b47a983b145b28884.tar.gz' package.json
           grep -F 'check:route-manifest' package.json | grep -F -- '--int64-strategy=number'
-          grep -F '@minValue(1)' contracts/route-manifest.tsp
-          grep -F '@maxValue(9007199254740991)' contracts/route-manifest.tsp
-          grep -F '"maximum": 9007199254740991' contracts/route-manifest.schema.json
-          grep -F '"minimum": 1' contracts/route-manifest.schema.json
-          grep -F '"anyOf": [' contracts/route-manifest.schema.json
-          grep -F '"CanonicalUrl"' contracts/ores-web-plan.schema.json
-          grep -F '"NonEmptyString"' contracts/ores-web-plan.schema.json
-          grep -F '"NonEmptyString"' contracts/ores-web-lambda-build-unit.schema.json
+          grep -F '"CallableName"' contracts/ores-lambda-callable-id.schema.json
+          grep -F '"CallableId"' contracts/ores-lambda-callable-id.schema.json
+          grep -F '"LambdaCallableIdentityV1"' contracts/ores-lambda-callable-id.schema.json
       - name: Install Node 22
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
@@ -65,6 +60,9 @@ jobs:
           fi
           for report in \
             route-manifest-schema-parity.json \
+            config-schema-parity.json \
+            web-config-schema-parity.json \
+            web-admission-schema-parity.json \
             web-plan-schema-parity.json \
             web-lambda-build-unit-schema-parity.json \
             lambda-callable-id-schema-parity.json \
