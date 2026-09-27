@@ -1,0 +1,88 @@
+name: proof-ores-stack-306
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/proof-ores-stack-306.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_SHA: fa26b443438e29cf6084cfe95f0ba7fbb2efe021
+
+jobs:
+  lambda-artifact-receipt-parity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact ORES Stack stacked head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-stack
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+
+      - name: Verify exact source and mapping policies
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git diff --check
+          grep -F -- '--mapping=contracts/ores-lambda-callable-registry.mapping.json' package.json
+          grep -F -- '--mapping=contracts/ores-lambda-build-manifest.mapping.json' package.json
+          grep -F -- '--mapping=contracts/ores-lambda-artifact-receipt.mapping.json' package.json
+          grep -F 'ores.typespec-json-schema-validator.mapping/v1' contracts/ores-lambda-artifact-receipt.mapping.json
+          grep -F '@extension(' contracts/ores-lambda-artifact-receipt.tsp
+          grep -F '"unevaluatedProperties": false' contracts/ores-lambda-artifact-receipt.schema.json
+
+      - name: Install Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+
+      - name: Install pinned contract toolchain
+        shell: bash
+        run: npm install --no-audit --no-fund --no-package-lock
+
+      - name: Verify pinned TJSV executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x node_modules/.bin/tjsv
+          node_modules/.bin/tjsv --help >/dev/null
+
+      - name: Prove prior stacked parity remains green
+        shell: bash
+        run: |
+          npm run check:lambda-callable-registry
+          npm run check:lambda-build-manifest
+
+      - name: Prove lambda-artifact-receipt peer-authority parity
+        shell: bash
+        run: |
+          set -uo pipefail
+          if npm run check:lambda-artifact-receipt; then
+            exit 0
+          fi
+          report=.ores-stack/lambda-artifact-receipt-schema-parity.json
+          if [[ -f "$report" ]]; then
+            echo '--- TJSV lambda artifact receipt report ---'
+            cat "$report"
+          fi
+          exit 1
+
+      - name: Run full contract parity suite
+        shell: bash
+        run: npm run check:contracts
+
+      - name: Prove tracked source unchanged
+        shell: bash
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
