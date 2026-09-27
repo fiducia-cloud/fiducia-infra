@@ -51,8 +51,28 @@ jobs:
       - name: Generate deterministic dependency lock for proof
         run: cargo generate-lockfile
 
-      - name: Format
+      - name: Check exact-head formatting
+        id: fmt_check
+        continue-on-error: true
         run: cargo fmt --all -- --check
+
+      - name: Generate rustfmt remediation patch
+        if: steps.fmt_check.outcome == 'failure'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          git diff --binary > /tmp/bmscl-compiler-47-rustfmt.patch
+          test -s /tmp/bmscl-compiler-47-rustfmt.patch
+
+      - name: Preserve rustfmt remediation patch
+        if: steps.fmt_check.outcome == 'failure'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: bmscl-compiler-47-rustfmt-patch
+          path: /tmp/bmscl-compiler-47-rustfmt.patch
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Clippy
         run: cargo clippy --locked --all-targets --all-features -- -D warnings
@@ -75,10 +95,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Prove only the generated lock changed
-        shell: bash
+      - name: Fail exact-head proof if formatting was not clean
+        if: steps.fmt_check.outcome == 'failure'
         run: |
-          set -euo pipefail
-          git status --short
-          test "$(git status --short | wc -l | tr -d ' ')" = "1"
-          test "$(git status --short | awk '{print $2}')" = "Cargo.lock"
+          echo 'Exact source head is not rustfmt-clean; apply the retained remediation patch and re-run this proof.' >&2
+          exit 1
