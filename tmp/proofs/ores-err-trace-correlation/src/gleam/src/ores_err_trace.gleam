@@ -92,25 +92,25 @@ pub type CoordinationIntent {
 }
 
 @external(erlang, "ores_err_trace_ffi", "normalize_message")
-fn normalize_message_ffi(String) -> String
+fn normalize_message_ffi(value: String) -> String
 
 @external(erlang, "ores_err_trace_ffi", "normalize_dd_next_text")
-fn normalize_dd_next_text_ffi(String) -> String
+fn normalize_dd_next_text_ffi(value: String) -> String
 
 @external(erlang, "ores_err_trace_ffi", "normalize_frame")
-fn normalize_frame_ffi(String) -> String
+fn normalize_frame_ffi(value: String) -> String
 
 @external(erlang, "ores_err_trace_ffi", "normalize_ident")
-fn normalize_ident_ffi(String) -> String
+fn normalize_ident_ffi(value: String) -> String
 
 @external(erlang, "ores_err_trace_ffi", "sha256_hex")
-fn sha256_hex(String) -> String
+fn sha256_hex(value: String) -> String
 
 @external(erlang, "ores_err_trace_ffi", "join_fields")
-fn join_fields(List(String)) -> String
+fn join_fields(values: List(String)) -> String
 
 @external(erlang, "ores_err_trace_ffi", "truncate_512")
-fn truncate_512(String) -> String
+fn truncate_512(value: String) -> String
 
 fn optional_string(value: Option(String)) -> String {
   case value {
