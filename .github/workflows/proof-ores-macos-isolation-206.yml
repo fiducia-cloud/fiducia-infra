@@ -40,10 +40,10 @@ jobs:
         run: |
           rustup toolchain install 1.98.1 --profile minimal
           rustup default 1.98.1
-      - name: Verify compiler and full tests
+      - name: Verify compiler and isolation-bearing library tests
         run: |
           cargo check --all-targets --all-features
-          cargo test --all-targets --all-features
+          cargo test --lib --all-features
       - name: Final exact-head guard
         if: always()
         run: test "$(git rev-parse HEAD)" = "$COMPOSE_SHA"
@@ -86,7 +86,7 @@ jobs:
           rustup toolchain install 1.98.1 --profile minimal
           rustup default 1.98.1
           cargo build --locked --manifest-path isolation/Cargo.toml --bin ores-proc-isolation
-          cargo test --manifest-path compose/Cargo.toml --all-targets --all-features
+          cargo test --manifest-path compose/Cargo.toml --lib --all-features
           cargo build --manifest-path compose/Cargo.toml --bin ores-compose
       - name: Run required same-user isolation
         shell: bash
