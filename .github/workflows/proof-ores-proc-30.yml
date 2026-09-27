@@ -1,0 +1,138 @@
+name: proof ores-proc 30 stdin environment boundary
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/proof-ores-proc-30.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_SHA: d559ae58e203724f10e23e99aa236e134c80c3ee
+
+jobs:
+  rust-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out exact source head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-proc-isolation-cli
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+      - name: Verify exact source and tracked lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test -f Cargo.lock
+          git ls-files --error-unmatch Cargo.lock >/dev/null
+          git diff --check
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
+      - name: Format, lint, and test exact head
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/linux/ores-proc-isolate.sh
+          bash -n scripts/macos/ores-proc-isolate.sh
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+      - name: Prove checkout unchanged
+        if: always()
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git diff --exit-code
+          git diff --cached --exit-code
+
+  stdin-boundary-macos:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - name: Check out exact source head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-proc-isolation-cli
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+      - name: Verify exact source and tracked lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test -f Cargo.lock
+          git ls-files --error-unmatch Cargo.lock >/dev/null
+          git diff --check
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
+      - name: Build and unit-test exact head
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets
+          cargo build --locked --bin ores-proc-isolation
+      - name: Prove stdin environment authority through live Seatbelt launch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >"$RUNNER_TEMP/policy.yaml" <<'YAML'
+          version: 1
+          defaults:
+            group: none
+          groups:
+            none:
+              filesystem:
+                read_only:
+                  - /usr/bin
+              network:
+                mode: none
+          processes:
+            env-overlay:
+              group: none
+              command: [/usr/bin/printenv, APP_MODE]
+              environment:
+                APP_MODE: placeholder
+          YAML
+
+          overlay="$(printf '%s' '{"APP_MODE":"worker"}' | target/debug/ores-proc-isolation --target-env-stdin run env-overlay --config "$RUNNER_TEMP/policy.yaml")"
+          test "$overlay" = worker
+
+          if printf '%s' '{"UNDECLARED":"x"}' | target/debug/ores-proc-isolation --target-env-stdin run env-overlay --config "$RUNNER_TEMP/policy.yaml"; then
+            echo 'undeclared stdin environment key unexpectedly succeeded' >&2
+            exit 1
+          fi
+
+          dry="$(printf '%s' '{"APP_MODE":"super-secret-value"}' | target/debug/ores-proc-isolation --target-env-stdin --dry-run --json run env-overlay --config "$RUNNER_TEMP/policy.yaml")"
+          printf '%s' "$dry" | grep -q 'APP_MODE'
+          if printf '%s' "$dry" | grep -q 'super-secret-value'; then
+            echo 'dry-run leaked stdin environment value' >&2
+            exit 1
+          fi
+
+          if target/debug/ores-proc-isolation --target-env-stdin check --config "$RUNNER_TEMP/policy.yaml" </dev/null; then
+            echo 'run-only stdin environment flag unexpectedly accepted by check' >&2
+            exit 1
+          fi
+      - name: Prove checkout unchanged
+        if: always()
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git diff --exit-code
+          git diff --cached --exit-code
