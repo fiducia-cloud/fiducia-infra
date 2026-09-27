@@ -1,0 +1,15 @@
+{
+  "name": "@oresoftware/ores-err-trace",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run typecheck && node --test --experimental-strip-types src/index.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "5.9.3"
+  },
+  "engines": {"node": ">=22"}
+}
