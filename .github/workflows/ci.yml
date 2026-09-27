@@ -179,7 +179,7 @@ jobs:
     env:
       PROOF_ROOT: tmp/proofs/ores-err-trace-correlation
       TJSV_SHA: db0f1e66b2a65cad43c909aa558ae00c6a91578c
-      UPSTREAM_SHA: 960d3061175e5b645ab86c43ae01dc94f0ac8476
+      UPSTREAM_SHA: cad7d33b7b24cd33356975a43f37d23032ce742d
     steps:
       - name: Check out exact proof head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -199,7 +199,7 @@ jobs:
           test "$(git hash-object "$root/src/gleam/gleam.toml")" = "62ba6202454f8ec09ea514ee23da656e4a39a507"
           test "$(git hash-object "$root/src/gleam/src/ores_err_trace.gleam")" = "55ef4debc40fa09836ab0efad44f8139996c0798"
           test "$(git hash-object "$root/src/gleam/src/ores_err_trace_ffi.erl")" = "97bc4ac384c3a0e6ca4199d428948111e5e9be58"
-          test "$(git hash-object "$root/src/gleam/test/ores_err_trace_test.gleam")" = "47f503c484e22fd67cace2ff449d3a2ac8885712"
+          test "$(git hash-object "$root/src/gleam/test/ores_err_trace_test.gleam")" = "39d7ff16bb97ef0fff552d8da85178ca35edd598"
           test "$(git hash-object "$root/src/golang/errtrace.go")" = "1cffbf14d574bd113a54e5f8521808b401b3aef5"
           test "$(git hash-object "$root/src/golang/errtrace_test.go")" = "e2961c68c1b9c97479393f2275c8108c6a23d674"
           test "$(git hash-object "$root/src/golang/go.mod")" = "5ab8e82275458a9247a04d59109a743ec7e8901e"
