@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 env:
-  COMPARISONS_SHA: b07309a0abbc754f27f0f5517ddfda702c04c90a
+  COMPARISONS_SHA: fff789a88ab728671333d4427f71811034226083
 
 jobs:
   prepare-toolchain:
@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: ORESoftware/ores-comparisons
-          ref: b07309a0abbc754f27f0f5517ddfda702c04c90a
+          ref: fff789a88ab728671333d4427f71811034226083
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 1
@@ -81,7 +81,7 @@ jobs:
     with:
       stack: ${{ matrix.stack }}
       scenario: cached-rpc
-      comparisons_sha: b07309a0abbc754f27f0f5517ddfda702c04c90a
+      comparisons_sha: fff789a88ab728671333d4427f71811034226083
       toolchain_artifact: ores-comparisons-toolchain
     secrets: inherit
 
@@ -96,7 +96,7 @@ jobs:
     with:
       stack: ${{ matrix.stack }}
       scenario: http-observability
-      comparisons_sha: b07309a0abbc754f27f0f5517ddfda702c04c90a
+      comparisons_sha: fff789a88ab728671333d4427f71811034226083
       toolchain_artifact: ores-comparisons-toolchain
     secrets: inherit
 
@@ -111,7 +111,7 @@ jobs:
     with:
       stack: ${{ matrix.stack }}
       scenario: forms-chat-workflow
-      comparisons_sha: b07309a0abbc754f27f0f5517ddfda702c04c90a
+      comparisons_sha: fff789a88ab728671333d4427f71811034226083
       toolchain_artifact: ores-comparisons-toolchain
     secrets: inherit
 
@@ -126,7 +126,7 @@ jobs:
     with:
       stack: ${{ matrix.stack }}
       scenario: big-org-example-commerce
-      comparisons_sha: b07309a0abbc754f27f0f5517ddfda702c04c90a
+      comparisons_sha: fff789a88ab728671333d4427f71811034226083
       toolchain_artifact: ores-comparisons-toolchain
     secrets: inherit
 
@@ -141,7 +141,7 @@ jobs:
     with:
       stack: ${{ matrix.stack }}
       scenario: big-org-example-collaboration
-      comparisons_sha: b07309a0abbc754f27f0f5517ddfda702c04c90a
+      comparisons_sha: fff789a88ab728671333d4427f71811034226083
       toolchain_artifact: ores-comparisons-toolchain
     secrets: inherit
 
@@ -156,7 +156,7 @@ jobs:
     with:
       stack: ${{ matrix.stack }}
       scenario: big-org-example-operations
-      comparisons_sha: b07309a0abbc754f27f0f5517ddfda702c04c90a
+      comparisons_sha: fff789a88ab728671333d4427f71811034226083
       toolchain_artifact: ores-comparisons-toolchain
     secrets: inherit
 
@@ -169,7 +169,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: ORESoftware/ores-comparisons
-          ref: b07309a0abbc754f27f0f5517ddfda702c04c90a
+          ref: fff789a88ab728671333d4427f71811034226083
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
 
