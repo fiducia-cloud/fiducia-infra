@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  COMPOSE_SHA: a514b6564897febaa341865c35d6266fc5eb190f
+  COMPOSE_SHA: 53054982beb47cb4ee52e92978ae6600e64aff91
 
 jobs:
   clippy-and-tests:
