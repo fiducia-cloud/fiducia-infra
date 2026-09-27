@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: fc389489a7c807b665e730b17d627d40bb7d3590
+  SOURCE_SHA: 4f3a5431fb4e5f8b3ecc818f3eb5606255aab9cc
 
 jobs:
   contract-toolchain:
@@ -42,6 +42,7 @@ jobs:
           grep -F '"anyOf": [' contracts/route-manifest.schema.json
           grep -F '"CanonicalUrl"' contracts/ores-web-plan.schema.json
           grep -F '"NonEmptyString"' contracts/ores-web-plan.schema.json
+          grep -F '"NonEmptyString"' contracts/ores-web-lambda-build-unit.schema.json
       - name: Install Node 22
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
@@ -62,14 +63,19 @@ jobs:
           if npm run check:contracts; then
             exit 0
           fi
-          echo '--- TJSV route-manifest report ---'
-          if [[ -f .ores-stack/route-manifest-schema-parity.json ]]; then
-            cat .ores-stack/route-manifest-schema-parity.json
-          fi
-          echo '--- TJSV web-plan report ---'
-          if [[ -f .ores-stack/web-plan-schema-parity.json ]]; then
-            cat .ores-stack/web-plan-schema-parity.json
-          fi
+          for report in \
+            route-manifest-schema-parity.json \
+            web-plan-schema-parity.json \
+            web-lambda-build-unit-schema-parity.json \
+            lambda-callable-id-schema-parity.json \
+            lambda-callable-registry-schema-parity.json \
+            lambda-build-manifest-schema-parity.json \
+            lambda-artifact-receipt-schema-parity.json; do
+            if [[ -f ".ores-stack/$report" ]]; then
+              echo "--- TJSV $report ---"
+              cat ".ores-stack/$report"
+            fi
+          done
           exit 1
       - name: Prove tracked source unchanged
         shell: bash
