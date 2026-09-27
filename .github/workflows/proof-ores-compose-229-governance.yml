@@ -38,7 +38,7 @@ jobs:
           python3 -m json.tool conformance/cases/local-process-isolation.v1.json >/dev/null
           grep -q "governance/\*\*" .github/workflows/conformance-boundary.yml
           node --check conformance/check.mjs
-          node conformance/check.mjs
+          GITHUB_REPOSITORY=ORESoftware/ores-compose node conformance/check.mjs
 
       - name: Final exact-head guard
         if: always()
