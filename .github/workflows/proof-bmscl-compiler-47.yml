@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: 0075442aada0d4dcb6cd4a4e5aa1c3cdc33229b3
+  SOURCE_SHA: fc43a789c558dfec85f3df158d63c85ca4f97a55
 
 jobs:
   exact-head-rust-proof:
@@ -102,6 +102,7 @@ jobs:
           cargo test --locked --test dependency_safety_cache
 
       - name: Preserve generated lock as review evidence
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: bmscl-compiler-47-cargo-lock
