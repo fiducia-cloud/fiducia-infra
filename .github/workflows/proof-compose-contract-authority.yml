@@ -1,0 +1,45 @@
+name: proof compose contract authority
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/proof-compose-contract-authority.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  COMPOSE_SHA: 7baea2ad836c7ff4ef75e3aef7fdafe18387b54e
+
+jobs:
+  contract-authority:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact compose contract-fix head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.COMPOSE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify exact source head
+        run: test "$(git rev-parse HEAD)" = "$COMPOSE_SHA"
+      - name: Configure scoped private Git dependency access
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Run contract authority test
+        run: |
+          rustup toolchain install 1.98.1 --profile minimal
+          rustup default 1.98.1
+          cargo test --test contract_authority
+      - name: Final exact-head guard
+        if: always()
+        run: test "$(git rev-parse HEAD)" = "$COMPOSE_SHA"
