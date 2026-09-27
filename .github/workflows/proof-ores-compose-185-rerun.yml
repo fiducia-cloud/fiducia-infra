@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  COMPOSE_SHA: 3c0499c3b2902dd50cbb957565b0dde2672275f2
+  COMPOSE_SHA: 04b82c17ce59a11144372d4e7aa706f5a2f36cc1
   PROC_SHA: baa183733aa53c1c607446a2905ae55e7c5cdf47
 
 jobs:
