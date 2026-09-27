@@ -178,7 +178,7 @@ jobs:
     timeout-minutes: 25
     env:
       PROOF_ROOT: tmp/proofs/ores-err-trace-persistence
-      UPSTREAM_SHA: 63f0213482406bf40aa06903fc06639276af38c1
+      UPSTREAM_SHA: b47a730f250fbb2d3ebbfc64676b2f2aa0c8fc25
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ores_err_trace
     services:
       postgres:
