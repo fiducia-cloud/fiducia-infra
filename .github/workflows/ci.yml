@@ -172,3 +172,96 @@ jobs:
       # `npm test` with FIDUCIA_E2E_BASE_URL=http://localhost:8090.
       - name: overlay builds
         run: kubectl kustomize kind/overlay >/dev/null
+  prove-ores-err-trace-otel-persistence:
+    if: github.event_name == 'pull_request' && github.head_ref == 'ci/prove-ores-err-trace-otel-persistence'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      PROOF_ROOT: tmp/proofs/ores-err-trace-persistence
+      UPSTREAM_SHA: 33df304c75b45b4039e0f4ae891cb06b2cfbfed1
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ores_err_trace
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ores_err_trace
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ores_err_trace"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Check out exact proof head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+
+      - name: Verify copied upstream Git blobs
+        run: |
+          set -euo pipefail
+          root="$PROOF_ROOT"
+          test "$(git hash-object "$root/contracts/typespec/main.tsp")" = "c44a452c72d1024e8401e54436c2c9e5c95c0aa1"
+          test "$(git hash-object "$root/contracts/json-schema/contract.schema.json")" = "7b8a1a6aa2f3a1bb439e5c4f42eb9f3f25e1a718"
+          test "$(git hash-object "$root/sql/postgres/001_error_tracking.sql")" = "80b2251a0193a423afdcb11a922948881393d6ca"
+          test "$(git hash-object "$root/sql/postgres/002_dd_next_parity.sql")" = "0f002709db9f35f615434fee740ec350f901fd7d"
+          test "$(git hash-object "$root/sql/postgres/003_ingestion_hardening.sql")" = "af9ef3aef5916b2bd9e2da1347baee69cc002f44"
+          test "$(git hash-object "$root/sql/postgres/004_record_error_trace_hardened.sql")" = "23b210755ba4629a0172eb0a7c32714e529f671b"
+          test "$(git hash-object "$root/sql/postgres/005_recursive_redaction.sql")" = "153c895025cc219ddad3da90a7359f2f6757a29b"
+          test "$(git hash-object "$root/sql/postgres/006_public_dedupe_result.sql")" = "03d3e432b2301ea1bd390cfc12376e7ec7bd73cb"
+          test "$(git hash-object "$root/sql/postgres/007_otel_correlation.sql")" = "f6a707c5eba0eddd568ccab9b48de8260a93e287"
+          test "$(git hash-object "$root/scripts/test-postgres.sh")" = "c09f47d91238185907944c8dbb2ebf2d166f18f9"
+          test "$(git hash-object "$root/tests/postgres/public_dedupe_result.sql")" = "2ac212ef8b6d77d1ad682c960962e6248a1c7ce9"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+
+      - name: Prove peer-authority correlation dependency
+        uses: ORESoftware/typespec-json-schema-validator@db0f1e66b2a65cad43c909aa558ae00c6a91578c
+        with:
+          typespec: tmp/proofs/ores-err-trace-persistence/contracts/typespec/main.tsp
+          schema: tmp/proofs/ores-err-trace-persistence/contracts/json-schema/contract.schema.json
+          report: tmp/proofs/ores-err-trace-persistence/evidence/report.json
+          contract_ir: tmp/proofs/ores-err-trace-persistence/evidence/contract-ir.json
+          output_dir: tmp/proofs/ores-err-trace-persistence/evidence/generated
+          int64_strategy: number
+
+      - name: Install migrations in lexical order
+        run: |
+          set -euo pipefail
+          for migration in "$PROOF_ROOT"/sql/postgres/*.sql; do
+            echo "applying $migration"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"
+          done
+
+      - name: Reapply OTel migration to prove idempotent DDL
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$PROOF_ROOT/sql/postgres/007_otel_correlation.sql"
+
+      - name: Run hardened ingestion and recurrence tests
+        run: bash "$PROOF_ROOT/scripts/test-postgres.sh"
+
+      - name: Run public result boundary test
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$PROOF_ROOT/tests/postgres/public_dedupe_result.sql"
+
+      - name: Verify correlation constraints and indexes exist
+        run: |
+          set -euo pipefail
+          constraints="$(psql "$DATABASE_URL" -At -v ON_ERROR_STOP=1 -c "select count(*) from pg_constraint where conname in ('error_tracking_parent_trace_shape_check','error_tracking_otel_shape_check')")"
+          test "$constraints" = "2"
+          indexes="$(psql "$DATABASE_URL" -At -v ON_ERROR_STOP=1 -c "select count(*) from pg_indexes where schemaname='public' and indexname in ('error_tracking_last_otel_trace_idx','error_tracking_parent_trace_ids_gin_idx','error_tracking_otel_trace_ids_gin_idx','error_tracking_otel_contexts_gin_idx')")"
+          test "$indexes" = "4"
+
+      - name: Retain persistence proof evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ores-err-trace-otel-persistence-${{ env.UPSTREAM_SHA }}
+          path: tmp/proofs/ores-err-trace-persistence/evidence/
+          if-no-files-found: error
