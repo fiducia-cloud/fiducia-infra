@@ -1,0 +1,54 @@
+name: regenerate proc isolation lock
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/proof-proc-lock-regeneration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PROC_SHA: 97a1d4e9639408b60e7f5d5c15381980ecae8cdb
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact process-isolation candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-proc-isolation-cli
+          ref: ${{ env.PROC_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify exact source head
+        run: test "$(git rev-parse HEAD)" = "$PROC_SHA"
+      - name: Configure scoped private Git dependency access
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Regenerate lock from reviewed manifest
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.98.1 --profile minimal
+          rustup default 1.98.1
+          cp Cargo.lock /tmp/committed-Cargo.lock
+          rm Cargo.lock
+          cargo generate-lockfile
+          echo 'BEGIN_REGENERATED_CARGO_LOCK'
+          cat Cargo.lock
+          echo 'END_REGENERATED_CARGO_LOCK'
+          echo 'BEGIN_CARGO_LOCK_DIFF'
+          diff -u /tmp/committed-Cargo.lock Cargo.lock || true
+          echo 'END_CARGO_LOCK_DIFF'
+      - name: Final exact-head guard
+        if: always()
+        run: test "$(git rev-parse HEAD)" = "$PROC_SHA"
