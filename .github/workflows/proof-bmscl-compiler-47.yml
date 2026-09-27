@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: f065d64da4a8f9c7eb8ebb0e509168b4c21191fd
+  SOURCE_SHA: 0075442aada0d4dcb6cd4a4e5aa1c3cdc33229b3
 
 jobs:
   exact-head-rust-proof:
@@ -75,7 +75,21 @@ jobs:
           retention-days: 7
 
       - name: Clippy
-        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+        id: clippy_check
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo clippy --locked --all-targets --all-features -- -D warnings 2>&1 | tee /tmp/bmscl-compiler-47-clippy.txt
+
+      - name: Preserve Clippy diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: bmscl-compiler-47-clippy
+          path: /tmp/bmscl-compiler-47-clippy.txt
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Full Rust test suite
         run: cargo test --locked --all-targets
@@ -99,4 +113,10 @@ jobs:
         if: steps.fmt_check.outcome == 'failure'
         run: |
           echo 'Exact source head is not rustfmt-clean; apply the retained remediation patch and re-run this proof.' >&2
+          exit 1
+
+      - name: Fail exact-head proof if Clippy was not clean
+        if: steps.clippy_check.outcome == 'failure'
+        run: |
+          echo 'Exact source head failed strict Clippy; inspect the retained diagnostics artifact and fix source.' >&2
           exit 1
