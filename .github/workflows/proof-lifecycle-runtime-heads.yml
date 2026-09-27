@@ -86,7 +86,6 @@ jobs:
         with:
           otp-version: '27'
           gleam-version: '1.17.0'
-          version-type: strict
 
       - name: Check changed Gleam formatting
         working-directory: scintilla
