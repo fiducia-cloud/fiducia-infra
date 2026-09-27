@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 env:
-  COMPARISONS_SHA: 3e3148c5b758764d38551b2ab2f2c2e22eed95b2
+  COMPARISONS_SHA: 66a8210a1b4a818875e458c8c9089d80ceb2cd5d
 
 jobs:
   cached-rpc:
@@ -25,7 +25,7 @@ jobs:
     with:
       stack: ${{ matrix.stack }}
       scenario: cached-rpc
-      comparisons_sha: 3e3148c5b758764d38551b2ab2f2c2e22eed95b2
+      comparisons_sha: 66a8210a1b4a818875e458c8c9089d80ceb2cd5d
     secrets: inherit
 
   http-observability:
@@ -39,7 +39,7 @@ jobs:
     with:
       stack: ${{ matrix.stack }}
       scenario: http-observability
-      comparisons_sha: 3e3148c5b758764d38551b2ab2f2c2e22eed95b2
+      comparisons_sha: 66a8210a1b4a818875e458c8c9089d80ceb2cd5d
     secrets: inherit
 
   forms-chat-workflow:
@@ -53,7 +53,7 @@ jobs:
     with:
       stack: ${{ matrix.stack }}
       scenario: forms-chat-workflow
-      comparisons_sha: 3e3148c5b758764d38551b2ab2f2c2e22eed95b2
+      comparisons_sha: 66a8210a1b4a818875e458c8c9089d80ceb2cd5d
     secrets: inherit
 
   big-org-example-commerce:
@@ -67,7 +67,7 @@ jobs:
     with:
       stack: ${{ matrix.stack }}
       scenario: big-org-example-commerce
-      comparisons_sha: 3e3148c5b758764d38551b2ab2f2c2e22eed95b2
+      comparisons_sha: 66a8210a1b4a818875e458c8c9089d80ceb2cd5d
     secrets: inherit
 
   big-org-example-collaboration:
@@ -81,7 +81,7 @@ jobs:
     with:
       stack: ${{ matrix.stack }}
       scenario: big-org-example-collaboration
-      comparisons_sha: 3e3148c5b758764d38551b2ab2f2c2e22eed95b2
+      comparisons_sha: 66a8210a1b4a818875e458c8c9089d80ceb2cd5d
     secrets: inherit
 
   big-org-example-operations:
@@ -95,7 +95,7 @@ jobs:
     with:
       stack: ${{ matrix.stack }}
       scenario: big-org-example-operations
-      comparisons_sha: 3e3148c5b758764d38551b2ab2f2c2e22eed95b2
+      comparisons_sha: 66a8210a1b4a818875e458c8c9089d80ceb2cd5d
     secrets: inherit
 
   aggregate:
@@ -107,7 +107,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: ORESoftware/ores-comparisons
-          ref: 3e3148c5b758764d38551b2ab2f2c2e22eed95b2
+          ref: 66a8210a1b4a818875e458c8c9089d80ceb2cd5d
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
 
