@@ -15,7 +15,63 @@ env:
   COMPARISONS_SHA: 66a8210a1b4a818875e458c8c9089d80ceb2cd5d
 
 jobs:
+  prepare-toolchain:
+    name: prepare exact pinned comparison toolchain
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout exact ores-comparisons head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ORESoftware/ores-comparisons
+          ref: 66a8210a1b4a818875e458c8c9089d80ceb2cd5d
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: "1.88"
+
+      - name: Configure scoped private source access
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global "url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf" "https://github.com/"
+
+      - name: Bootstrap exact pinned tools
+        run: |
+          set -euo pipefail
+          scripts/bootstrap_pinned_tools.sh
+          test -x .local/bin/ores-compose
+          test -x .local/bin/bmscl
+          test -x .local/bin/scintilla
+          test -x .local/bin/ores-stack
+          test -x .local/bin/tjsv
+          tar -czf "${RUNNER_TEMP}/toolchain.tar.gz" .local
+
+      - name: Upload exact pinned toolchain
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ores-comparisons-toolchain
+          path: ${{ runner.temp }}/toolchain.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Remove private credential rewrite
+        if: always()
+        shell: bash
+        run: |
+          git config --global --unset-all "url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf" >/dev/null 2>&1 || true
+
   cached-rpc:
+    needs: prepare-toolchain
     name: wave 1 cached-rpc / ${{ matrix.stack }}
     strategy:
       fail-fast: false
@@ -26,11 +82,12 @@ jobs:
       stack: ${{ matrix.stack }}
       scenario: cached-rpc
       comparisons_sha: 66a8210a1b4a818875e458c8c9089d80ceb2cd5d
+      toolchain_artifact: ores-comparisons-toolchain
     secrets: inherit
 
   http-observability:
     name: wave 2 http-observability / ${{ matrix.stack }}
-    needs: cached-rpc
+    needs: [prepare-toolchain, cached-rpc]
     strategy:
       fail-fast: false
       matrix:
@@ -40,11 +97,12 @@ jobs:
       stack: ${{ matrix.stack }}
       scenario: http-observability
       comparisons_sha: 66a8210a1b4a818875e458c8c9089d80ceb2cd5d
+      toolchain_artifact: ores-comparisons-toolchain
     secrets: inherit
 
   forms-chat-workflow:
     name: wave 3 forms-chat-workflow / ${{ matrix.stack }}
-    needs: http-observability
+    needs: [prepare-toolchain, http-observability]
     strategy:
       fail-fast: false
       matrix:
@@ -54,11 +112,12 @@ jobs:
       stack: ${{ matrix.stack }}
       scenario: forms-chat-workflow
       comparisons_sha: 66a8210a1b4a818875e458c8c9089d80ceb2cd5d
+      toolchain_artifact: ores-comparisons-toolchain
     secrets: inherit
 
   big-org-example-commerce:
     name: wave 4 big-org-example-commerce / ${{ matrix.stack }}
-    needs: forms-chat-workflow
+    needs: [prepare-toolchain, forms-chat-workflow]
     strategy:
       fail-fast: false
       matrix:
@@ -68,11 +127,12 @@ jobs:
       stack: ${{ matrix.stack }}
       scenario: big-org-example-commerce
       comparisons_sha: 66a8210a1b4a818875e458c8c9089d80ceb2cd5d
+      toolchain_artifact: ores-comparisons-toolchain
     secrets: inherit
 
   big-org-example-collaboration:
     name: wave 5 big-org-example-collaboration / ${{ matrix.stack }}
-    needs: big-org-example-commerce
+    needs: [prepare-toolchain, big-org-example-commerce]
     strategy:
       fail-fast: false
       matrix:
@@ -82,11 +142,12 @@ jobs:
       stack: ${{ matrix.stack }}
       scenario: big-org-example-collaboration
       comparisons_sha: 66a8210a1b4a818875e458c8c9089d80ceb2cd5d
+      toolchain_artifact: ores-comparisons-toolchain
     secrets: inherit
 
   big-org-example-operations:
     name: wave 6 big-org-example-operations / ${{ matrix.stack }}
-    needs: big-org-example-collaboration
+    needs: [prepare-toolchain, big-org-example-collaboration]
     strategy:
       fail-fast: false
       matrix:
@@ -96,6 +157,7 @@ jobs:
       stack: ${{ matrix.stack }}
       scenario: big-org-example-operations
       comparisons_sha: 66a8210a1b4a818875e458c8c9089d80ceb2cd5d
+      toolchain_artifact: ores-comparisons-toolchain
     secrets: inherit
 
   aggregate:
