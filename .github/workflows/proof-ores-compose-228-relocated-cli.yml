@@ -53,13 +53,20 @@ jobs:
           cargo install --locked --path . --root "$RUNNER_TEMP/ores-compose-install" --bin ores-compose
           test -x "$RUNNER_TEMP/ores-compose-install/bin/ores-compose"
 
-      - name: Delete source and prove relocated binary
+      - name: Remove build-time contract and prove relocated binary
         shell: bash
         run: |
           set -euo pipefail
           binary="$RUNNER_TEMP/ores-compose-install/bin/ores-compose"
           proof_root="$RUNNER_TEMP/relocated-proof"
+          source_contract="$GITHUB_WORKSPACE/.cli-flags.toml"
+          saved_contract="$RUNNER_TEMP/original-cli-flags.toml"
           mkdir -p "$proof_root"
+          cp "$source_contract" "$saved_contract"
+          trap 'cp "$saved_contract" "$source_contract"' EXIT
+          rm "$source_contract"
+          test ! -e "$source_contract"
+
           cat > "$proof_root/compose.yaml" <<'YAML'
           schema_version: ores.compose.v1
           project: relocated-cli-proof
@@ -71,9 +78,6 @@ jobs:
           YAML
 
           cd "$proof_root"
-          rm -rf "$GITHUB_WORKSPACE"
-          test ! -e "$GITHUB_WORKSPACE"
-
           "$binary" --help > help.txt
           grep -q 'ores-compose' help.txt
           "$binary" check compose.yaml
