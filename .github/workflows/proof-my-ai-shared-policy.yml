@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  MY_AI_SHA: 4d2921da1bc9c46d4d6797d5440e732a8e632105
+  MY_AI_SHA: 200eddf5b4f3929455bd5dea80d2540e5fffcf19
 
 jobs:
   shared-policy:
