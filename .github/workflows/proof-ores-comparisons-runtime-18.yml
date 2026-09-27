@@ -12,6 +12,6 @@ permissions:
 
 jobs:
   runtime-18:
-    uses: ORESoftware/ores-comparisons/.github/workflows/runtime-all-18.yml@ebcd846ee5c7f5f5ea7f49d402f0db57407974c1
+    uses: ORESoftware/ores-comparisons/.github/workflows/runtime-all-18.yml@92ba4ab50a16524262542fd57d48cd0d932b203e
     secrets:
       COMPARISON_REPO_READ_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
