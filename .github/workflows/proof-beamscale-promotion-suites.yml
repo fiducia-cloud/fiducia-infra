@@ -14,7 +14,7 @@ jobs:
     timeout-minutes: 50
     env:
       SUPERVISOR_SHA: e6924c658467a065c81da5035fd8510d54aadfed
-      UPGRADE_SUITE_SHA: 9865d2f53569e9d0eedf13aace119b5dae4c3f57
+      UPGRADE_SUITE_SHA: bb81acf2f2da654010b7cc5332dda4f616a2bfbf
       BASELINE_SHA: 9c8492fa261ccba8fb4a34688412dea9b1240737
       CURRENT_SHA: e1300bb973d002b7f6221b7c57da14b90ac9f782
     steps:
