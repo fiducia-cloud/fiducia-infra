@@ -89,7 +89,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      SUITE_SHA: 1e037c893a5fcb4f0268712c8994b9022a8e65d5
+      SUITE_SHA: 4c88112d90f17faabcf0ebd812ae8a3a77353935
       INFRA_SHA: 1c7699c12f53f088b493d0a07018082bb5ce8477
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -115,6 +115,16 @@ jobs:
           test "$(git -C infra rev-parse HEAD)" = "$INFRA_SHA"
           bash -n suite/scripts/churn_mock_runtime.sh
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          components: rustfmt, clippy
+      - name: Validate Rust chaos harness
+        working-directory: suite
+        run: |
+          cargo fmt --manifest-path tools/runtime-control-tool/Cargo.toml -- --check
+          cargo clippy --manifest-path tools/runtime-control-tool/Cargo.toml --all-targets -- -D warnings
+          test ! -e scripts/sign_runtime_request.py
+          cargo run --quiet --manifest-path tools/runtime-control-tool/Cargo.toml -- \
+            assert-source-lock evidence/source-lock.json beamscale/bmscl-infra "$INFRA_SHA"
       - name: Churn runtime lifecycle and epochs
         working-directory: suite
         env:
@@ -134,7 +144,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
-      SUITE_SHA: 48bbbfac7503dcd97be4abbebedfda4de1c9955d
+      SUITE_SHA: 6cf12d9009d3dd188a836b571719a501d3930d86
       INFRA_SHA: 1c7699c12f53f088b493d0a07018082bb5ce8477
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -160,6 +170,16 @@ jobs:
           test "$(git -C infra rev-parse HEAD)" = "$INFRA_SHA"
           bash -n suite/scripts/mock_cold_start.sh
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          components: rustfmt, clippy
+      - name: Validate Rust cold-start harness
+        working-directory: suite
+        run: |
+          cargo fmt --manifest-path tools/runtime-control-tool/Cargo.toml -- --check
+          cargo clippy --manifest-path tools/runtime-control-tool/Cargo.toml --all-targets -- -D warnings
+          test ! -e scripts/sign_runtime_request.py
+          cargo run --quiet --manifest-path tools/runtime-control-tool/Cargo.toml -- \
+            assert-source-lock evidence/source-lock.json beamscale/bmscl-infra "$INFRA_SHA"
       - name: Probe mock cold-start control plane
         working-directory: suite
         env:
@@ -168,13 +188,7 @@ jobs:
         run: bash scripts/mock_cold_start.sh
       - name: Verify cold-start evidence shape
         working-directory: suite
-        run: |
-          python3 - <<'PY'
-          import json
-          evidence = json.load(open('cold-start-evidence.json'))
-          assert evidence['schema'] == 'bmscl.mock-cold-start.v1'
-          assert isinstance(evidence['elapsed_ms'], int) and evidence['elapsed_ms'] >= 0
-          PY
+        run: cargo run --quiet --manifest-path tools/runtime-control-tool/Cargo.toml -- assert-cold-evidence cold-start-evidence.json
       - name: Prove exact source checkouts stayed clean
         run: |
           git -C suite diff --exit-code
