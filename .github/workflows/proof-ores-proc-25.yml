@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: 08918cff8a2be2779274f7c1dd4dee7aa565a23a
+  SOURCE_SHA: 24f62dd1183ea249dd6f850a872cbce407cbed4c
 
 jobs:
   full-rust-and-linux-attestation:
