@@ -178,7 +178,7 @@ jobs:
     timeout-minutes: 25
     env:
       PROOF_ROOT: tmp/proofs/ores-err-trace-persistence
-      UPSTREAM_SHA: 33df304c75b45b4039e0f4ae891cb06b2cfbfed1
+      UPSTREAM_SHA: 63f0213482406bf40aa06903fc06639276af38c1
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ores_err_trace
     services:
       postgres:
@@ -207,7 +207,7 @@ jobs:
         run: |
           set -euo pipefail
           root="$PROOF_ROOT"
-          test "$(git hash-object "$root/contracts/typespec/main.tsp")" = "c44a452c72d1024e8401e54436c2c9e5c95c0aa1"
+          test "$(git hash-object "$root/contracts/typespec/main.tsp")" = "a4b8bfb815fbbc3581ddfc50ab14f4a47077da5d"
           test "$(git hash-object "$root/contracts/json-schema/contract.schema.json")" = "7b8a1a6aa2f3a1bb439e5c4f42eb9f3f25e1a718"
           test "$(git hash-object "$root/sql/postgres/001_error_tracking.sql")" = "80b2251a0193a423afdcb11a922948881393d6ca"
           test "$(git hash-object "$root/sql/postgres/002_dd_next_parity.sql")" = "0f002709db9f35f615434fee740ec350f901fd7d"
