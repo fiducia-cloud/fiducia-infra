@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: 5a669f3f1a872c0d6025d70ed57a304ac0bc3497
+  SOURCE_SHA: aed201dbcbf4a8a5a8efa84758d3dba5eb1cb52b
 
 jobs:
   argv-admission:
