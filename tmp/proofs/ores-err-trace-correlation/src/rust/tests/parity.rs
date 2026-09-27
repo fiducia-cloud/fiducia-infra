@@ -10,5 +10,8 @@ fn fingerprint_v1_parity() {
         operation: Some("POST /users/:id".into()),
         ..Default::default()
     };
-    assert_eq!(fingerprint(&event), "1e2b57e748fec5876089424b64262899703db3df6ce62b6fb5416c0d7c239652");
+    assert_eq!(
+        fingerprint(&event),
+        "1e2b57e748fec5876089424b64262899703db3df6ce62b6fb5416c0d7c239652"
+    );
 }
