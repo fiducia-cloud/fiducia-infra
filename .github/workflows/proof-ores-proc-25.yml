@@ -34,13 +34,24 @@ jobs:
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           git diff --check
           grep -F 'unsafe_code = "forbid"' Cargo.toml
+          test ! -e Cargo.lock
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           toolchain: 1.88.0
           components: rustfmt, clippy
+      - name: Generate deterministic lock candidate from exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo generate-lockfile
+          test -s Cargo.lock
+          echo '--- CARGO_LOCK_BASE64_BEGIN ---'
+          base64 -w0 Cargo.lock
+          echo
+          echo '--- CARGO_LOCK_BASE64_END ---'
       - name: Format
         run: cargo fmt --all -- --check
-      - name: Clippy
+      - name: Clippy against generated lock
         run: cargo clippy --locked --all-targets -- -D warnings
       - name: Full test suite including live attestation negative
         run: cargo test --locked --all-targets -- --nocapture
@@ -52,7 +63,7 @@ jobs:
           cargo test --locked --test linux_runtime_admission_contract -- --nocapture
           cargo test --locked --test hostile_tenant_lifecycle_binding -- --nocapture
           cargo test --locked --test hostile_tenant_security_boundary -- --nocapture
-      - name: Prove checkout unchanged
+      - name: Prove tracked checkout unchanged
         run: |
           git diff --exit-code
           git diff --cached --exit-code
