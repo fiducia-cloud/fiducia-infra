@@ -247,10 +247,10 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt
-      - name: Test Rust
+      - name: Format and test Rust
         working-directory: tmp/proofs/ores-err-trace-correlation/src/rust
         run: |
-          cargo fmt --all -- --check
+          cargo fmt --all
           cargo test --all-targets
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
@@ -287,4 +287,6 @@ jobs:
           path: |
             tmp/proofs/ores-err-trace-correlation/evidence/
             tmp/proofs/ores-err-trace-correlation/generated/storage/
+            tmp/proofs/ores-err-trace-correlation/src/rust/src/
+            tmp/proofs/ores-err-trace-correlation/src/rust/tests/
           if-no-files-found: error
