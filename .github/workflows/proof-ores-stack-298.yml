@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: 00cb6b9311d05f17fe6a82661e9f709b7a631f2b
+  SOURCE_SHA: 6b9eb3e72e4771b46dd0861a9d33ead6f0886f57
 
 jobs:
   contract-toolchain:
@@ -35,6 +35,10 @@ jobs:
           git diff --check
           grep -F 'typespec-json-schema-validator/archive/2f6a5e1564c2a52af0e61e5b47a983b145b28884.tar.gz' package.json
           grep -F 'check:route-manifest' package.json | grep -F -- '--int64-strategy=number'
+          grep -F '@minValue(0)' contracts/route-manifest.tsp
+          grep -F '@maxValue(9007199254740991)' contracts/route-manifest.tsp
+          grep -F '"minimum": 0' contracts/route-manifest.schema.json
+          grep -F '"maximum": 9007199254740991' contracts/route-manifest.schema.json
           grep -F '"CallableName"' contracts/ores-lambda-callable-id.schema.json
           grep -F '"CallableId"' contracts/ores-lambda-callable-id.schema.json
           grep -F '"LambdaCallableIdentityV1"' contracts/ores-lambda-callable-id.schema.json
