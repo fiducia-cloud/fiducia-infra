@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  COMPOSE_SHA: f2d3e5408f69507332c4cd50dc44d041fa6aafb6
+  COMPOSE_SHA: 790d22cc9711c8f954075dc580ce309f6b9b202b
 
 jobs:
   rust-and-postgres:
