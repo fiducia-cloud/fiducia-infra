@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 env:
-  BEAMSCALE_SOURCE_SHA: d90deb2f5675eeacd81555c9246660cd913530ee
-  SCINTILLA_SOURCE_SHA: f40cce644fb7c68a2177ace5a358e226e93afeef
+  BEAMSCALE_SOURCE_SHA: f07999a74e8c49cbea728b6cacd49dad8868e1a1
+  SCINTILLA_SOURCE_SHA: bc83c0c967e4b1ebd112b47629cd801e012a22f9
 
 jobs:
   beamscale-supervisor:
