@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: 1a0c316dc719c9c370a6b0947bab1aa7f194a20a
+  SOURCE_SHA: d70b84d6a0fb69e398c701554053909b71f83878
 
 jobs:
   full-rust-and-linux-attestation:
@@ -27,31 +27,23 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
           show-progress: false
-      - name: Verify exact immutable source
+      - name: Verify exact immutable source and tracked lock
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           git diff --check
           grep -F 'unsafe_code = "forbid"' Cargo.toml
-          test ! -e Cargo.lock
+          test -f Cargo.lock
+          git ls-files --error-unmatch Cargo.lock >/dev/null
+          grep -F 'rev=3414281ed8d7339d5bfabf951048bff31aa3349e#3414281ed8d7339d5bfabf951048bff31aa3349e' Cargo.lock
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           toolchain: 1.88.0
           components: rustfmt, clippy
-      - name: Generate deterministic lock candidate from exact source
-        shell: bash
-        run: |
-          set -euo pipefail
-          cargo generate-lockfile
-          test -s Cargo.lock
-          echo '--- CARGO_LOCK_BASE64_BEGIN ---'
-          base64 -w0 Cargo.lock
-          echo
-          echo '--- CARGO_LOCK_BASE64_END ---'
       - name: Format
         run: cargo fmt --all -- --check
-      - name: Clippy against generated lock
+      - name: Clippy with tracked lock
         run: cargo clippy --locked --all-targets -- -D warnings
       - name: Full test suite including live attestation negative
         run: cargo test --locked --all-targets -- --nocapture
