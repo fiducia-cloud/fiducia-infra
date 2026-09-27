@@ -11,14 +11,14 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: fa26b443438e29cf6084cfe95f0ba7fbb2efe021
+  SOURCE_SHA: 6abfa6c20fa507308afc6259f5017b3e746e5768
 
 jobs:
   lambda-artifact-receipt-parity:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - name: Check out exact ORES Stack stacked head
+      - name: Check out exact ORES Stack head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/ores-stack
@@ -28,16 +28,18 @@ jobs:
           fetch-depth: 1
           show-progress: false
 
-      - name: Verify exact source and mapping policies
+      - name: Verify exact source and full stack policies
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           git diff --check
+          grep -F '@minValue(0)' contracts/route-manifest.tsp
+          grep -F '"minimum": 0' contracts/route-manifest.schema.json
           grep -F -- '--mapping=contracts/ores-lambda-callable-registry.mapping.json' package.json
           grep -F -- '--mapping=contracts/ores-lambda-build-manifest.mapping.json' package.json
           grep -F -- '--mapping=contracts/ores-lambda-artifact-receipt.mapping.json' package.json
-          grep -F 'ores.typespec-json-schema-validator.mapping/v1' contracts/ores-lambda-artifact-receipt.mapping.json
+          grep -F '@uniqueItems' contracts/ores-lambda-build-manifest.tsp
           grep -F '@extension(' contracts/ores-lambda-artifact-receipt.tsp
           grep -F '"unevaluatedProperties": false' contracts/ores-lambda-artifact-receipt.schema.json
 
@@ -60,6 +62,7 @@ jobs:
       - name: Prove prior stacked parity remains green
         shell: bash
         run: |
+          set -euo pipefail
           npm run check:lambda-callable-registry
           npm run check:lambda-build-manifest
 
