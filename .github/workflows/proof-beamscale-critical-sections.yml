@@ -1,0 +1,123 @@
+name: proof BeamScale critical-section chain
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/proof-beamscale-critical-sections.yml'
+  push:
+    branches:
+      - proof/beamscale-critical-sections-20260925
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  interfaces:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      SOURCE_SHA: b9870a3fbc20c94a1de16bdedf745998a0a604d8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: beamscale/bmscl-interfaces
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+      - run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - run: npm install --no-package-lock --ignore-scripts
+      - run: npm run check
+      - if: always()
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+
+  api-server:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      SOURCE_SHA: b82ab2130bde130b34d51d084630ff5e492de6c9
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: beamscale/bmscl-api-server.rs
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+      - run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo test --all-targets
+      - run: cargo fmt --all -- --check
+      - if: always()
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+
+  supervisor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      SOURCE_SHA: 19c416e5cda1b7807b89703cfffa9e6126614581
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: beamscale/bmscl-supervisor
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+      - run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
+        with:
+          otp-version: '27.3'
+          rebar3-version: '3.24.0'
+          gleam-version: '1.18.0'
+      - run: rebar3 compile
+      - run: rebar3 eunit
+      - run: rebar3 xref
+      - name: Formal critical-section model
+        run: |
+          rustc --edition=2021 --test conformance/critical_section_formal_model.rs -o /tmp/bmscl-critical-model
+          /tmp/bmscl-critical-model
+      - if: always()
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+
+  runtime-host:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      SOURCE_SHA: ba3ba3dd7a8e01528ec3c175d24aaa60d423845d
+      BMSCL_RUNTIME_BACKEND: mock
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: beamscale/bmscl-infra
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+      - run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - run: cargo clippy --manifest-path modules/tenant_runtime/runtime-host/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --manifest-path modules/tenant_runtime/runtime-host/Cargo.toml --all-targets
+      - run: cargo fmt --manifest-path modules/tenant_runtime/runtime-host/Cargo.toml --all -- --check
+      - name: Deployment contract
+        run: |
+          ruby <<'RUBY'
+          require "yaml"
+          cfg = YAML.safe_load(File.read("deploy/baremetal/.ores-proc-isolation.yaml"), permitted_classes: [], permitted_symbols: [], aliases: false)
+          abort "version" unless cfg["version"] == 1
+          abort "missing groups" unless cfg["groups"].is_a?(Hash)
+          abort "missing processes" unless cfg["processes"].is_a?(Hash)
+          RUBY
+      - if: always()
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
