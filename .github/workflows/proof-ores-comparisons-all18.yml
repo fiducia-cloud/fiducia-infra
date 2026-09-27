@@ -48,7 +48,7 @@ jobs:
       - name: Bootstrap exact pinned tools
         run: |
           set -euo pipefail
-          scripts/bootstrap_pinned_tools.sh
+          bash scripts/bootstrap_pinned_tools.sh
           test -x .local/bin/ores-compose
           test -x .local/bin/bmscl
           test -x .local/bin/scintilla
