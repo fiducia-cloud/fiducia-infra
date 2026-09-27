@@ -1,0 +1,89 @@
+name: proof ORES Flutter capability registry #4
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/proof-ores-flutter-capability-registry-4.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_SHA: 96e9135026926975386e788ab71676e2d06e49bc
+  ZED_CLI_SHA: f003a7421b4b293750e0d9086e5290535b1eeb89
+
+jobs:
+  flutter:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out exact ORES Flutter candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-flutter
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+      - name: Verify exact candidate
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          channel: stable
+          cache: true
+      - name: Resolve dependencies
+        run: flutter pub get
+      - name: Check formatting
+        run: dart format --output=none --set-exit-if-changed lib test
+      - name: Analyze
+        run: flutter analyze
+      - name: Test
+        run: flutter test
+      - name: Validate fleet registry
+        run: node tool/check_fleet_registry.mjs
+      - name: Final exact-head guard
+        if: always()
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+
+  zed-package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out exact ORES Flutter candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-flutter
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+      - name: Verify exact candidate
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      - name: Check out immutable zed-cli authority
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: zed-pkg/zed-cli
+          ref: ${{ env.ZED_CLI_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: tmp/zed-cli
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: stable
+      - name: Build exact zed CLI
+        working-directory: tmp/zed-cli
+        run: cargo build --release --locked --bin zed
+      - name: Validate zed-pkg metadata
+        run: ./tmp/zed-cli/target/release/zed validate --manifest .zpkg.toml
+      - name: Inspect package offline
+        run: |
+          ./tmp/zed-cli/target/release/zed inspect --root "$GITHUB_WORKSPACE" --format json > "$RUNNER_TEMP/zed-inspect.json"
+          test -s "$RUNNER_TEMP/zed-inspect.json"
+      - name: Validate fleet registry
+        run: node tool/check_fleet_registry.mjs
+      - name: Pack package through zed-pkg
+        run: ./tmp/zed-cli/target/release/zed pack
+      - name: Final exact-head guard
+        if: always()
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
