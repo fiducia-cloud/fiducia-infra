@@ -1,0 +1,122 @@
+name: proof ORES comparisons cached-rpc infra manifests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/proof-ores-comparisons-cached-rpc-infra.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  COMPOSE_SHA: 4e790084f09bc5e69a91859e86810070897ec6f9
+  BEAMSCALE_SHA: d96ce0ab1b72e7e00854d4f0d5d13e2f189a58d2
+  ORES_STACK_SHA: bfffb9334feee4c9ff67bb60c3fe28ed3e3786ca
+  SCINTILLA_SHA: 1b94e21f7167e8b9ffbb27ff06cdc91ec077cb7f
+
+jobs:
+  validate-cached-rpc:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact ores-compose head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.COMPOSE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: compose
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout BeamScale cached-rpc authority
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ores-dummy-org-4/.github
+          ref: ${{ env.BEAMSCALE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: manifests/beamscale
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout ORES Stack cached-rpc authority
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ores-dummy-org-4/.github
+          ref: ${{ env.ORES_STACK_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: manifests/ores-stack
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout Scintilla cached-rpc authority
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ores-dummy-org-4/.github
+          ref: ${{ env.SCINTILLA_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: manifests/scintilla-run
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify immutable source heads
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C compose rev-parse HEAD)" = "$COMPOSE_SHA"
+          test "$(git -C manifests/beamscale rev-parse HEAD)" = "$BEAMSCALE_SHA"
+          test "$(git -C manifests/ores-stack rev-parse HEAD)" = "$ORES_STACK_SHA"
+          test "$(git -C manifests/scintilla-run rev-parse HEAD)" = "$SCINTILLA_SHA"
+
+      - name: Configure scoped private Git dependency access
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Install reviewed Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.98.1 --profile minimal
+          rustup default 1.98.1
+
+      - name: Build exact ores-compose
+        working-directory: compose
+        run: cargo build --locked --bin ores-compose
+
+      - name: Check and plan BeamScale authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          compose/target/debug/ores-compose check manifests/beamscale/.ores-compose.yaml
+          compose/target/debug/ores-compose plan manifests/beamscale/.ores-compose.yaml
+
+      - name: Check and plan ORES Stack authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          compose/target/debug/ores-compose check manifests/ores-stack/.ores-compose.yaml
+          compose/target/debug/ores-compose plan manifests/ores-stack/.ores-compose.yaml
+
+      - name: Check and plan Scintilla authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          compose/target/debug/ores-compose check manifests/scintilla-run/.ores-compose.yaml
+          compose/target/debug/ores-compose plan manifests/scintilla-run/.ores-compose.yaml
+
+      - name: Final exact-head guards
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C compose rev-parse HEAD)" = "$COMPOSE_SHA"
+          test "$(git -C manifests/beamscale rev-parse HEAD)" = "$BEAMSCALE_SHA"
+          test "$(git -C manifests/ores-stack rev-parse HEAD)" = "$ORES_STACK_SHA"
+          test "$(git -C manifests/scintilla-run rev-parse HEAD)" = "$SCINTILLA_SHA"
