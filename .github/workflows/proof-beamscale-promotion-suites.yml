@@ -14,7 +14,7 @@ jobs:
     timeout-minutes: 50
     env:
       SUPERVISOR_SHA: e6924c658467a065c81da5035fd8510d54aadfed
-      UPGRADE_SUITE_SHA: 4ef42004643de7176399c59e0f8460db455c563d
+      UPGRADE_SUITE_SHA: 9865d2f53569e9d0eedf13aace119b5dae4c3f57
       BASELINE_SHA: 9c8492fa261ccba8fb4a34688412dea9b1240737
       CURRENT_SHA: e1300bb973d002b7f6221b7c57da14b90ac9f782
     steps:
@@ -89,7 +89,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      SUITE_SHA: 4c88112d90f17faabcf0ebd812ae8a3a77353935
+      SUITE_SHA: 2d2a74cd082058542a2c9dbd7fcbc67bec3a6903
       INFRA_SHA: 1c7699c12f53f088b493d0a07018082bb5ce8477
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -144,7 +144,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
-      SUITE_SHA: 6cf12d9009d3dd188a836b571719a501d3930d86
+      SUITE_SHA: 92ff702b11fc68bb1bf6ebac002b941d208f7577
       INFRA_SHA: 1c7699c12f53f088b493d0a07018082bb5ce8477
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
