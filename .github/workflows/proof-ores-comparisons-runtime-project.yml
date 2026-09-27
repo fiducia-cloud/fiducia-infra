@@ -12,6 +12,9 @@ on:
       comparisons_sha:
         required: true
         type: string
+      toolchain_artifact:
+        required: true
+        type: string
     secrets:
       ORE_SOURCE_PAT:
         required: true
@@ -87,13 +90,18 @@ jobs:
           sudo apt-get install -y postgresql-16 postgresql-client-16 protobuf-compiler rebar3
           echo "/usr/lib/postgresql/16/bin" >> "$GITHUB_PATH"
 
-      - name: Bootstrap exact-pinned comparison toolchain
+      - name: Download exact pinned toolchain artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ inputs.toolchain_artifact }}
+          path: ${{ runner.temp }}/ores-comparisons-toolchain
+
+      - name: Restore exact pinned toolchain
         shell: bash
         run: |
           set -euo pipefail
-          export PATH="/usr/lib/postgresql/16/bin:$PATH"
-          export CARGO_NET_GIT_FETCH_WITH_CLI=true
-          bash scripts/bootstrap_pinned_tools.sh
+          tar -xzf "${RUNNER_TEMP}/ores-comparisons-toolchain/toolchain.tar.gz" -C "$PWD"
+          test -x .local/bin/ores-compose
           echo "$PWD/.local/bin" >> "$GITHUB_PATH"
 
       - name: Verify and plan exact compose graph
