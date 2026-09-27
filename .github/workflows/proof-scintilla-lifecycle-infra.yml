@@ -1,0 +1,61 @@
+name: proof-scintilla-lifecycle-infra
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/proof-scintilla-lifecycle-infra.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SCINTILLA_INFRA_SHA: 72dd45ed5510e8f04c4399abddb4ab2871bb556d
+
+jobs:
+  lifecycle-infra:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact Scintilla infra PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: scintilla-run/scintilla-infra
+          ref: ${{ env.SCINTILLA_INFRA_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: scintilla-infra
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+
+      - name: Verify exact immutable source
+        working-directory: scintilla-infra
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SCINTILLA_INFRA_SHA"
+          git diff --check
+
+      - name: Install Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: scintilla-infra/package-lock.json
+
+      - name: Run fleet contracts
+        working-directory: scintilla-infra
+        run: |
+          npm ci
+          npm test
+
+      - name: Parse lifecycle Nix modules
+        working-directory: scintilla-infra
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq nix-bin
+          nix-instantiate --parse fleet/nixos/scintilla-lifecycle-agent.nix >/dev/null
+          nix-instantiate --parse fleet/colmena-hive.nix >/dev/null
