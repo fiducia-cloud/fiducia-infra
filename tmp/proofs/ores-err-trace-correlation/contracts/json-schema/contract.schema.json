@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ORESoftware/ores-err-trace/contracts/json-schema/contract.schema.json",
+  "$comment": "ores-err-trace independently authored JSON Schema authority; peer of contracts/typespec/main.tsp.",
+  "x-ores-namespace": "Ores.ErrTrace",
+  "$defs": {
+    "FingerprintPolicy": {
+      "type": "string",
+      "enum": ["v1", "dd-next-compat-v2"],
+      "description": "Fingerprint algorithm/policy selected by a caller."
+    },
+    "ErrorEvent": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "description": "Normalized error occurrence accepted from ores-otel or another producer.",
+      "properties": {
+        "service": {"type": "string", "minLength": 1},
+        "exception_type": {"type": "string"},
+        "error_type": {"type": "string"},
+        "error_code": {"type": "string"},
+        "message": {"type": "string"},
+        "error_list": {"type": "array", "items": {"type": "string"}},
+        "top_frame": {"type": "string"},
+        "operation": {"type": "string"},
+        "repository": {"type": "string"},
+        "environment": {"type": "string"},
+        "release_sha": {"type": "string"},
+        "trace_id": {"type": "string"},
+        "parent_trace_id": {"type": "string", "pattern": "^ores-trace-[A-Za-z0-9_-]{12,64}$"},
+        "otel_trace_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+        "otel_span_id": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
+        "severity": {"type": "string"},
+        "runtime": {"type": "string"},
+        "source": {"type": "string"},
+        "routine_id": {"type": "string"},
+        "file_name": {"type": "string"}
+      },
+      "required": ["service"],
+      "dependentRequired": {"otel_span_id": ["otel_trace_id"]}
+    },
+    "FingerprintEnvelope": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "description": "Fingerprint output carried across runtime and database boundaries.",
+      "properties": {
+        "policy": {"$ref": "#/$defs/FingerprintPolicy"},
+        "fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$|^dd-next-compat-v2:[0-9a-f]{64}$"},
+        "service": {"type": "string", "minLength": 1}
+      },
+      "required": ["policy", "fingerprint", "service"]
+    },
+    "DedupeRecordResult": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "description": "Result of atomically recording an occurrence using PostgreSQL unique-index/upsert semantics.",
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "policy": {"$ref": "#/$defs/FingerprintPolicy"},
+        "fingerprint": {"type": "string"},
+        "occurrence_count": {"type": "integer"},
+        "inserted": {"type": "boolean"},
+        "first_seen_at": {"type": "string"},
+        "last_seen_at": {"type": "string"}
+      },
+      "required": ["id", "policy", "fingerprint", "occurrence_count", "inserted", "first_seen_at", "last_seen_at"]
+    },
+    "CoordinationOperation": {
+      "type": "string",
+      "enum": ["record_occurrence", "reconcile_fingerprint_alias", "compact_occurrence_history", "emit_singleton_issue", "resolve_once"],
+      "description": "Operations that may need ores-locks-and-leases. record_occurrence intentionally does not."
+    },
+    "CoordinationIntent": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "description": "Decision boundary between database atomicity and distributed coordination.",
+      "properties": {
+        "operation": {"$ref": "#/$defs/CoordinationOperation"},
+        "requires_lock": {"type": "boolean"},
+        "lock_key": {"type": "string", "maxLength": 512}
+      },
+      "required": ["operation", "requires_lock"]
+    }
+  }
+}
