@@ -1,6 +1,6 @@
 -- GENERATED. DO NOT EDIT.
 -- Source: parity-admissible TypeSpec + JSON Schema Contract IR from ORESoftware/ores-err-trace.
--- contract_ir_id=33049ebc66627573e47dd707ce25a9f78e5074c240a0eb5d82f5d23a19863e01
+-- contract_ir_id=dad1106974d7ccfd23357a5f4881a45ec738393ed497aae609cacce3a3e06a29
 
 create extension if not exists pgcrypto;
 
@@ -27,6 +27,9 @@ create table if not exists public.ores_err_trace_events (
   "file_name" text,
   "message" text,
   "operation" text,
+  "otel_span_id" text,
+  "otel_trace_id" text,
+  "parent_trace_id" text,
   "release_sha" text,
   "repository" text,
   "routine_id" text,
@@ -42,6 +45,7 @@ create table if not exists public.ores_err_trace_events (
 
 create index if not exists ores_err_trace_events_service_time_idx on public.ores_err_trace_events(service, occurred_at desc);
 create index if not exists ores_err_trace_events_trace_idx on public.ores_err_trace_events(trace_id) where trace_id is not null;
+create index if not exists ores_err_trace_events_otel_trace_idx on public.ores_err_trace_events(otel_trace_id) where otel_trace_id is not null;
 create index if not exists ores_err_trace_events_repo_idx on public.ores_err_trace_events(repository, occurred_at desc) where repository is not null;
 
 do $ores$
