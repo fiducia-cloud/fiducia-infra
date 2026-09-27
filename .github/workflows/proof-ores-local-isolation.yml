@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  PROC_SHA: da20b90ca5cad00a20d34c6de676151627c23632
+  PROC_SHA: 3b9b4271fb2f7b5f36f5e0feceacd358f3db6fee
   COMPOSE_SHA: e630a8480755e1846f70bdf0f13a7566c2cb5457
 
 jobs:
@@ -27,7 +27,10 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
       - name: Verify exact source head
-        run: test "$(git rev-parse HEAD)" = "$PROC_SHA"
+        run: |
+          test "$(git rev-parse HEAD)" = "$PROC_SHA"
+          test -f Cargo.lock
+          git ls-files --error-unmatch Cargo.lock >/dev/null
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           toolchain: 1.88.0
@@ -38,10 +41,10 @@ jobs:
           bash -n scripts/linux/ores-proc-isolate.sh
           bash -n scripts/macos/ores-proc-isolate.sh
           cargo fmt --all -- --check
-          cargo clippy --all-targets -- -D warnings
-          cargo test --all-targets
-          cargo build --quiet --examples --bins
-      - name: Prove same-user local Seatbelt containment
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets
+          cargo build --locked --quiet --examples --bins
+      - name: Prove same-user local Seatbelt containment and stdin environment boundary
         shell: bash
         run: |
           set -euo pipefail
@@ -57,6 +60,7 @@ jobs:
               filesystem:
                 read_only:
                   - /usr/bin
+                  - /bin
                 read_write:
                   - /tmp/ores-proof-work
               network:
@@ -64,6 +68,10 @@ jobs:
                 deny_loopback: false
                 deny_private_networks: false
             none:
+              filesystem:
+                read_only:
+                  - /usr/bin
+                  - /bin
               network:
                 mode: none
           processes:
@@ -73,6 +81,11 @@ jobs:
             host-probe:
               group: none
               command: [/bin/kill, -0]
+            env-overlay:
+              group: none
+              command: [/usr/bin/printenv, APP_MODE]
+              environment:
+                APP_MODE: placeholder
             inside:
               group: local
               command: [/bin/sh, -c, "printf ok > inside.txt"]
@@ -88,6 +101,27 @@ jobs:
           YAML
           actual="$(target/debug/ores-proc-isolation run identity --config /tmp/ores-proof-policy.yaml)"
           test "$actual" = "$(id -u)"
+
+          overlay="$(printf '%s' '{"APP_MODE":"worker"}' | target/debug/ores-proc-isolation --target-env-stdin run env-overlay --config /tmp/ores-proof-policy.yaml)"
+          test "$overlay" = worker
+
+          if printf '%s' '{"UNDECLARED":"x"}' | target/debug/ores-proc-isolation --target-env-stdin run env-overlay --config /tmp/ores-proof-policy.yaml; then
+            echo "undeclared stdin environment key unexpectedly succeeded" >&2
+            exit 1
+          fi
+
+          dry="$(printf '%s' '{"APP_MODE":"super-secret-value"}' | target/debug/ores-proc-isolation --target-env-stdin --dry-run --json run env-overlay --config /tmp/ores-proof-policy.yaml)"
+          printf '%s' "$dry" | grep -q 'APP_MODE'
+          if printf '%s' "$dry" | grep -q 'super-secret-value'; then
+            echo "dry-run leaked stdin environment value" >&2
+            exit 1
+          fi
+
+          if target/debug/ores-proc-isolation --target-env-stdin check --config /tmp/ores-proof-policy.yaml </dev/null; then
+            echo "run-only stdin environment flag unexpectedly accepted by check" >&2
+            exit 1
+          fi
+
           target/debug/ores-proc-isolation run inside --config /tmp/ores-proof-policy.yaml
           test "$(cat /tmp/ores-proof-work/inside.txt)" = ok
           if target/debug/ores-proc-isolation run outside --config /tmp/ores-proof-policy.yaml; then
@@ -110,7 +144,10 @@ jobs:
           kill -0 "$host_pid"
       - name: Final exact-head guard
         if: always()
-        run: test "$(git rev-parse HEAD)" = "$PROC_SHA"
+        run: |
+          test "$(git rev-parse HEAD)" = "$PROC_SHA"
+          git diff --exit-code
+          git diff --cached --exit-code
 
   compose-rust:
     runs-on: ubuntu-24.04
@@ -186,7 +223,7 @@ jobs:
         run: |
           rustup toolchain install 1.98.1 --profile minimal
           rustup default 1.98.1
-          cargo build --manifest-path isolation/Cargo.toml --bin ores-proc-isolation
+          cargo build --locked --manifest-path isolation/Cargo.toml --bin ores-proc-isolation
           cargo build --manifest-path compose/Cargo.toml --bin ores-compose
       - name: Run ores-compose through required same-user isolation
         shell: bash
@@ -206,7 +243,11 @@ jobs:
           YAML
           export ORES_COMPOSE_PROCESS_ISOLATION=required
           export ORES_PROC_ISOLATION_BIN="$GITHUB_WORKSPACE/isolation/target/debug/ores-proc-isolation"
-          "$GITHUB_WORKSPACE/compose/target/debug/ores-compose"             --skip-zed-pkg             --skip-rpc-gen             --skip-source-sync             up "$root/.ores-compose.yaml" >"$RUNNER_TEMP/compose-proof.log" 2>&1 &
+          "$GITHUB_WORKSPACE/compose/target/debug/ores-compose" \
+            --skip-zed-pkg \
+            --skip-rpc-gen \
+            --skip-source-sync \
+            up "$root/.ores-compose.yaml" >"$RUNNER_TEMP/compose-proof.log" 2>&1 &
           compose_pid=$!
           cleanup() {
             kill -INT "$compose_pid" 2>/dev/null || true
