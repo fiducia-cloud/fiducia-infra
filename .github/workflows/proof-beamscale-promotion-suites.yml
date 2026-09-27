@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     env:
-      SUPERVISOR_SHA: 77d7ba0a0357794fd428da9b4d4fc14ef39cb784
+      SUPERVISOR_SHA: e6924c658467a065c81da5035fd8510d54aadfed
       UPGRADE_SUITE_SHA: 028d183ce941dc4cdb51d394329eee2cd37fdcff
       BASELINE_SHA: 9c8492fa261ccba8fb4a34688412dea9b1240737
       CURRENT_SHA: e1300bb973d002b7f6221b7c57da14b90ac9f782
@@ -58,13 +58,13 @@ jobs:
           test "$(git -C suite rev-parse HEAD)" = "$UPGRADE_SUITE_SHA"
           test "$(git -C compiler-baseline rev-parse HEAD)" = "$BASELINE_SHA"
           test "$(git -C compiler-current rev-parse HEAD)" = "$CURRENT_SHA"
-          grep -Fq '{cowboy, "2.14.2"}' supervisor/rebar.config
+          grep -Fq '{cowboy, "2.19.0"}' supervisor/rebar.config
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
       - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
         with:
           otp-version: "27.3"
           gleam-version: "1.18.0"
-          rebar3-version: "3.24.0"
+          rebar3-version: "3.27.0"
           version-type: strict
       - name: Supervisor compile, EUnit and xref
         working-directory: supervisor
@@ -89,7 +89,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      SUITE_SHA: 955f703aa58dd8190a045c52a500a1cee6bf21c7
+      SUITE_SHA: 1e037c893a5fcb4f0268712c8994b9022a8e65d5
       INFRA_SHA: 1c7699c12f53f088b493d0a07018082bb5ce8477
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -134,7 +134,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
-      SUITE_SHA: 88bdef1b29f5ea646030f7e16d7fd026b2e1d8ec
+      SUITE_SHA: 48bbbfac7503dcd97be4abbebedfda4de1c9955d
       INFRA_SHA: 1c7699c12f53f088b493d0a07018082bb5ce8477
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -184,7 +184,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
-      SUITE_SHA: 54e45aae67f39bc80624865795ba194d06a649b9
+      SUITE_SHA: 0ae687fae73a049724cbe8b1b2daeef4601d782b
       RUST_SHA: 7a1f2706e1265c0cf3db7de723d9fbe45f5c3695
       GLEAM_SHA: 7b4daa4d71101ef54af4c42bdb665686685829a4
     steps:
@@ -218,7 +218,9 @@ jobs:
           test "$(git -C suite rev-parse HEAD)" = "$SUITE_SHA"
           test "$(git -C rust-cli rev-parse HEAD)" = "$RUST_SHA"
           test "$(git -C gleam-cli rev-parse HEAD)" = "$GLEAM_SHA"
-          python3 -m py_compile suite/scripts/compare_help.py
+          rustc --edition=2021 -D warnings suite/scripts/verify_source_lock.rs -o /tmp/verify-cli-source-lock
+          (cd suite && /tmp/verify-cli-source-lock)
+          rustc --edition=2021 -D warnings suite/scripts/compare_help.rs -o /tmp/compare-cli-help
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
           components: rustfmt, clippy
@@ -235,17 +237,25 @@ jobs:
           cargo clippy --all-targets --all-features -- -D warnings
           cargo test --all-targets
           cargo run --quiet -- --help > ../suite/rust-help.txt
-      - name: Gleam CLI gates and help
+      - name: Gleam CLI build, EUnit regressions and help
         working-directory: gleam-cli
         run: |
+          set -euo pipefail
           gleam deps download
-          gleam format --check src test
+          gleam format --check src
           gleam check
-          gleam test
+          gleam build
+          ebin="$RUNNER_TEMP/bmscl-cli-gleam-eunit"
+          mkdir -p "$ebin"
+          erlc -DTEST -o "$ebin" src/bmscl_dev_ffi.erl
+          erlc -o "$ebin" test/bmscl_dev_state_tests.erl
+          erl -noshell -pa "$ebin" -eval 'case eunit:test(bmscl_dev_state_tests, [verbose]) of ok -> halt(0); _ -> halt(1) end.'
+          erlc -o "$ebin" src/bmscl_deploy_ffi.erl src/bmscl_provider_deploy_ffi.erl src/bmscl_provider_bundle_ffi.erl test/bmscl_provider_deploy_tests.erl
+          erl -noshell -pa "$ebin" build/dev/erlang/*/ebin -eval 'case eunit:test(bmscl_provider_deploy_tests, [verbose]) of ok -> halt(0); _ -> halt(1) end.'
           gleam run -- --help > ../suite/gleam-help.txt
       - name: Compare actual command surfaces
         working-directory: suite
-        run: python3 scripts/compare_help.py
+        run: /tmp/compare-cli-help
       - name: Prove exact source checkouts stayed clean
         run: |
           git -C rust-cli diff --exit-code
