@@ -30,7 +30,10 @@ fn dd_next_compatibility_ignores_blank_error_list_entries() {
     ]);
     let mut b = base();
     b.error_list = Some(vec!["boom requestId:req-b".into()]);
-    assert_eq!(dd_next_compat_fingerprint(&a), dd_next_compat_fingerprint(&b));
+    assert_eq!(
+        dd_next_compat_fingerprint(&a),
+        dd_next_compat_fingerprint(&b)
+    );
 }
 
 #[test]
