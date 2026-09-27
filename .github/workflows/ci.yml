@@ -257,10 +257,10 @@ jobs:
         with:
           go-version: '1.23.x'
           cache: false
-      - name: Test Go
+      - name: Format and test Go
         working-directory: tmp/proofs/ores-err-trace-correlation/src/golang
         run: |
-          test -z "$(gofmt -l .)"
+          gofmt -w .
           go vet ./...
           go test ./...
 
@@ -289,4 +289,5 @@ jobs:
             tmp/proofs/ores-err-trace-correlation/generated/storage/
             tmp/proofs/ores-err-trace-correlation/src/rust/src/
             tmp/proofs/ores-err-trace-correlation/src/rust/tests/
+            tmp/proofs/ores-err-trace-correlation/src/golang/
           if-no-files-found: error
