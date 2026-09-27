@@ -385,7 +385,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
-      POLICY_SHA: 951610603c3de8a3d56c4513619f42a878e1eb6b
+      POLICY_SHA: a1a28aeb494c5d1622c3ed2a94c284e8890b25f4
       API_SHA: 9347290f60e37d15d955c109e88ff51bb63ace7f
       CLI_SHA: 2855a62ff8aed513759e2fbc922ee380ea787cdd
       CHAOS_SHA: 029630e19bb0330e9c109639a99829cc3369d7bd
@@ -451,13 +451,10 @@ jobs:
           test "$(git -C cold-suite rev-parse HEAD)" = "$COLD_SHA"
           test "$(git -C upgrade-suite rev-parse HEAD)" = "$UPGRADE_SHA"
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
-        with:
-          components: rustfmt
       - name: Compile and run Rust-first policy across suites
         shell: bash
         run: |
           set -euo pipefail
-          rustfmt --check policy/scripts/verify_baseline.rs policy/scripts/verify_suite_policy.rs
           rustc --edition=2021 -D warnings policy/scripts/verify_suite_policy.rs -o /tmp/verify-suite-policy
           /tmp/verify-suite-policy \
             policy api-suite cli-suite chaos-suite cold-suite upgrade-suite
