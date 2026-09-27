@@ -12,7 +12,7 @@ permissions:
 
 env:
   BEAMSCALE_SOURCE_SHA: d90deb2f5675eeacd81555c9246660cd913530ee
-  SCINTILLA_SOURCE_SHA: 86a76647e4fafff02333bb9f363dc1ee112301ca
+  SCINTILLA_SOURCE_SHA: f40cce644fb7c68a2177ace5a358e226e93afeef
 
 jobs:
   beamscale-supervisor:
