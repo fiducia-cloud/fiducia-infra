@@ -68,7 +68,10 @@ fn safe_field(input: &str) -> String {
 
 pub fn normalize_message(input: &str) -> String {
     let mut s = collapse_ws(input.trim());
-    let uuid = Regex::new(r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b").unwrap();
+    let uuid = Regex::new(
+        r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b",
+    )
+    .unwrap();
     let hex = Regex::new(r"(?i)\b0x[0-9a-f]+\b").unwrap();
     let long_num = Regex::new(r"\b\d{4,}\b").unwrap();
     s = uuid.replace_all(&s, "<uuid>").into_owned();
@@ -82,11 +85,23 @@ pub fn normalize_dd_next_text(input: &str) -> String {
         (r"(?is)params:\s*[\s\S]*$", "params:<redacted>"),
         (r"\b(?:dd|ores)-trace-[A-Za-z0-9_-]+\b", "<trace-id>"),
         (r"\bddl-routine-[A-Za-z0-9_-]+\b", "<routine-id>"),
-        (r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b", "<uuid>"),
+        (
+            r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b",
+            "<uuid>",
+        ),
         (r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", "<email>"),
-        (r"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b", "<iso-timestamp>"),
-        (r#""(traceId|requestId|browserSessionId|hashcode|canonicalHashcode|incomingHashcode)"\s*:\s*"[^"]*""#, r#""$1":"<redacted>""#),
-        (r"(?i)\b(reqId|requestId|browserSessionId):[A-Za-z0-9_-]+\b", "$1:<id>"),
+        (
+            r"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b",
+            "<iso-timestamp>",
+        ),
+        (
+            r#""(traceId|requestId|browserSessionId|hashcode|canonicalHashcode|incomingHashcode)"\s*:\s*"[^"]*""#,
+            r#""$1":"<redacted>""#,
+        ),
+        (
+            r"(?i)\b(reqId|requestId|browserSessionId):[A-Za-z0-9_-]+\b",
+            "$1:<id>",
+        ),
         (r"\b\d{10,}\b", "<long-number>"),
     ];
     for (pattern, replacement) in replacements {
@@ -107,7 +122,10 @@ fn ident(input: Option<&str>) -> String {
 }
 
 pub fn canonical_key(event: &ErrorEvent) -> String {
-    let exception = event.exception_type.as_deref().or(event.error_type.as_deref());
+    let exception = event
+        .exception_type
+        .as_deref()
+        .or(event.error_type.as_deref());
     [
         PREFIX.to_string(),
         ident(Some(&event.service)),
@@ -148,10 +166,19 @@ pub fn dd_next_compat_canonical_key(event: &ErrorEvent) -> String {
         DD_PREFIX.to_string(),
         ident(Some(event.environment.as_deref().unwrap_or("unknown-env"))),
         event.release_sha.clone().unwrap_or_default(),
-        event.error_code.clone().unwrap_or_else(|| "DEFAULT".to_string()),
+        event
+            .error_code
+            .clone()
+            .unwrap_or_else(|| "DEFAULT".to_string()),
         error_type.to_string(),
-        event.severity.clone().unwrap_or_else(|| error_type.to_string()),
-        event.runtime.clone().unwrap_or_else(|| "unknown-runtime".to_string()),
+        event
+            .severity
+            .clone()
+            .unwrap_or_else(|| error_type.to_string()),
+        event
+            .runtime
+            .clone()
+            .unwrap_or_else(|| "unknown-runtime".to_string()),
         event.source.clone().unwrap_or_default(),
         event.routine_id.clone().unwrap_or_default(),
         event.repository.clone().unwrap_or_default(),
@@ -189,7 +216,12 @@ pub fn enrich(event: &ErrorEvent) -> FingerprintedEvent {
         fingerprint_version: FINGERPRINT_VERSION.to_string(),
         fingerprint: fingerprint(event),
         service: ident(Some(&event.service)),
-        exception_type: ident(event.exception_type.as_deref().or(event.error_type.as_deref())),
+        exception_type: ident(
+            event
+                .exception_type
+                .as_deref()
+                .or(event.error_type.as_deref()),
+        ),
         normalized_message: normalize_message(event.message.as_deref().unwrap_or_default()),
         normalized_top_frame: normalize_frame(event.top_frame.as_deref().unwrap_or_default()),
         operation: ident(event.operation.as_deref()),
@@ -204,9 +236,7 @@ mod tests {
         ErrorEvent {
             service: "api".into(),
             exception_type: Some("DbError".into()),
-            message: Some(
-                "user 123456 failed 550e8400-e29b-41d4-a716-446655440000".into(),
-            ),
+            message: Some("user 123456 failed 550e8400-e29b-41d4-a716-446655440000".into()),
             top_frame: Some("src/db.rs:123:45".into()),
             operation: Some("POST /users/:id".into()),
             ..Default::default()
@@ -247,7 +277,10 @@ mod tests {
         a.release_sha = Some("aaa".into());
         let mut b = a.clone();
         b.release_sha = Some("bbb".into());
-        assert_ne!(dd_next_compat_fingerprint(&a), dd_next_compat_fingerprint(&b));
+        assert_ne!(
+            dd_next_compat_fingerprint(&a),
+            dd_next_compat_fingerprint(&b)
+        );
     }
 
     #[test]
@@ -260,12 +293,17 @@ mod tests {
         a.message = Some("boom dd-trace-one requestId:req-a".into());
         let mut b = a.clone();
         b.message = Some("boom ores-trace-two requestId:req-b".into());
-        assert_eq!(dd_next_compat_fingerprint(&a), dd_next_compat_fingerprint(&b));
+        assert_eq!(
+            dd_next_compat_fingerprint(&a),
+            dd_next_compat_fingerprint(&b)
+        );
     }
 
     #[test]
     fn locking_policy_avoids_hot_path_lock() {
-        assert!(!requires_coordination(CoordinationOperation::RecordOccurrence));
+        assert!(!requires_coordination(
+            CoordinationOperation::RecordOccurrence
+        ));
         for op in [
             CoordinationOperation::ReconcileFingerprintAlias,
             CoordinationOperation::CompactOccurrenceHistory,
@@ -276,9 +314,11 @@ mod tests {
         }
         assert!(lock_key_for_fingerprint("API Service", "abc")
             .starts_with("oresoftware/err-trace/fingerprint:api service:abc"));
-        assert!(lock_key_for_fingerprint(&"x".repeat(1000), &"f".repeat(64))
-            .chars()
-            .count()
-            <= 512);
+        assert!(
+            lock_key_for_fingerprint(&"x".repeat(1000), &"f".repeat(64))
+                .chars()
+                .count()
+                <= 512
+        );
     }
 }
