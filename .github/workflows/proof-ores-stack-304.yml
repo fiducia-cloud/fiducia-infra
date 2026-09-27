@@ -11,14 +11,14 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: 7683acf498815916198249e12797176672bcda77
+  SOURCE_SHA: 596ddc4c3617e844a7b3639a94d392b9b9576d62
 
 jobs:
   callable-registry-parity:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - name: Check out exact ORES Stack stacked head
+      - name: Check out exact ORES Stack head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/ores-stack
@@ -39,6 +39,8 @@ jobs:
           grep -F 'ores.typespec-json-schema-validator.mapping/v1' contracts/ores-lambda-callable-registry.mapping.json
           grep -F '"RecordString"' contracts/ores-lambda-callable-registry.mapping.json
           grep -F '"registry"' contracts/ores-lambda-callable-registry.schema.json
+          grep -F '@minValue(0)' contracts/route-manifest.tsp
+          grep -F '"minimum": 0' contracts/route-manifest.schema.json
 
       - name: Install Node 22
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
@@ -56,6 +58,18 @@ jobs:
           test -x node_modules/.bin/tjsv
           node_modules/.bin/tjsv --help >/dev/null
 
+      - name: Prove merged base parity remains green
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run check:route-manifest
+          npm run check:config
+          npm run check:web-config
+          npm run check:web-admission
+          npm run check:web-plan
+          npm run check:web-lambda-build-unit
+          npm run check:lambda-callable-id
+
       - name: Prove callable-registry peer-authority parity
         shell: bash
         run: |
@@ -70,9 +84,12 @@ jobs:
           fi
           exit 1
 
-      - name: Run full contract parity suite
+      - name: Prove later layers remain intentionally out of scope
         shell: bash
-        run: npm run check:contracts
+        run: |
+          set -euo pipefail
+          test ! -e contracts/ores-lambda-build-manifest.mapping.json
+          test ! -e contracts/ores-lambda-artifact-receipt.mapping.json
 
       - name: Prove tracked source unchanged
         shell: bash
