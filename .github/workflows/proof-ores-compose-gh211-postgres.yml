@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  COMPOSE_SHA: 4e790084f09bc5e69a91859e86810070897ec6f9
+  COMPOSE_SHA: 53054982beb47cb4ee52e92978ae6600e64aff91
 
 jobs:
   postgres-infra:
