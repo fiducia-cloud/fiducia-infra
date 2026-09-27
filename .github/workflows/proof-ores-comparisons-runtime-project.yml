@@ -1,0 +1,134 @@
+name: proof ORES comparisons runtime project
+
+on:
+  workflow_call:
+    inputs:
+      stack:
+        required: true
+        type: string
+      scenario:
+        required: true
+        type: string
+      comparisons_sha:
+        required: true
+        type: string
+    secrets:
+      ORE_SOURCE_PAT:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      STACK: ${{ inputs.stack }}
+      SCENARIO: ${{ inputs.scenario }}
+      COMPARISONS_SHA: ${{ inputs.comparisons_sha }}
+      CROSS_REPO_READ_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+
+    steps:
+      - name: Checkout exact ores-comparisons head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ORESoftware/ores-comparisons
+          ref: ${{ env.COMPARISONS_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Verify exact source head
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$COMPARISONS_SHA"
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
+        with:
+          otp-version: "29.1.1"
+          gleam-version: "1.18.1"
+
+      - name: Configure private exact-gitlink access
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$CROSS_REPO_READ_TOKEN"
+          git config --global "url.https://x-access-token:${CROSS_REPO_READ_TOKEN}@github.com/.insteadOf" "https://github.com/"
+
+      - name: Initialize governed target gitlinks
+        shell: bash
+        run: |
+          set -euo pipefail
+          prefix="stacks/${STACK}/projects/${SCENARIO}/repos/"
+          mapfile -t paths < <(
+            git config -f .gitmodules --get-regexp '^submodule\..*\.path$' |
+              awk '{print $2}' |
+              grep -F "$prefix"
+          )
+          test "${#paths[@]}" -gt 0
+          git submodule sync -- "${paths[@]}"
+          git submodule update --init --recursive --checkout -- "${paths[@]}"
+
+      - name: Install host runtime dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y postgresql-16 postgresql-client-16 protobuf-compiler rebar3
+          echo "/usr/lib/postgresql/16/bin" >> "$GITHUB_PATH"
+
+      - name: Bootstrap exact-pinned comparison toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="/usr/lib/postgresql/16/bin:$PATH"
+          export CARGO_NET_GIT_FETCH_WITH_CLI=true
+          bash scripts/bootstrap_pinned_tools.sh
+          echo "$PWD/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Verify and plan exact compose graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          config="stacks/${STACK}/projects/${SCENARIO}/repos/.github/.ores-compose.yaml"
+          ./.local/bin/ores-compose check "$config"
+          ./.local/bin/ores-compose plan "$config"
+
+      - name: Prove runtime to compose_ready and clean shutdown
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="/usr/lib/postgresql/16/bin:$PWD/.local/bin:$PATH"
+          python3 scripts/prove_runtime_project.py             --stack "$STACK"             --scenario "$SCENARIO"             --ready-timeout 600             --shutdown-timeout 45
+
+      - name: Print runtime receipt
+        if: always()
+        shell: bash
+        run: |
+          receipt="artifacts/runtime-18/${STACK}-${SCENARIO}.json"
+          if [[ -f "$receipt" ]]; then cat "$receipt"; fi
+
+      - name: Upload runtime receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: runtime-proof-${{ inputs.stack }}-${{ inputs.scenario }}
+          path: artifacts/runtime-18/${{ inputs.stack }}-${{ inputs.scenario }}.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Remove private credential rewrite
+        if: always()
+        shell: bash
+        run: |
+          git config --global --unset-all "url.https://x-access-token:${CROSS_REPO_READ_TOKEN}@github.com/.insteadOf" >/dev/null 2>&1 || true
