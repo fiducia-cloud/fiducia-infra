@@ -1,0 +1,46 @@
+name: proof ores-compose 226 test fix
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/proof-ores-compose-226-test-fix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  COMPOSE_SHA: 11092db52c38094ebf6e8ddef45b4df9d318e022
+
+jobs:
+  full-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact ores-compose head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.COMPOSE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify exact source head
+        run: test "$(git rev-parse HEAD)" = "$COMPOSE_SHA"
+      - name: Configure scoped private Git dependency access
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Install reviewed Rust toolchain
+        run: |
+          rustup toolchain install 1.98.1 --profile minimal
+          rustup default 1.98.1
+      - name: Run full exact-head tests
+        run: cargo test --all-targets --all-features
+      - name: Final exact-head guard
+        if: always()
+        run: test "$(git rev-parse HEAD)" = "$COMPOSE_SHA"
