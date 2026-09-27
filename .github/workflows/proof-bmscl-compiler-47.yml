@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: fc43a789c558dfec85f3df158d63c85ca4f97a55
+  SOURCE_SHA: 147f1a31cde048fcea7a58c81494288bb7400723
 
 jobs:
   exact-head-rust-proof:
