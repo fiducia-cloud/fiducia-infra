@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: 6abfa6c20fa507308afc6259f5017b3e746e5768
+  SOURCE_SHA: a755fb383d281428a583421b99d725652379ca22
 
 jobs:
   lambda-artifact-receipt-parity:
