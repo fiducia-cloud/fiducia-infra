@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  PROC_SHA: 97a1d4e9639408b60e7f5d5c15381980ecae8cdb
+  PROC_SHA: baa183733aa53c1c607446a2905ae55e7c5cdf47
 
 jobs:
   regenerate:
