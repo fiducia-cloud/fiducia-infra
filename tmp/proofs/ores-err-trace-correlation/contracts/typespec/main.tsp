@@ -1,6 +1,10 @@
 // ores-err-trace — independently authored TypeSpec authority.
 // Peer: ../json-schema/contract.schema.json. Neither file is generated from the other.
 
+import "@typespec/json-schema";
+
+using TypeSpec.JsonSchema;
+
 @doc("Cross-runtime error fingerprint, persistence, and coordination contracts.")
 namespace Ores.ErrTrace;
 
@@ -11,6 +15,7 @@ enum FingerprintPolicy {
 }
 
 @doc("Normalized error occurrence accepted from ores-otel or another producer.")
+@extension("dependentRequired", #{ otel_span_id: #["otel_trace_id"] })
 model ErrorEvent {
   @minLength(1)
   service: string;
