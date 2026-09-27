@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: e2efa9e6179d107798bb685ddce81ecc09333ecb
+  SOURCE_SHA: f46d4ac8cf194ce38bb8460cdca9030187eeb0e8
 
 jobs:
   lambda-build-manifest-parity:
