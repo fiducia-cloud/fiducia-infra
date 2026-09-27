@@ -35,7 +35,8 @@
         "routine_id": {"type": "string"},
         "file_name": {"type": "string"}
       },
-      "required": ["service"]
+      "required": ["service"],
+      "dependentRequired": {"otel_span_id": ["otel_trace_id"]}
     },
     "FingerprintEnvelope": {
       "type": "object",
