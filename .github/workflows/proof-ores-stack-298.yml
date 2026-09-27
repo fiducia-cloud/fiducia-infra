@@ -55,30 +55,23 @@ jobs:
           set -euo pipefail
           test -x node_modules/.bin/tjsv
           node_modules/.bin/tjsv --help >/dev/null
-      - name: Run all contract parity checks
+      - name: Run base-layer parity checks owned by PR 298
         shell: bash
         run: |
-          set -uo pipefail
-          if npm run check:contracts; then
-            exit 0
-          fi
-          for report in \
-            route-manifest-schema-parity.json \
-            config-schema-parity.json \
-            web-config-schema-parity.json \
-            web-admission-schema-parity.json \
-            web-plan-schema-parity.json \
-            web-lambda-build-unit-schema-parity.json \
-            lambda-callable-id-schema-parity.json \
-            lambda-callable-registry-schema-parity.json \
-            lambda-build-manifest-schema-parity.json \
-            lambda-artifact-receipt-schema-parity.json; do
-            if [[ -f ".ores-stack/$report" ]]; then
-              echo "--- TJSV $report ---"
-              cat ".ores-stack/$report"
-            fi
-          done
-          exit 1
+          set -euo pipefail
+          npm run check:route-manifest
+          npm run check:config
+          npm run check:web-config
+          npm run check:web-admission
+          npm run check:web-plan
+          npm run check:web-lambda-build-unit
+          npm run check:lambda-callable-id
+      - name: Prove next-layer callable registry is intentionally not certified here
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e contracts/ores-lambda-callable-registry.mapping.json
+          grep -F '"check:lambda-callable-registry": "tjsv check' package.json
       - name: Prove tracked source unchanged
         shell: bash
         run: |
