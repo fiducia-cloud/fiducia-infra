@@ -179,7 +179,7 @@ jobs:
     timeout-minutes: 45
     env:
       PROC_SHA: eab8db48b8e748b439ba33d10dff3dadee32dfaf
-      COMPOSE_SHA: 3e6bdc44e302f14a3ef985bc9cda0663237a9963
+      COMPOSE_SHA: 20aa873ee10359a63043f4284ba6e2e6e533f37f
       COMPOSE_BASE_SHA: 6b77749a9fd56d2d2f81316ba9bcdb4c6763c382
     steps:
       - name: Checkout exact ores-compose base
