@@ -1,0 +1,64 @@
+name: proof ORES compose action DAG 222
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_SHA: e38a710c67bb8d9f7b100b4be991be38ffffb4f2
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout exact current-main integration
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify exact source head
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+
+      - name: Configure scoped private Git dependency access
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: "1.98.1"
+          components: rustfmt
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Compile all targets and features
+        run: cargo check --locked --all-targets --all-features
+
+      - name: Full tests
+        run: cargo test --locked --all-targets --all-features
+
+      - name: Focused evidence
+        run: |
+          cargo test --locked action -- --nocapture
+
+      - name: Final exact-head guard
+        if: always()
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+
+      - name: Remove private credential rewrite
+        if: always()
+        shell: bash
+        run: git config --global --unset-all "url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf" >/dev/null 2>&1 || true
