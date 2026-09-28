@@ -149,6 +149,106 @@ jobs:
           git diff --exit-code
           git diff --cached --exit-code
 
+  proc-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact ores-proc-isolation head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-proc-isolation-cli
+          ref: ${{ env.PROC_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify exact source head
+        run: |
+          test "$(git rev-parse HEAD)" = "$PROC_SHA"
+          test -f Cargo.lock
+          git ls-files --error-unmatch Cargo.lock >/dev/null
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
+      - name: Install Linux sandbox helpers
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y apparmor-profiles apparmor-utils bubblewrap slirp4netns iproute2 iptables curl shellcheck
+          if [[ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || printf '0')" == '1' ]]; then
+            profile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+            test -f "$profile"
+            sudo install -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
+            sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          fi
+      - name: Static and Rust checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/linux/ores-proc-isolate.sh
+          bash -n scripts/macos/ores-proc-isolate.sh
+          shellcheck scripts/linux/ores-proc-isolate.sh scripts/macos/ores-proc-isolate.sh
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets
+          cargo build --locked --quiet --examples --bins
+      - name: Prove Linux namespace boundary and stdin environment overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/ores-proof-linux.yaml <<'YAML'
+          version: 1
+          defaults:
+            group: no-net
+          groups:
+            no-net:
+              network:
+                mode: none
+            external:
+              network:
+                mode: external
+                deny_loopback: true
+                deny_private_networks: true
+          processes:
+            true:
+              group: no-net
+              command: [/usr/bin/true]
+            passwd:
+              group: no-net
+              command: [/usr/bin/cat, /etc/passwd]
+            env-overlay:
+              group: no-net
+              command: [/usr/bin/printenv, APP_MODE]
+              environment:
+                APP_MODE: placeholder
+            curl-flex:
+              group: external
+              command: [/usr/bin/curl, --fail, --silent, --show-error]
+          YAML
+          target/debug/ores-proc-isolation run true --config /tmp/ores-proof-linux.yaml
+          if target/debug/ores-proc-isolation run passwd --config /tmp/ores-proof-linux.yaml; then
+            echo "sandbox unexpectedly read host /etc/passwd" >&2
+            exit 1
+          fi
+          overlay="$(printf '%s' '{"APP_MODE":"linux-worker"}' | target/debug/ores-proc-isolation --target-env-stdin run env-overlay --config /tmp/ores-proof-linux.yaml)"
+          test "$overlay" = linux-worker
+          target/debug/examples/loopback_fixture 127.0.0.1:18080 >/tmp/ores-proof-linux-http.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          sleep 1
+          curl --fail --silent http://127.0.0.1:18080 >/dev/null
+          if target/debug/ores-proc-isolation run curl-flex --config /tmp/ores-proof-linux.yaml -- http://127.0.0.1:18080; then
+            echo "sandbox unexpectedly reached host loopback" >&2
+            exit 1
+          fi
+      - name: Final exact-head guard
+        if: always()
+        run: |
+          test "$(git rev-parse HEAD)" = "$PROC_SHA"
+          git diff --exit-code
+          git diff --cached --exit-code
+
   compose-rust:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -174,11 +274,14 @@ jobs:
         run: |
           rustup toolchain install 1.98.1 --profile minimal --component rustfmt,clippy
           rustup default 1.98.1
-      - name: Verify exact branch
-        run: |
-          cargo fmt --all --check
-          cargo clippy --all-targets --all-features -- -D warnings
-          cargo test --all-targets --all-features
+      - name: Format exact branch
+        run: cargo fmt --all --check
+      - name: Clippy exact branch
+        if: always()
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Test exact branch
+        if: always()
+        run: cargo test --all-targets --all-features
       - name: Final exact-head guard
         if: always()
         run: |
