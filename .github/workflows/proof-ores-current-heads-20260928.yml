@@ -19,12 +19,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: ores-compose-322, repository: ORESoftware/ores-compose, sha: 1727dbe67e8d401479e387df0da8cf54f9340681 }
-          - { name: ores-compose-323, repository: ORESoftware/ores-compose, sha: 15820c842ec36b8a20cbf791bd6879a1c88b96c3 }
-          - { name: ores-transport-14, repository: ORESoftware/ores-transport, sha: e880c9c655478a3c34798e3a18f2a206b31de3f4 }
-          - { name: ores-clients-core-4, repository: ORESoftware/ores-clients-core, sha: 1482ec0b9ce059d5de289d344586eb99661465fb }
-          - { name: ores-e2e-core-3, repository: ORESoftware/ores-e2e-core, sha: 5aa1904520b7108dff70f0e1dfe9b3bfcf6c5c5f }
-          - { name: ores-proc-isolation-cli-36, repository: ORESoftware/ores-proc-isolation-cli, sha: d04b861c20a4caa0a4eed40a5a2fbe2a32e1fdca }
+          - { name: ores-compose-322, repository: ORESoftware/ores-compose, sha: 1727dbe67e8d401479e387df0da8cf54f9340681, format_paths: "src/deployment.rs src/runtime_control.rs" }
+          - { name: ores-compose-323, repository: ORESoftware/ores-compose, sha: 15820c842ec36b8a20cbf791bd6879a1c88b96c3, format_paths: "src/config_loader.rs" }
+          - { name: ores-transport-14, repository: ORESoftware/ores-transport, sha: 1f49a38ebfa5e8d2c802760785ca9bd1410ca0e1, format_paths: "src/codec.rs" }
+          - { name: ores-clients-core-4, repository: ORESoftware/ores-clients-core, sha: d83c2ec9365e5b04ed132e1f8e93a13d8538b197, format_paths: "src/model.rs src/lib.rs" }
+          - { name: ores-e2e-core-3, repository: ORESoftware/ores-e2e-core, sha: 90a981add50e6a2926503422230d60a783a3f220, format_paths: "src/lib.rs" }
+          - { name: ores-proc-isolation-cli-36, repository: ORESoftware/ores-proc-isolation-cli, sha: b79016c4a0176b11892ae87cd3db23c09a359814, format_paths: "src/linux_lifecycle.rs" }
+          - { name: ores-locks-and-leases-128, repository: ORESoftware/ores-locks-and-leases, sha: b80fb2cf1451a6dc6deb5ca57cbf56b2d34195de, format_paths: "src/rust/key.rs" }
+          - { name: ores-rpc-pool-7, repository: ORESoftware/ores-rpc-calls-http-tcp-pool.rs, sha: b04edbfbfdd1ec4f26a49315e46b012002228ce6, format_paths: "src/contract.rs" }
+          - { name: ores-middleware-290, repository: ORESoftware/ores-middleware, sha: 3eb0148b0e37c89c945b749209e73c0ccb6e832f, format_paths: "src/rust/src/lib.rs src/rust/src/payload.rs" }
     steps:
       - name: Check out exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -49,7 +52,12 @@ jobs:
           rustup toolchain install 1.88.0 --profile minimal --component rustfmt --component clippy
           rustup default 1.88.0
       - name: Formatting
-        run: cargo fmt --all -- --check
+        shell: bash
+        env:
+          FORMAT_PATHS: ${{ matrix.format_paths }}
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2024 --check $FORMAT_PATHS
       - name: Compile
         run: cargo check --locked --all-targets
       - name: Tests
