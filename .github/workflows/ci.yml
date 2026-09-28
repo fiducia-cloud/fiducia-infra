@@ -178,9 +178,9 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     env:
-      PROC_SHA: 0c079871f01543849f2255bcf4432dc92cb55690
-      COMPOSE_SHA: 251a351f20d387345106ba245305554274bb1863
-      COMPOSE_BASE_SHA: 26e331f458c9802727802514b380ff49ebc7270a
+      PROC_SHA: 68d73caf22f700047e091af5180746ec545ffb29
+      COMPOSE_SHA: bcba67a864bf938f06dd3fe0415f320528ca765d
+      COMPOSE_BASE_SHA: f487de68d89d1eb1d520e1fc2587a4efc28703f2
     steps:
       - name: Checkout exact ores-compose base
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
