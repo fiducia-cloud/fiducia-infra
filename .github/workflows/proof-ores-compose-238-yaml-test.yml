@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: 11566c1dc4dffa271c73e3645a5af8cdb7b3599f
+  SOURCE_SHA: 215f7a1bcc144e74fb2b666dfee8cb85d94054c2
 
 jobs:
   verify:
