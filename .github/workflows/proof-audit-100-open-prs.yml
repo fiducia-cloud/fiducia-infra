@@ -12,7 +12,7 @@ permissions:
 jobs:
   discover:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     outputs:
       matrix: ${{ steps.inventory.outputs.matrix }}
       count: ${{ steps.inventory.outputs.count }}
@@ -24,14 +24,21 @@ jobs:
         run: |
           set -euo pipefail
 
-          retry() {
+          gh_json_file() {
+            local destination="$1"
+            shift
             local attempt=1
-            local max=6
+            local max=8
+            local temporary="${destination}.attempt"
             while true; do
-              if "$@"; then
+              rm -f "$temporary"
+              if gh api "$@" > "$temporary" && jq -e . "$temporary" >/dev/null 2>&1; then
+                mv "$temporary" "$destination"
                 return 0
               fi
+              rm -f "$temporary"
               if [ "$attempt" -ge "$max" ]; then
+                echo "GitHub API request failed after $max attempts: gh api $*" >&2
                 return 1
               fi
               sleep $((attempt * 3))
@@ -40,25 +47,24 @@ jobs:
           }
 
           query='is:pr is:open author:ORESoftware -repo:fiducia-cloud/fiducia-infra'
-          retry gh api -X GET search/issues \
+          gh_json_file /tmp/search.json -X GET search/issues \
             -f q="$query" \
             -f per_page=100 \
             -f sort=updated \
-            -f order=desc \
-            > /tmp/search.json
+            -f order=desc
 
           jq -r '.items[] | [.repository_url, (.number|tostring)] | @tsv' /tmp/search.json > /tmp/prs.tsv
           count=$(wc -l < /tmp/prs.tsv | tr -d ' ')
-          if [ "$count" -ne 100 ]; then
-            echo "expected exactly 100 open PRs, got $count" >&2
+          if [ "$count" -lt 100 ]; then
+            echo "need at least 100 open PRs for this tranche, got $count" >&2
             exit 1
           fi
+          head -n 100 /tmp/prs.tsv > /tmp/prs-100.tsv
 
           : > /tmp/matrix.ndjson
           while IFS=$'\t' read -r repository_url pr_number; do
             repo=${repository_url#https://api.github.com/repos/}
-            : > /tmp/pr.json
-            retry gh api "repos/$repo/pulls/$pr_number" > /tmp/pr.json
+            gh_json_file /tmp/pr.json "repos/$repo/pulls/$pr_number"
             head_sha=$(jq -r '.head.sha' /tmp/pr.json)
             base_sha=$(jq -r '.base.sha' /tmp/pr.json)
             title=$(jq -r '.title' /tmp/pr.json)
@@ -72,14 +78,14 @@ jobs:
               --argjson draft "$draft" \
               '{repo:$repo,pr:$pr,sha:$sha,base_sha:$base_sha,title:$title,draft:$draft}' \
               >> /tmp/matrix.ndjson
-          done < /tmp/prs.tsv
+          done < /tmp/prs-100.tsv
 
           matrix=$(jq -sc '{include:.}' /tmp/matrix.ndjson)
-          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "count=100" >> "$GITHUB_OUTPUT"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
           echo "## 100-PR inventory" >> "$GITHUB_STEP_SUMMARY"
-          echo "Captured **$count** current open PR heads before audit execution." >> "$GITHUB_STEP_SUMMARY"
+          echo "Captured **100** current open PR heads before audit execution." >> "$GITHUB_STEP_SUMMARY"
           jq -r '"- `\(.repo)#\(.pr)` `\(.sha)` draft=\(.draft) — \(.title)"' /tmp/matrix.ndjson >> "$GITHUB_STEP_SUMMARY"
 
   audit:
