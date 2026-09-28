@@ -358,14 +358,15 @@ jobs:
           set -euo pipefail
           root="$RUNNER_TEMP/ores-compose-local-proof"
           mkdir -p "$root/service"
-          cat >"$root/.ores-compose.yaml" <<'YAML'
+          pid_expr="$(printf '\044\044')"
+          cat >"$root/.ores-compose.yaml" <<YAML
           schema_version: ores.compose.v1
           project: local-proof
           allow_lazy_start: false
           services:
             sleeper:
               runtime: host
-              command: ["/bin/sh", "-c", "echo $ > service.pid; exec /bin/sleep 30"]
+              command: ["/bin/sh", "-c", "echo ${pid_expr} > service.pid; exec /bin/sleep 30"]
               working_dir: service
           YAML
           export ORES_COMPOSE_PROCESS_ISOLATION=required
