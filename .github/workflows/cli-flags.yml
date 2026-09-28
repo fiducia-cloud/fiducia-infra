@@ -80,7 +80,7 @@ jobs:
           text = path.read_text()
           old = '        assert!(contents.contains("Example_Key: \\\"\\\""));\n'
           new = (
-              '        let policy_document: serde_yaml::Value = serde_yaml::from_str(&contents).unwrap();\n'
+              '        let policy_document: serde_json::Value = serde_saphyr::from_str(&contents).unwrap();\n'
               '        assert_eq!(\n'
               '            policy_document["processes"]["target"]["environment"]["Example_Key"].as_str(),\n'
               '            Some("")\n'
