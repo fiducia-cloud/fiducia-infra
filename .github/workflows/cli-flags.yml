@@ -79,12 +79,13 @@ jobs:
           path = Path('src/local_up_process.rs')
           text = path.read_text()
           old = '        assert!(contents.contains("Example_Key: \\\"\\\""));\n'
-          new = '''        let policy_document: serde_yaml::Value = serde_yaml::from_str(&contents).unwrap();
-        assert_eq!(
-            policy_document["processes"]["target"]["environment"]["Example_Key"].as_str(),
-            Some("")
-        );
-'''
+          new = (
+              '        let policy_document: serde_yaml::Value = serde_yaml::from_str(&contents).unwrap();\n'
+              '        assert_eq!(\n'
+              '            policy_document["processes"]["target"]["environment"]["Example_Key"].as_str(),\n'
+              '            Some("")\n'
+              '        );\n'
+          )
           count = text.count(old)
           if count != 1:
               raise SystemExit(f'expected exactly one representation-sensitive assertion, found {count}')
