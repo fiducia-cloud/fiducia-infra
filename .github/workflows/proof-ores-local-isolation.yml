@@ -11,7 +11,7 @@ permissions:
 
 env:
   PROC_SHA: eab8db48b8e748b439ba33d10dff3dadee32dfaf
-  COMPOSE_SHA: bcba67a864bf938f06dd3fe0415f320528ca765d
+  COMPOSE_SHA: 3e6bdc44e302f14a3ef985bc9cda0663237a9963
 
 jobs:
   proc-macos:
