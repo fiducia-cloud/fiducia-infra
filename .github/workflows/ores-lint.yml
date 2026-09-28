@@ -35,7 +35,15 @@ jobs:
       # runs `npm install` and never needs the repo's node_modules.
       - name: Install eslint globally
         if: steps.detect.outputs.js == 'true'
-        run: npm i -g eslint typescript-eslint
+        run: |
+          set -e
+          npm i -g eslint
+          # TypeScript support is optional by design. Prefer the aggregate
+          # package, then the parser package; JS linting must remain available
+          # even during a transient registry gap for optional tooling.
+          npm i -g typescript-eslint \
+            || npm i -g @typescript-eslint/parser @typescript-eslint/eslint-plugin \
+            || echo "optional TypeScript ESLint tooling unavailable; continuing with JS lint"
 
       - name: Install clippy
         if: steps.detect.outputs.rs == 'true'
