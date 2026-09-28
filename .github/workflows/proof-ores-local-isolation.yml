@@ -142,6 +142,22 @@ jobs:
             exit 1
           fi
           kill -0 "$host_pid"
+      - name: Reject replaceable policy paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp /tmp/ores-proof-policy.yaml /tmp/ores-proof-policy-real.yaml
+          ln -s /tmp/ores-proof-policy-real.yaml /tmp/ores-proof-policy-link.yaml
+          if target/debug/ores-proc-isolation check --config /tmp/ores-proof-policy-link.yaml; then
+            echo "symlink policy unexpectedly admitted" >&2
+            exit 1
+          fi
+          cp /tmp/ores-proof-policy.yaml /tmp/ores-proof-policy-writable.yaml
+          chmod 666 /tmp/ores-proof-policy-writable.yaml
+          if target/debug/ores-proc-isolation check --config /tmp/ores-proof-policy-writable.yaml; then
+            echo "group/world-writable policy unexpectedly admitted" >&2
+            exit 1
+          fi
       - name: Final exact-head guard
         if: always()
         run: |
@@ -240,6 +256,22 @@ jobs:
           curl --fail --silent http://127.0.0.1:18080 >/dev/null
           if target/debug/ores-proc-isolation run curl-flex --config /tmp/ores-proof-linux.yaml -- http://127.0.0.1:18080; then
             echo "sandbox unexpectedly reached host loopback" >&2
+            exit 1
+          fi
+      - name: Reject replaceable Linux policy paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp /tmp/ores-proof-linux.yaml /tmp/ores-proof-linux-real.yaml
+          ln -s /tmp/ores-proof-linux-real.yaml /tmp/ores-proof-linux-link.yaml
+          if target/debug/ores-proc-isolation check --config /tmp/ores-proof-linux-link.yaml; then
+            echo "symlink policy unexpectedly admitted" >&2
+            exit 1
+          fi
+          cp /tmp/ores-proof-linux.yaml /tmp/ores-proof-linux-writable.yaml
+          chmod 666 /tmp/ores-proof-linux-writable.yaml
+          if target/debug/ores-proc-isolation check --config /tmp/ores-proof-linux-writable.yaml; then
+            echo "group/world-writable policy unexpectedly admitted" >&2
             exit 1
           fi
       - name: Final exact-head guard
@@ -382,6 +414,9 @@ jobs:
               command: ["/bin/sleep", "30"]
               working_dir: service
           YAML
+          attacker_temp="$RUNNER_TEMP/attacker-controlled-tmp"
+          mkdir -p "$attacker_temp"
+          export TMPDIR="$attacker_temp"
           export ORES_COMPOSE_PROCESS_ISOLATION=required
           export ORES_PROC_ISOLATION_BIN="$GITHUB_WORKSPACE/isolation/target/debug/ores-proc-isolation"
           "$GITHUB_WORKSPACE/compose/target/debug/ores-compose" \
@@ -413,6 +448,11 @@ jobs:
             exit 1
           fi
           grep -q '"event":"process_isolation_enabled"' "$RUNNER_TEMP/compose-proof.log"
+          if find "$attacker_temp" -maxdepth 1 -name 'ores-compose-isolation-*.yaml' -print -quit | grep -q .; then
+            echo "generated isolation policy followed attacker-controlled TMPDIR" >&2
+            find "$attacker_temp" -maxdepth 1 -name 'ores-compose-isolation-*.yaml' -print >&2
+            exit 1
+          fi
           kill -INT "$compose_pid"
           wait "$compose_pid"
           trap - EXIT
