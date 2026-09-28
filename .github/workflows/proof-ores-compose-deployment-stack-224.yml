@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  SOURCE_SHA: 87eb1027a94a12e58611ecef40d2737bb82af0da
+  SOURCE_SHA: b1cc93f30c1217c8a487b87f186e9a15c5880570
 
 jobs:
   deployment-stack:
