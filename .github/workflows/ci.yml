@@ -433,7 +433,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
-      SOURCE_SHA: 82dbb9fbdf4e8b710b23888cbe1746b159188284
+      SOURCE_SHA: 68d73caf22f700047e091af5180746ec545ffb29
     steps:
       - name: Checkout exact source head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
