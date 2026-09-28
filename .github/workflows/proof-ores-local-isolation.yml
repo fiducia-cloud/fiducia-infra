@@ -10,8 +10,8 @@ permissions:
   contents: read
 
 env:
-  PROC_SHA: 0c079871f01543849f2255bcf4432dc92cb55690
-  COMPOSE_SHA: 251a351f20d387345106ba245305554274bb1863
+  PROC_SHA: 01a219481ef5613b5f485a4e40f78a4eb99b3e97
+  COMPOSE_SHA: 6036670339a5a07ad4dc02b2095bcc0de2ff1373
 
 jobs:
   proc-macos:
@@ -225,6 +225,44 @@ jobs:
           rustup default 1.98.1
           cargo build --locked --manifest-path isolation/Cargo.toml --bin ores-proc-isolation
           cargo build --manifest-path compose/Cargo.toml --bin ores-compose
+      - name: Reject attacker-controlled PATH helper selection
+        shell: bash
+        run: |
+          set -euo pipefail
+          fake_bin="$RUNNER_TEMP/fake-isolation-bin"
+          root="$RUNNER_TEMP/ores-compose-path-proof"
+          marker="$RUNNER_TEMP/fake-helper-ran"
+          mkdir -p "$fake_bin" "$root/service"
+          cat >"$fake_bin/ores-proc-isolation" <<EOF
+          #!/bin/sh
+          touch "$marker"
+          cat >/dev/null
+          exit 0
+          EOF
+          chmod 755 "$fake_bin/ores-proc-isolation"
+          cat >"$root/.ores-compose.yaml" <<'YAML'
+          schema_version: ores.compose.v1
+          project: path-proof
+          allow_lazy_start: false
+          services:
+            sleeper:
+              runtime: host
+              command: ["/bin/sleep", "1"]
+              working_dir: service
+          YAML
+          if PATH="$fake_bin:$PATH" \
+             ORES_COMPOSE_PROCESS_ISOLATION=required \
+             ORES_PROC_ISOLATION_BIN=ores-proc-isolation \
+             "$GITHUB_WORKSPACE/compose/target/debug/ores-compose" \
+               --skip-zed-pkg --skip-rpc-gen --skip-source-sync \
+               up "$root/.ores-compose.yaml" >"$RUNNER_TEMP/path-proof.log" 2>&1; then
+            cat "$RUNNER_TEMP/path-proof.log" >&2
+            echo "relative isolation helper override unexpectedly succeeded" >&2
+            exit 1
+          fi
+          test ! -e "$marker"
+          grep -q 'ORES_PROC_ISOLATION_BIN must be an absolute path' "$RUNNER_TEMP/path-proof.log"
+
       - name: Run ores-compose through required same-user isolation
         shell: bash
         run: |
