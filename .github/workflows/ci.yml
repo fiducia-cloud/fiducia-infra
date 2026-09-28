@@ -178,7 +178,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     env:
-      PROC_SHA: eab8db48b8e748b439ba33d10dff3dadee32dfaf
+      PROC_SHA: fb9ecfeb5c791dfcf3eec9f6747898886d63e473
       COMPOSE_SHA: 20aa873ee10359a63043f4284ba6e2e6e533f37f
       COMPOSE_BASE_SHA: 6b77749a9fd56d2d2f81316ba9bcdb4c6763c382
     steps:
