@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  PROC_SHA: bf461c6d630a0d68c985ebe8fc24823b9a96020f
+  PROC_SHA: 6ff36e29bc6ac70c978ffb9e12627e59cdda6084
   COMPOSE_SHA: f487de68d89d1eb1d520e1fc2587a4efc28703f2
 
 jobs:
