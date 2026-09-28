@@ -1,0 +1,73 @@
+name: proof ores-stack 307 api-docs v4 provenance
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/proof-ores-stack-307.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_SHA: b7a9e64a0b10c4fc267afd35efce312f25208157
+  API_DOCS_SHA: 348d67decc3618b3a3846fc88c36e77c4bb6f074
+
+jobs:
+  core-rust-and-provenance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact ORES Stack head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-stack
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+      - name: Verify exact immutable source and provenance pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test -f Cargo.lock
+          git ls-files --error-unmatch Cargo.lock >/dev/null
+          git diff --check
+          grep -F "rev = \"$API_DOCS_SHA\"" crates/ores-stack-core/Cargo.toml
+          grep -F 'schema_version: ores_api_docs::RPC_OPERATION_CONTRACT_SCHEMA_VERSION' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
+          grep -F 'http_handler: None' crates/ores-stack-core/src/rpc_http_client_lane_post.rs
+          grep -F 'let http_handler = (!projection.route_less)' crates/ores-stack-core/src/rpc_target_v3.rs
+          grep -F 'http_handler,' crates/ores-stack-core/src/rpc_target_v3.rs
+          if grep -F 'handler: operation.handler.clone()' crates/ores-stack-core/src/rpc_http_client_lane_post.rs; then
+            echo 'route-less lane still emits legacy synthetic HTTP handler provenance' >&2
+            exit 1
+          fi
+      - name: Configure scoped private Git dependency access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
+      - name: Format, lint, and test core against committed lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo clippy --locked -p ores-stack-core --all-targets -- -D warnings
+          cargo test --locked -p ores-stack-core --all-targets -- --nocapture
+      - name: Prove checkout unchanged
+        if: always()
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git diff --exit-code
+          git diff --cached --exit-code
