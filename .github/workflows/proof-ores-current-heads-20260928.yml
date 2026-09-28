@@ -1,0 +1,61 @@
+name: proof current ORES hardening heads
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/proof-ores-current-heads-20260928.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: ores-compose-322, repository: ORESoftware/ores-compose, sha: 1727dbe67e8d401479e387df0da8cf54f9340681 }
+          - { name: ores-compose-323, repository: ORESoftware/ores-compose, sha: 15820c842ec36b8a20cbf791bd6879a1c88b96c3 }
+          - { name: ores-transport-14, repository: ORESoftware/ores-transport, sha: e880c9c655478a3c34798e3a18f2a206b31de3f4 }
+          - { name: ores-clients-core-4, repository: ORESoftware/ores-clients-core, sha: 1482ec0b9ce059d5de289d344586eb99661465fb }
+          - { name: ores-e2e-core-3, repository: ORESoftware/ores-e2e-core, sha: 5aa1904520b7108dff70f0e1dfe9b3bfcf6c5c5f }
+          - { name: ores-proc-isolation-cli-36, repository: ORESoftware/ores-proc-isolation-cli, sha: d04b861c20a4caa0a4eed40a5a2fbe2a32e1fdca }
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ matrix.repository }}
+          ref: ${{ matrix.sha }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify exact source
+        run: test "$(git rev-parse HEAD)" = "${{ matrix.sha }}"
+      - name: Configure private Git dependency access
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Install fallback Rust 1.88
+        if: ${{ hashFiles('rust-toolchain.toml', 'rust-toolchain') == '' }}
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal --component rustfmt --component clippy
+          rustup default 1.88.0
+      - name: Formatting
+        run: cargo fmt --all -- --check
+      - name: Compile
+        run: cargo check --locked --all-targets
+      - name: Tests
+        run: cargo test --locked --all-targets
+      - name: Strict Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Final exact-head guard
+        if: always()
+        run: test "$(git rev-parse HEAD)" = "${{ matrix.sha }}"
