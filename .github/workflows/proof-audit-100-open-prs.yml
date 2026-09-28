@@ -23,14 +23,31 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          retry() {
+            local attempt=1
+            local max=6
+            while true; do
+              if "$@"; then
+                return 0
+              fi
+              if [ "$attempt" -ge "$max" ]; then
+                return 1
+              fi
+              sleep $((attempt * 3))
+              attempt=$((attempt + 1))
+            done
+          }
+
           query='is:pr is:open author:ORESoftware -repo:fiducia-cloud/fiducia-infra'
-          gh api -X GET search/issues \
+          retry gh api -X GET search/issues \
             -f q="$query" \
             -f per_page=100 \
             -f sort=updated \
             -f order=desc \
-            --jq '.items[] | [.repository_url, (.number|tostring)] | @tsv' > /tmp/prs.tsv
+            > /tmp/search.json
 
+          jq -r '.items[] | [.repository_url, (.number|tostring)] | @tsv' /tmp/search.json > /tmp/prs.tsv
           count=$(wc -l < /tmp/prs.tsv | tr -d ' ')
           if [ "$count" -ne 100 ]; then
             echo "expected exactly 100 open PRs, got $count" >&2
@@ -40,11 +57,12 @@ jobs:
           : > /tmp/matrix.ndjson
           while IFS=$'\t' read -r repository_url pr_number; do
             repo=${repository_url#https://api.github.com/repos/}
-            pr=$(gh api "repos/$repo/pulls/$pr_number")
-            head_sha=$(jq -r '.head.sha' <<<"$pr")
-            base_sha=$(jq -r '.base.sha' <<<"$pr")
-            title=$(jq -r '.title' <<<"$pr")
-            draft=$(jq -r '.draft' <<<"$pr")
+            : > /tmp/pr.json
+            retry gh api "repos/$repo/pulls/$pr_number" > /tmp/pr.json
+            head_sha=$(jq -r '.head.sha' /tmp/pr.json)
+            base_sha=$(jq -r '.base.sha' /tmp/pr.json)
+            title=$(jq -r '.title' /tmp/pr.json)
+            draft=$(jq -r '.draft' /tmp/pr.json)
             jq -cn \
               --arg repo "$repo" \
               --argjson pr "$pr_number" \
