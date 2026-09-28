@@ -1,42 +1,39 @@
-# Managed by ores-otel source-policy fleet rollout.
-name: Pre-build source policy lint
+name: repair ores-compose 196 policy assertion
 
 on:
   pull_request:
-  push:
-    branches: ["main"]
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-ores-compose-196-policy-test.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
-jobs:
-  source-policy:
-    uses: ores-otel/.github/.github/workflows/source-policy-lint.yml@c417efc488bb4ca84e078fad9626f55b374913dd
-    permissions:
-      contents: read
+env:
+  SOURCE_SHA: d9b46da154de350ea21760f1c61d9bc85981ab02
+  SOURCE_BRANCH: hardening/stream-isolation-env-20260926
 
-  repair-compose-policy-test:
-    if: github.event_name == 'pull_request' && github.head_ref == 'proof/ores-local-isolation-20260925'
+jobs:
+  repair-and-certify:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
-    env:
-      COMPOSE_SHA: d9b46da154de350ea21760f1c61d9bc85981ab02
-      COMPOSE_BRANCH: hardening/stream-isolation-env-20260926
     steps:
-      - name: Checkout exact compose candidate
+      - name: Checkout exact ores-compose candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/ores-compose
-          ref: ${{ env.COMPOSE_SHA }}
+          ref: ${{ env.SOURCE_SHA }}
           token: ${{ secrets.ORE_SOURCE_PAT }}
           persist-credentials: false
           fetch-depth: 1
+
       - name: Verify exact clean source head
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$COMPOSE_SHA"
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           test -z "$(git status --porcelain)"
+
       - name: Configure scoped private Git dependency access
         env:
           ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
@@ -44,7 +41,8 @@ jobs:
           set -euo pipefail
           echo "::add-mask::$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
-      - name: Replace representation-sensitive assertion
+
+      - name: Apply one semantic test repair
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -65,29 +63,35 @@ jobs:
           PY
           test "$(git diff --name-only)" = "src/local_up_process.rs"
           git diff --check
+
       - name: Install reviewed Rust toolchain
         run: |
           rustup toolchain install 1.98.1 --profile minimal
           rustup default 1.98.1
-      - name: Prove semantic assertion and full library
-        run: |
-          cargo test --lib generated_isolation_policy_is_private_same_user_local_profile
-          cargo test --lib
+
+      - name: Prove semantic policy assertion
+        run: cargo test --lib generated_isolation_policy_is_private_same_user_local_profile
+
+      - name: Run full library regression
+        run: cargo test --lib
+
       - name: Recheck confined diff
         run: |
           set -euo pipefail
           test "$(git diff --name-only)" = "src/local_up_process.rs"
           git diff --check
-      - name: Publish repair if source branch is unchanged
+          git diff -- src/local_up_process.rs
+
+      - name: Publish repair only if source branch is unchanged
         env:
           ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
         run: |
           set -euo pipefail
           echo "::add-mask::$ORE_SOURCE_PAT"
-          git fetch "https://x-access-token:${ORE_SOURCE_PAT}@github.com/ORESoftware/ores-compose.git" "$COMPOSE_BRANCH"
-          test "$(git rev-parse FETCH_HEAD)" = "$COMPOSE_SHA"
+          git fetch "https://x-access-token:${ORE_SOURCE_PAT}@github.com/ORESoftware/ores-compose.git" "$SOURCE_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$SOURCE_SHA"
           git config user.name "ORESoftware CI Repair"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/local_up_process.rs
           git commit -m "test: assert isolation environment semantically"
-          git push "https://x-access-token:${ORE_SOURCE_PAT}@github.com/ORESoftware/ores-compose.git" "HEAD:refs/heads/${COMPOSE_BRANCH}"
+          git push "https://x-access-token:${ORE_SOURCE_PAT}@github.com/ORESoftware/ores-compose.git" "HEAD:refs/heads/${SOURCE_BRANCH}"
