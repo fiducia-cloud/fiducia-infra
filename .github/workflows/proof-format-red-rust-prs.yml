@@ -1,0 +1,135 @@
+name: generate rustfmt remediation for funded-red PRs
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/proof-format-red-rust-prs.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Format exact red heads and package changed files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cat > /tmp/subjects.txt <<'EOF'
+          ORESoftware/api-docs#270
+          ORESoftware/api-docs#271
+          ORESoftware/api-docs#272
+          ORESoftware/ores-middleware#217
+          ORESoftware/ores-middleware#285
+          canonical-cloud/canonical-mcp-server.rs#86
+          canonical-cloud/canonical-mcp-server.rs#89
+          gha-indie-worker/gha-indie-worker-desktop-app.rs#7
+          gha-indie-worker/gha-indie-worker.rs#81
+          gha-indie-worker/gha-indie-worker.rs#82
+          gha-indie-worker/gha-indie-worker.rs#83
+          gha-indie-worker/giw-desktop-cli#1
+          gha-indie-worker/giw-desktop-cli#2
+          gha-indie-worker/giw-desktop-daemon#1
+          gha-indie-worker/giw-desktop-daemon#2
+          gha-indie-worker/giw-desktop-daemon#4
+          hacker-house-medellin/hhm-desktop-app.rs#2
+          hacker-house-medellin/hhm-desktop-app.rs#3
+          happy-wakey/happy-wakey.rs#3
+          lunatic-lorry/ll-desktop-cli#1
+          lunatic-lorry/ll-desktop-daemon#15
+          ores-otel/ores-otel-api-server.rs#17
+          pony-expres/poex-desktop-cli#3
+          wasm-xprs/wasmx-desktop-daemon#20
+          EOF
+
+          while IFS= read -r subject; do
+            repo=${subject%#*}
+            pr_number=${subject##*#}
+            safe=$(printf '%s' "$subject" | tr '/#' '__')
+            mkdir -p "out/$safe/files"
+            gh api "repos/$repo/pulls/$pr_number" > /tmp/pr.json
+            head_sha=$(jq -r '.head.sha' /tmp/pr.json)
+            head_ref=$(jq -r '.head.ref' /tmp/pr.json)
+            head_repo=$(jq -r '.head.repo.full_name' /tmp/pr.json)
+            jq -n \
+              --arg repo "$repo" \
+              --argjson pr "$pr_number" \
+              --arg head_sha "$head_sha" \
+              --arg head_ref "$head_ref" \
+              --arg head_repo "$head_repo" \
+              '{repo:$repo,pr:$pr,head_sha:$head_sha,head_ref:$head_ref,head_repo:$head_repo}' \
+              > "out/$safe/metadata.json"
+
+            work="work/$safe"
+            mkdir -p work
+            gh repo clone "$head_repo" "$work" -- --no-checkout --filter=blob:none
+            git -C "$work" fetch --no-tags --depth=1 origin "$head_sha"
+            git -C "$work" checkout -q --detach "$head_sha"
+            test "$(git -C "$work" rev-parse HEAD)" = "$head_sha"
+
+            toolchain_file=
+            if [ -f "$work/rust-toolchain.toml" ]; then
+              toolchain_file="$work/rust-toolchain.toml"
+            elif [ -f "$work/rust-toolchain" ]; then
+              toolchain_file="$work/rust-toolchain"
+            fi
+            if [ -z "$toolchain_file" ]; then
+              echo toolchain_unpinned > "out/$safe/status.txt"
+              continue
+            fi
+            if grep -Eq 'channel[[:space:]]*=[[:space:]]*"(stable|beta|nightly)"|^(stable|beta|nightly)[[:space:]]*
+          done < /tmp/subjects.txt
+
+          echo '## Rustfmt remediation summary' >> "$GITHUB_STEP_SUMMARY"
+          for status in out/*/status.txt; do
+            subject=$(basename "$(dirname "$status")" | sed 's/__/#/' | sed 's/_/\//')
+            echo "- $subject: $(cat "$status")" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Upload formatted source files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rustfmt-remediation-20260928
+          path: out/
+          if-no-files-found: error
+          retention-days: 7
+ "$toolchain_file"; then
+              echo toolchain_mutable > "out/$safe/status.txt"
+              continue
+            fi
+
+            if ! (cd "$work" && cargo fmt --all); then
+              echo format_error > "out/$safe/status.txt"
+              continue
+            fi
+            git -C "$work" diff --name-only --diff-filter=AM > "out/$safe/changed-files.txt"
+            if [ ! -s "out/$safe/changed-files.txt" ]; then
+              echo already_formatted > "out/$safe/status.txt"
+              continue
+            fi
+            echo formatted > "out/$safe/status.txt"
+            while IFS= read -r changed_path; do
+              mkdir -p "out/$safe/files/$(dirname "$changed_path")"
+              cp "$work/$changed_path" "out/$safe/files/$changed_path"
+            done < "out/$safe/changed-files.txt"
+          done < /tmp/subjects.txt
+
+          echo '## Rustfmt remediation summary' >> "$GITHUB_STEP_SUMMARY"
+          for status in out/*/status.txt; do
+            subject=$(basename "$(dirname "$status")" | sed 's/__/#/' | sed 's/_/\//')
+            echo "- $subject: $(cat "$status")" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Upload formatted source files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rustfmt-remediation-20260928
+          path: out/
+          if-no-files-found: error
+          retention-days: 7
