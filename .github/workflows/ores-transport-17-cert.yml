@@ -1,0 +1,79 @@
+name: ores-transport #17 exact-head certification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-transport-17-cert.yml'
+  push:
+    branches:
+      - test/ores-transport-17-cert-20260928
+    paths:
+      - '.github/workflows/ores-transport-17-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_HEAD: '335048a537352ce6e56c5b6032ebc9db959c481a'
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Require scoped source credential
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+
+      - name: Check out exact ores-transport source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-transport
+          ref: ${{ env.SOURCE_HEAD }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          path: source
+
+      - name: Verify immutable source identity
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+      - name: Install Rust 1.88.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup component add --toolchain 1.88.0 rustfmt clippy
+
+      - name: Formatting
+        working-directory: source
+        run: cargo +1.88.0 fmt --all -- --check
+
+      - name: Locked all-feature tests
+        working-directory: source
+        run: cargo +1.88.0 test --locked --all-targets --all-features
+
+      - name: Strict Clippy
+        working-directory: source
+        run: cargo +1.88.0 clippy --locked --all-targets --all-features -- -D warnings
+
+      - name: Prove source remained immutable
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=all)"
