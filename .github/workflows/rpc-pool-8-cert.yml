@@ -1,0 +1,97 @@
+name: rpc-pool #8 exact-head certification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/rpc-pool-8-cert.yml'
+  push:
+    branches:
+      - test/rpc-pool-8-cert-20260928
+    paths:
+      - '.github/workflows/rpc-pool-8-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_HEAD: '555962407e7b53a52390a77497e9d33c2979c4e8'
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Require scoped source credential
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+
+      - name: Check out exact RPC pool source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-rpc-calls-http-tcp-pool.rs
+          ref: ${{ env.SOURCE_HEAD }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          path: source
+
+      - name: Verify immutable source identity
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+      - name: Install stable Rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup component add --toolchain stable rustfmt clippy
+
+      - name: Repository contract check
+        working-directory: source
+        env:
+          ORES_ALLOW_MISSING_ZPKG_LOCK: '1'
+        run: cargo +stable run --locked --quiet --no-default-features --features repo-check --bin repo-check
+
+      - name: Formatting
+        working-directory: source
+        run: cargo +stable fmt --all -- --check
+
+      - name: Focused TCP admission tests
+        working-directory: source
+        run: cargo +stable test --locked --all-targets --no-default-features --features tcp
+
+      - name: All-feature tests
+        working-directory: source
+        run: cargo +stable test --locked --all-targets --all-features
+
+      - name: Strict Clippy
+        working-directory: source
+        run: cargo +stable clippy --locked --all-targets --all-features -- -D warnings
+
+      - name: Install declared MSRV
+        shell: bash
+        run: rustup toolchain install 1.88.0 --profile minimal --no-self-update
+
+      - name: MSRV all-feature compile
+        working-directory: source
+        run: cargo +1.88.0 check --locked --all-targets --all-features
+
+      - name: Prove source remained immutable
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=all)"
