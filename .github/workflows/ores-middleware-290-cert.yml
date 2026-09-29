@@ -58,34 +58,70 @@ jobs:
           rustup component add --toolchain 1.95.0 rustfmt clippy
 
       - name: Whole-crate rustfmt
+        id: rustfmt
         working-directory: source
+        continue-on-error: true
         run: cargo +1.95.0 fmt --manifest-path src/rust/Cargo.toml -- --check
 
+      - name: Generate rustfmt remediation
+        if: steps.rustfmt.outcome == 'failure'
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo +1.95.0 fmt --manifest-path src/rust/Cargo.toml
+          git diff --binary -- src/rust/src/payload.rs > ../ores-middleware-290-rustfmt.patch
+          cp src/rust/src/payload.rs ../payload.rs
+          test -s ../ores-middleware-290-rustfmt.patch
+          test -s ../payload.rs
+
+      - name: Upload rustfmt remediation
+        if: steps.rustfmt.outcome == 'failure'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ores-middleware-290-rustfmt
+          path: |
+            ores-middleware-290-rustfmt.patch
+            payload.rs
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Require formatting clean
+        if: steps.rustfmt.outcome == 'failure'
+        run: exit 1
+
       - name: Clippy portable core
+        if: steps.rustfmt.outcome == 'success'
         working-directory: source
         run: cargo +1.95.0 clippy --locked --manifest-path src/rust/Cargo.toml --no-default-features --all-targets -- -D warnings
 
       - name: Clippy default features
+        if: steps.rustfmt.outcome == 'success'
         working-directory: source
         run: cargo +1.95.0 clippy --locked --manifest-path src/rust/Cargo.toml --all-targets -- -D warnings
 
       - name: Clippy all framework features
+        if: steps.rustfmt.outcome == 'success'
         working-directory: source
         run: cargo +1.95.0 clippy --locked --manifest-path src/rust/Cargo.toml --all-features --all-targets -- -D warnings
 
       - name: Test portable core
+        if: steps.rustfmt.outcome == 'success'
         working-directory: source
         run: cargo +1.95.0 test --locked --manifest-path src/rust/Cargo.toml --no-default-features --all-targets
 
       - name: Test default features
+        if: steps.rustfmt.outcome == 'success'
         working-directory: source
         run: cargo +1.95.0 test --locked --manifest-path src/rust/Cargo.toml --all-targets
 
       - name: Test all framework features
+        if: steps.rustfmt.outcome == 'success'
         working-directory: source
         run: cargo +1.95.0 test --locked --manifest-path src/rust/Cargo.toml --all-features --all-targets
 
       - name: Validate runtime descriptor
+        if: steps.rustfmt.outcome == 'success'
         working-directory: source
         shell: bash
         run: |
@@ -101,6 +137,7 @@ jobs:
           '
 
       - name: Prove tests did not rewrite tracked source
+        if: steps.rustfmt.outcome == 'success'
         working-directory: source
         shell: bash
         run: |
