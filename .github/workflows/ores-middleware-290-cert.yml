@@ -1,0 +1,110 @@
+name: ores-middleware #290 exact-head certification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-middleware-290-cert.yml'
+  push:
+    branches:
+      - test/ores-middleware-290-cert-20260928
+    paths:
+      - '.github/workflows/ores-middleware-290-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_HEAD: '0006070522dfceee4a0451eb5f1e9174d3fddc34'
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Require scoped source credential
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+
+      - name: Check out exact ores-middleware source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-middleware
+          ref: ${{ env.SOURCE_HEAD }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          path: source
+
+      - name: Prove exact source identity
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.95.0 --profile minimal --no-self-update
+          rustup component add --toolchain 1.95.0 rustfmt clippy
+
+      - name: Whole-crate rustfmt
+        working-directory: source
+        run: cargo +1.95.0 fmt --manifest-path src/rust/Cargo.toml -- --check
+
+      - name: Clippy portable core
+        working-directory: source
+        run: cargo +1.95.0 clippy --locked --manifest-path src/rust/Cargo.toml --no-default-features --all-targets -- -D warnings
+
+      - name: Clippy default features
+        working-directory: source
+        run: cargo +1.95.0 clippy --locked --manifest-path src/rust/Cargo.toml --all-targets -- -D warnings
+
+      - name: Clippy all framework features
+        working-directory: source
+        run: cargo +1.95.0 clippy --locked --manifest-path src/rust/Cargo.toml --all-features --all-targets -- -D warnings
+
+      - name: Test portable core
+        working-directory: source
+        run: cargo +1.95.0 test --locked --manifest-path src/rust/Cargo.toml --no-default-features --all-targets
+
+      - name: Test default features
+        working-directory: source
+        run: cargo +1.95.0 test --locked --manifest-path src/rust/Cargo.toml --all-targets
+
+      - name: Test all framework features
+        working-directory: source
+        run: cargo +1.95.0 test --locked --manifest-path src/rust/Cargo.toml --all-features --all-targets
+
+      - name: Validate runtime descriptor
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          descriptor="$(cargo +1.95.0 run --quiet --locked --manifest-path src/rust/Cargo.toml --bin contractcheck)"
+          printf '%s\n' "$descriptor" | jq -e '
+            .contractVersion == "1.0.0" and
+            .language == "rust" and
+            (.capabilities | index("request-context")) != null and
+            (.capabilities | index("deadline-timeout")) != null and
+            (.capabilities | index("auth")) != null and
+            (.frameworkAdapters | index("axum")) != null
+          '
+
+      - name: Prove tests did not rewrite tracked source
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
+          git diff --exit-code -- Cargo.toml Cargo.lock src/rust
+          test -z "$(git status --porcelain --untracked-files=all)"
