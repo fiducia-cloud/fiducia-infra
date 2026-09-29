@@ -59,18 +59,50 @@ jobs:
           rustup component add --toolchain 1.88.0 rustfmt clippy
 
       - name: Formatting
+        id: formatting
         working-directory: source
+        continue-on-error: true
+        shell: bash
         run: cargo +1.88.0 fmt --all -- --check
 
+      - name: Generate rustfmt remediation
+        if: steps.formatting.outcome == 'failure'
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo +1.88.0 fmt --all
+          git diff --binary -- src/tcp_binary.rs > ../ores-transport-17-rustfmt.patch
+          test -s ../ores-transport-17-rustfmt.patch
+
+      - name: Upload rustfmt remediation
+        if: steps.formatting.outcome == 'failure'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ores-transport-17-rustfmt
+          path: ores-transport-17-rustfmt.patch
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Require formatting clean
+        if: steps.formatting.outcome == 'failure'
+        shell: bash
+        run: |
+          echo 'exact source head requires rustfmt remediation' >&2
+          exit 1
+
       - name: Locked all-feature tests
+        if: steps.formatting.outcome == 'success'
         working-directory: source
         run: cargo +1.88.0 test --locked --all-targets --all-features
 
       - name: Strict Clippy
+        if: steps.formatting.outcome == 'success'
         working-directory: source
         run: cargo +1.88.0 clippy --locked --all-targets --all-features -- -D warnings
 
       - name: Prove source remained immutable
+        if: steps.formatting.outcome == 'success'
         working-directory: source
         shell: bash
         run: |
