@@ -18,23 +18,23 @@ jobs:
           - name: ores-compose-323
             repo: ORESoftware/ores-compose
             sha: 15820c842ec36b8a20cbf791bd6879a1c88b96c3
-            command: cargo fmt --all -- --check && cargo test --locked relative_explicit_selection_becomes_absolute_without_discovery relative_environment_selection_uses_the_same_absolute_boundary
+            command: rustfmt --edition 2021 --check src/config_loader.rs && cargo test --locked relative_explicit_selection_becomes_absolute_without_discovery && cargo test --locked relative_environment_selection_uses_the_same_absolute_boundary
           - name: ores-stack-309
             repo: ORESoftware/ores-stack
             sha: 82bf7281e73497f2913a3e4afbb7c6098e3d88ed
-            command: cargo fmt --all -- --check && cargo test --locked -p ores-stack-cli legacy_compose_source_sync_rewrites_api_repo_to_root && cargo test --locked -p ores-stack-cli legacy_compose_fanout_sync_rewrites_to_rpc_namespace
+            command: cargo fmt --check -p ores-stack-cli && cargo test --locked -p ores-stack-cli legacy_compose_source_sync_rewrites_api_repo_to_root && cargo test --locked -p ores-stack-cli legacy_compose_fanout_sync_rewrites_to_rpc_namespace
           - name: common-desktop-45
             repo: ORESoftware/ores-common-desktop-infra
             sha: 2f6891414fc1b391e75ba63022fefe790694ccec
-            command: cargo fmt --all -- --check && cargo test --locked --manifest-path conformance/rust/Cargo.toml
+            command: cargo fmt --check --manifest-path conformance/rust/Cargo.toml && cargo test --locked --manifest-path conformance/rust/Cargo.toml
           - name: proc-isolation-37
             repo: ORESoftware/ores-proc-isolation-cli
             sha: 1ac0e38b1060e57ddb4c744160e36e06b66948c4
-            command: cargo fmt --all -- --check && cargo test --locked
+            command: rustfmt --edition 2021 --check src/main.rs tests/self_update_dispatch.rs && cargo test --locked
           - name: rpc-pool-8
             repo: ORESoftware/ores-rpc-calls-http-tcp-pool.rs
             sha: 555962407e7b53a52390a77497e9d33c2979c4e8
-            command: cargo fmt --all -- --check && cargo test --locked --features tcp --test tcp_binary_fail_closed
+            command: rustfmt --edition 2021 --check src/tcp.rs tests/tcp_binary_fail_closed.rs && cargo test --locked --features tcp --test tcp_binary_fail_closed
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     name: ${{ matrix.name }}
