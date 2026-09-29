@@ -1,0 +1,89 @@
+name: certify ORESoftware ores fleet candidates
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ores-fleet-candidates-20260928.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ores-compose-323
+            repo: ORESoftware/ores-compose
+            sha: 15820c842ec36b8a20cbf791bd6879a1c88b96c3
+            command: cargo fmt --all -- --check && cargo test --locked relative_explicit_selection_becomes_absolute_without_discovery relative_environment_selection_uses_the_same_absolute_boundary
+          - name: ores-stack-309
+            repo: ORESoftware/ores-stack
+            sha: 82bf7281e73497f2913a3e4afbb7c6098e3d88ed
+            command: cargo fmt --all -- --check && cargo test --locked -p ores-stack-cli legacy_compose_source_sync_rewrites_api_repo_to_root && cargo test --locked -p ores-stack-cli legacy_compose_fanout_sync_rewrites_to_rpc_namespace
+          - name: common-desktop-45
+            repo: ORESoftware/ores-common-desktop-infra
+            sha: 2f6891414fc1b391e75ba63022fefe790694ccec
+            command: cargo fmt --all -- --check && cargo test --locked --manifest-path conformance/rust/Cargo.toml
+          - name: proc-isolation-37
+            repo: ORESoftware/ores-proc-isolation-cli
+            sha: 1ac0e38b1060e57ddb4c744160e36e06b66948c4
+            command: cargo fmt --all -- --check && cargo test --locked
+          - name: rpc-pool-8
+            repo: ORESoftware/ores-rpc-calls-http-tcp-pool.rs
+            sha: 555962407e7b53a52390a77497e9d33c2979c4e8
+            command: cargo fmt --all -- --check && cargo test --locked --features tcp --test tcp_binary_fail_closed
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    name: ${{ matrix.name }}
+    steps:
+      - name: Require scoped source credential
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: test -n "$ORE_SOURCE_PAT"
+
+      - name: Check out exact source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ${{ matrix.repo }}
+          ref: ${{ matrix.sha }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+
+      - name: Verify exact source identity
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ matrix.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Install Rust 1.88
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
+
+      - name: Configure scoped private Git dependency access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Execute exact-head candidate checks
+        shell: bash
+        env:
+          CANDIDATE_COMMAND: ${{ matrix.command }}
+        run: bash -lc "$CANDIDATE_COMMAND"
+
+      - name: Prove source stayed immutable
+        if: always()
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ matrix.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain)"
