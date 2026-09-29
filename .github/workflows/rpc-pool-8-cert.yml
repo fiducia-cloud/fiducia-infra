@@ -59,36 +59,61 @@ jobs:
           rustup component add --toolchain stable rustfmt clippy
 
       - name: Repository contract check
+        id: repo_check
         working-directory: source
+        continue-on-error: true
+        shell: bash
         env:
           ORES_ALLOW_MISSING_ZPKG_LOCK: '1'
-        run: cargo +stable run --quiet --no-default-features --features repo-check --bin repo-check
+        run: |
+          set -o pipefail
+          cargo +stable run --quiet --no-default-features --features repo-check --bin repo-check 2>&1 | tee ../rpc-pool-8-repo-check.log
+
+      - name: Upload repo-check diagnostics
+        if: steps.repo_check.outcome == 'failure'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rpc-pool-8-repo-check
+          path: rpc-pool-8-repo-check.log
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Require repository contract clean
+        if: steps.repo_check.outcome == 'failure'
+        run: exit 1
 
       - name: Formatting
+        if: steps.repo_check.outcome == 'success'
         working-directory: source
         run: cargo +stable fmt --all -- --check
 
       - name: Focused TCP admission tests
+        if: steps.repo_check.outcome == 'success'
         working-directory: source
         run: cargo +stable test --all-targets --no-default-features --features tcp
 
       - name: All-feature tests
+        if: steps.repo_check.outcome == 'success'
         working-directory: source
         run: cargo +stable test --all-targets --all-features
 
       - name: Strict Clippy
+        if: steps.repo_check.outcome == 'success'
         working-directory: source
         run: cargo +stable clippy --all-targets --all-features -- -D warnings
 
       - name: Install declared MSRV
+        if: steps.repo_check.outcome == 'success'
         shell: bash
         run: rustup toolchain install 1.88.0 --profile minimal --no-self-update
 
       - name: MSRV all-feature compile
+        if: steps.repo_check.outcome == 'success'
         working-directory: source
         run: cargo +1.88.0 check --all-targets --all-features
 
       - name: Prove source remained immutable
+        if: steps.repo_check.outcome == 'success'
         working-directory: source
         shell: bash
         run: |
