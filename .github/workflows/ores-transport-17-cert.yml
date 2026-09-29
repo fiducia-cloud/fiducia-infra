@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 env:
-  SOURCE_HEAD: '335048a537352ce6e56c5b6032ebc9db959c481a'
+  SOURCE_HEAD: 'fa951b14259b91eb77c61dd721ffc6fbf90eef73'
 
 jobs:
   certify:
