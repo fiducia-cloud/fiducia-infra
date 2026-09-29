@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - proof/ores-compose-current-hardening-20260929
+  pull_request:
+    paths:
+      - '.github/workflows/proof-ores-compose-current-hardening.yml'
   workflow_dispatch:
 
 permissions:
