@@ -21,7 +21,7 @@ env:
 jobs:
   certify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - name: Require scoped source credential
         shell: bash
@@ -51,65 +51,39 @@ jobs:
           git diff --check
           test -z "$(git status --porcelain --untracked-files=all)"
 
-      - name: Install Rust 1.88.0
+      - name: Install repository Rust toolchain
         shell: bash
         run: |
           set -euo pipefail
-          rustup toolchain install 1.88.0 --profile minimal --no-self-update
-          rustup component add --toolchain 1.88.0 rustfmt clippy
+          rustup toolchain install 1.98.1 --profile minimal --no-self-update
+          rustup component add --toolchain 1.98.1 rustfmt clippy
 
       - name: Formatting
-        id: formatting
         working-directory: source
-        continue-on-error: true
-        shell: bash
-        run: cargo +1.88.0 fmt --all -- --check
+        run: cargo +1.98.1 fmt --all -- --check
 
-      - name: Generate rustfmt remediation
-        if: steps.formatting.outcome == 'failure'
+      - name: Strict Clippy
+        working-directory: source
+        run: cargo +1.98.1 clippy --all-targets --all-features -- -D warnings
+
+      - name: All-feature tests
+        working-directory: source
+        run: cargo +1.98.1 test --all-targets --all-features
+
+      - name: Feature isolation compile
         working-directory: source
         shell: bash
         run: |
           set -euo pipefail
-          cargo +1.88.0 fmt --all
-          git diff --binary -- src/tcp_binary.rs > ../ores-transport-17-rustfmt.patch
-          cp src/tcp_binary.rs ../tcp_binary.rs
-          test -s ../ores-transport-17-rustfmt.patch
-          test -s ../tcp_binary.rs
-
-      - name: Upload rustfmt remediation
-        if: steps.formatting.outcome == 'failure'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: ores-transport-17-rustfmt
-          path: |
-            ores-transport-17-rustfmt.patch
-            tcp_binary.rs
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Require formatting clean
-        if: steps.formatting.outcome == 'failure'
-        shell: bash
-        run: |
-          echo 'exact source head requires rustfmt remediation' >&2
-          exit 1
-
-      - name: Locked all-feature tests
-        if: steps.formatting.outcome == 'success'
-        working-directory: source
-        run: cargo +1.88.0 test --locked --all-targets --all-features
-
-      - name: Strict Clippy
-        if: steps.formatting.outcome == 'success'
-        working-directory: source
-        run: cargo +1.88.0 clippy --locked --all-targets --all-features -- -D warnings
+          cargo +1.98.1 check --no-default-features
+          cargo +1.98.1 check --no-default-features --features http
+          cargo +1.98.1 check --no-default-features --features tcp
+          cargo +1.98.1 check --no-default-features --features nats
 
       - name: Prove source remained immutable
-        if: steps.formatting.outcome == 'success'
         working-directory: source
         shell: bash
         run: |
           set -euo pipefail
           git diff --check
-          test -z "$(git status --porcelain --untracked-files=all)"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
