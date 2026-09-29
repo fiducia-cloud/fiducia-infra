@@ -1,4 +1,4 @@
-name: ores-compose #325 exact-head certification
+name: ores-compose current-main certification
 
 on:
   pull_request:
@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 env:
-  COMPOSE_HEAD: 'f8e2df74c45495f635217507d319f8a3f06718de'
+  COMPOSE_HEAD: 'db9611611be660a735650dee8c15810e8fdb13b6'
 
 jobs:
   certify:
@@ -57,7 +57,9 @@ jobs:
           ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
         run: |
           set -euo pipefail
+          echo "::add-mask::$ORE_SOURCE_PAT"
           git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+          echo 'CARGO_NET_GIT_FETCH_WITH_CLI=true' >> "$GITHUB_ENV"
 
       - name: Install Rust 1.98.1
         shell: bash
@@ -68,32 +70,54 @@ jobs:
 
       - name: Prime locked dependencies
         working-directory: source
-        shell: bash
-        env:
-          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
-        run: |
-          set -euo pipefail
-          cargo +1.98.1 fetch --locked
-          rewrite="url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf"
-          git config --global --unset-all "$rewrite" || true
+        run: cargo +1.98.1 fetch --locked
 
       - name: Formatting
+        id: formatting
         working-directory: source
+        continue-on-error: true
         run: cargo +1.98.1 fmt --all -- --check
 
+      - name: Generate rustfmt remediation
+        if: steps.formatting.outcome == 'failure'
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo +1.98.1 fmt --all
+          git diff --binary > ../ores-compose-current-main-rustfmt.patch
+          test -s ../ores-compose-current-main-rustfmt.patch
+
+      - name: Upload rustfmt remediation
+        if: steps.formatting.outcome == 'failure'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ores-compose-current-main-rustfmt
+          path: ores-compose-current-main-rustfmt.patch
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Require formatting clean
+        if: steps.formatting.outcome == 'failure'
+        run: exit 1
+
       - name: Version subprocess regression
+        if: steps.formatting.outcome == 'success'
         working-directory: source
         run: cargo +1.98.1 test --locked --test cli_version
 
       - name: All targets
+        if: steps.formatting.outcome == 'success'
         working-directory: source
         run: cargo +1.98.1 test --locked --all-targets
 
       - name: Strict Clippy
+        if: steps.formatting.outcome == 'success'
         working-directory: source
         run: cargo +1.98.1 clippy --locked --all-targets --all-features -- -D warnings
 
       - name: Direct installed-binary version boundary
+        if: steps.formatting.outcome == 'success'
         working-directory: source
         shell: bash
         run: |
@@ -105,5 +129,11 @@ jobs:
           test "$($binary -V)" = "ores-compose $version"
 
       - name: Prove source remained immutable
+        if: steps.formatting.outcome == 'success'
         working-directory: source
         run: test -z "$(git status --porcelain --untracked-files=all)"
+
+      - name: Remove authenticated Cargo rewrite
+        if: ${{ always() }}
+        shell: bash
+        run: git config --global --unset-all url."https://x-access-token:${{ secrets.ORE_SOURCE_PAT }}@github.com/".insteadOf || true
