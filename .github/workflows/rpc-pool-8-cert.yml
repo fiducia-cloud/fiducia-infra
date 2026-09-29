@@ -51,6 +51,16 @@ jobs:
           git diff --check
           test -z "$(git status --porcelain --untracked-files=all)"
 
+      - name: Configure authenticated Cargo git fetches
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+          echo 'CARGO_NET_GIT_FETCH_WITH_CLI=true' >> "$GITHUB_ENV"
+
       - name: Install stable Rust
         shell: bash
         run: |
@@ -120,3 +130,8 @@ jobs:
           set -euo pipefail
           git diff --check
           test -z "$(git status --porcelain --untracked-files=all)"
+
+      - name: Remove authenticated Cargo rewrite
+        if: ${{ always() }}
+        shell: bash
+        run: git config --global --unset-all url."https://x-access-token:${{ secrets.ORE_SOURCE_PAT }}@github.com/".insteadOf || true
