@@ -73,14 +73,18 @@ jobs:
           set -euo pipefail
           cargo +1.88.0 fmt --all
           git diff --binary -- src/tcp_binary.rs > ../ores-transport-17-rustfmt.patch
+          cp src/tcp_binary.rs ../tcp_binary.rs
           test -s ../ores-transport-17-rustfmt.patch
+          test -s ../tcp_binary.rs
 
       - name: Upload rustfmt remediation
         if: steps.formatting.outcome == 'failure'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ores-transport-17-rustfmt
-          path: ores-transport-17-rustfmt.patch
+          path: |
+            ores-transport-17-rustfmt.patch
+            tcp_binary.rs
           if-no-files-found: error
           retention-days: 7
 
