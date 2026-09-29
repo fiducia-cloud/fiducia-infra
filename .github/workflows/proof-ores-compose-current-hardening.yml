@@ -20,7 +20,7 @@ jobs:
           - label: isolation-policy-integrity
             compose_sha: e7b77e086984912ebf8e8ddecd46919973cacda6
           - label: ci-trust-hardening
-            compose_sha: 21ca60e60c16ee54f9efbafdf45577d09f8253c7
+            compose_sha: 78b41fb5b00abafde6f1dd4ad4c1fb06518c53d0
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
@@ -76,7 +76,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
-      COMPOSE_SHA: 21ca60e60c16ee54f9efbafdf45577d09f8253c7
+      COMPOSE_SHA: 78b41fb5b00abafde6f1dd4ad4c1fb06518c53d0
     steps:
       - name: Checkout exact CI-hardening head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
