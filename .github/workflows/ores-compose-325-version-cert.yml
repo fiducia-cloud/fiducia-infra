@@ -1,0 +1,109 @@
+name: ores-compose #325 exact-head certification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-compose-325-version-cert.yml'
+  push:
+    branches:
+      - test/ores-compose-325-version-cert-20260928
+    paths:
+      - '.github/workflows/ores-compose-325-version-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  COMPOSE_HEAD: 'f8e2df74c45495f635217507d319f8a3f06718de'
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Require scoped source credential
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+
+      - name: Check out exact ores-compose source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.COMPOSE_HEAD }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          path: source
+
+      - name: Verify immutable source identity
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$COMPOSE_HEAD"
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+      - name: Configure authenticated GitHub dependency access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Install Rust 1.98.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.98.1 --profile minimal --no-self-update
+          rustup component add --toolchain 1.98.1 rustfmt clippy
+
+      - name: Prime locked dependencies
+        working-directory: source
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          cargo +1.98.1 fetch --locked
+          rewrite="url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf"
+          git config --global --unset-all "$rewrite" || true
+
+      - name: Formatting
+        working-directory: source
+        run: cargo +1.98.1 fmt --all -- --check
+
+      - name: Version subprocess regression
+        working-directory: source
+        run: cargo +1.98.1 test --locked --test cli_version
+
+      - name: All targets
+        working-directory: source
+        run: cargo +1.98.1 test --locked --all-targets
+
+      - name: Strict Clippy
+        working-directory: source
+        run: cargo +1.98.1 clippy --locked --all-targets --all-features -- -D warnings
+
+      - name: Direct installed-binary version boundary
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo +1.98.1 install --locked --force --path . --bin ores-compose --root "$RUNNER_TEMP/ores-compose-install"
+          binary="$RUNNER_TEMP/ores-compose-install/bin/ores-compose"
+          version="$(cargo +1.98.1 metadata --no-deps --format-version=1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')"
+          test "$($binary --version)" = "ores-compose $version"
+          test "$($binary -V)" = "ores-compose $version"
+
+      - name: Prove source remained immutable
+        working-directory: source
+        run: test -z "$(git status --porcelain --untracked-files=all)"
