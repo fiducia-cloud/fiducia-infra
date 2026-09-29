@@ -62,7 +62,7 @@ jobs:
         working-directory: source
         env:
           ORES_ALLOW_MISSING_ZPKG_LOCK: '1'
-        run: cargo +stable run --locked --quiet --no-default-features --features repo-check --bin repo-check
+        run: cargo +stable run --quiet --no-default-features --features repo-check --bin repo-check
 
       - name: Formatting
         working-directory: source
@@ -70,15 +70,15 @@ jobs:
 
       - name: Focused TCP admission tests
         working-directory: source
-        run: cargo +stable test --locked --all-targets --no-default-features --features tcp
+        run: cargo +stable test --all-targets --no-default-features --features tcp
 
       - name: All-feature tests
         working-directory: source
-        run: cargo +stable test --locked --all-targets --all-features
+        run: cargo +stable test --all-targets --all-features
 
       - name: Strict Clippy
         working-directory: source
-        run: cargo +stable clippy --locked --all-targets --all-features -- -D warnings
+        run: cargo +stable clippy --all-targets --all-features -- -D warnings
 
       - name: Install declared MSRV
         shell: bash
@@ -86,7 +86,7 @@ jobs:
 
       - name: MSRV all-feature compile
         working-directory: source
-        run: cargo +1.88.0 check --locked --all-targets --all-features
+        run: cargo +1.88.0 check --all-targets --all-features
 
       - name: Prove source remained immutable
         working-directory: source
