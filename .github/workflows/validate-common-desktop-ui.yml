@@ -9,8 +9,11 @@ on:
 permissions:
   contents: read
 
+env:
+  FLUTTER_VERSION: "3.47.5"
+
 jobs:
-  flutter-ui:
+  shared-flutter-ui:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -28,11 +31,11 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "34cdf8de340281c9dd2f852febc7a7b9bf108d64"
-      - name: Install Flutter 3.47.5
+      - name: Install Flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           channel: stable
-          flutter-version: "3.47.5"
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - name: Resolve Flutter package
         working-directory: source/flutter
@@ -46,3 +49,68 @@ jobs:
       - name: Test Flutter package
         working-directory: source/flutter
         run: flutter test
+
+  ores-stack-flutter:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact ORES Stack Flutter source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ores-stack/ores-stack-flutter
+          ref: 4225103cbd3f97a0a92a7cc5d2da77fd87f3e086
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: source
+          persist-credentials: false
+      - name: Verify exact source revision
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "4225103cbd3f97a0a92a7cc5d2da77fd87f3e086"
+      - name: Install Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Resolve Flutter package
+        working-directory: source
+        run: flutter pub get
+      - name: Check Flutter formatting
+        working-directory: source
+        run: dart format --output=none --set-exit-if-changed lib test
+      - name: Analyze Flutter package
+        working-directory: source
+        run: flutter analyze
+      - name: Test Flutter package
+        working-directory: source
+        run: flutter test
+
+  ores-stack-native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact ORES Stack native source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ores-stack/ores-stack-desktop-app.rs
+          ref: c217aafe8c72b31519739f4add6582de338e113b
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: source
+          persist-credentials: false
+      - name: Verify exact source revision
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "c217aafe8c72b31519739f4add6582de338e113b"
+      - name: Check Rust formatting
+        working-directory: source
+        run: cargo fmt --all -- --check
+      - name: Lint native app
+        working-directory: source
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Test native app
+        working-directory: source
+        run: cargo test --all-targets
