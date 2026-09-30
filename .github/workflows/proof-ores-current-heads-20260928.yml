@@ -1,0 +1,69 @@
+name: proof current ORES hardening heads
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/proof-ores-current-heads-20260928.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: ores-compose-322, repository: ORESoftware/ores-compose, sha: 1727dbe67e8d401479e387df0da8cf54f9340681, format_paths: "src/deployment.rs src/runtime_control.rs" }
+          - { name: ores-compose-323, repository: ORESoftware/ores-compose, sha: 15820c842ec36b8a20cbf791bd6879a1c88b96c3, format_paths: "src/config_loader.rs" }
+          - { name: ores-transport-14, repository: ORESoftware/ores-transport, sha: 1f49a38ebfa5e8d2c802760785ca9bd1410ca0e1, format_paths: "src/codec.rs" }
+          - { name: ores-clients-core-4, repository: ORESoftware/ores-clients-core, sha: d83c2ec9365e5b04ed132e1f8e93a13d8538b197, format_paths: "src/model.rs src/lib.rs" }
+          - { name: ores-e2e-core-3, repository: ORESoftware/ores-e2e-core, sha: 90a981add50e6a2926503422230d60a783a3f220, format_paths: "src/lib.rs" }
+          - { name: ores-proc-isolation-cli-36, repository: ORESoftware/ores-proc-isolation-cli, sha: b79016c4a0176b11892ae87cd3db23c09a359814, format_paths: "src/linux_lifecycle.rs" }
+          - { name: ores-locks-and-leases-128, repository: ORESoftware/ores-locks-and-leases, sha: b80fb2cf1451a6dc6deb5ca57cbf56b2d34195de, format_paths: "src/rust/key.rs" }
+          - { name: ores-rpc-pool-7, repository: ORESoftware/ores-rpc-calls-http-tcp-pool.rs, sha: b04edbfbfdd1ec4f26a49315e46b012002228ce6, format_paths: "src/contract.rs" }
+          - { name: ores-middleware-290, repository: ORESoftware/ores-middleware, sha: 3eb0148b0e37c89c945b749209e73c0ccb6e832f, format_paths: "src/rust/src/lib.rs src/rust/src/payload.rs" }
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ matrix.repository }}
+          ref: ${{ matrix.sha }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify exact source
+        run: test "$(git rev-parse HEAD)" = "${{ matrix.sha }}"
+      - name: Configure private Git dependency access
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Install fallback Rust 1.88
+        if: ${{ hashFiles('rust-toolchain.toml', 'rust-toolchain') == '' }}
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal --component rustfmt --component clippy
+          rustup default 1.88.0
+      - name: Formatting
+        shell: bash
+        env:
+          FORMAT_PATHS: ${{ matrix.format_paths }}
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2024 --check $FORMAT_PATHS
+      - name: Compile
+        run: cargo check --locked --all-targets
+      - name: Tests
+        run: cargo test --locked --all-targets
+      - name: Strict Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Final exact-head guard
+        if: always()
+        run: test "$(git rev-parse HEAD)" = "${{ matrix.sha }}"
