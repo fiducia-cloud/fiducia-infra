@@ -1,0 +1,206 @@
+# Guarded one-shot migration for exact native UI candidate heads.
+name: harden native stack UI candidates
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/harden-native-stack-ui.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  harden:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - repo: lunatic-lorry/ll-desktop-app.rs
+            branch: chatgpt/ui-polish-20260930
+            sha: 4e914165c33570130c031191955143ba4468daa3
+            mode: single
+            unavailable: Lunatic Lorry daemon unavailable. Start the local daemon and try again.
+          - repo: pony-expres/poex-desktop-app.rs
+            branch: chatgpt/ui-polish-20260930
+            sha: 2672ed52ca8a209eb4cad9779f8378967d288805
+            mode: single
+            unavailable: Pony Expres daemon unavailable. Start the local daemon and try again.
+          - repo: iso-lattes/isl-desktop-app.rs
+            branch: chatgpt/ui-polish-20260930
+            sha: a1b00fc3205a25fdafe3601125700b79ff151187
+            mode: dual
+            unavailable: ISO Lattes daemon data is unavailable. Check the local daemon and try again.
+          - repo: graal-show/gs-desktop-app.rs
+            branch: chatgpt/ui-polish-20260930
+            sha: c56403f23fefec3a7de423f1bc6bbd3ecb64992c
+            mode: dual
+            unavailable: Graal Show daemon data is unavailable. Check the local daemon and try again.
+          - repo: wasm-xprs/wasmx-desktop-app.rs
+            branch: chatgpt/ui-polish-20260930
+            sha: 26f67cedc5aa5f2a391cdd3c0f00517efa4bc845
+            mode: wasmx
+            unavailable: wasm-xprs daemon unavailable. Start the local daemon and try again.
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ matrix.repo }}
+          ref: ${{ matrix.branch }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: true
+      - name: Guard candidate head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ matrix.sha }}"
+      - name: Apply bounded operator feedback
+        env:
+          MODE: ${{ matrix.mode }}
+          UNAVAILABLE: ${{ matrix.unavailable }}
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+
+          path = Path('src/main.rs')
+          text = path.read_text()
+          mode = os.environ['MODE']
+          unavailable = os.environ['UNAVAILABLE']
+
+          summary_helpers = r'''
+fn render_status_summary(value: &Value) -> String {
+    let Some(object) = value.as_object() else {
+        return "Daemon online · valid status received.".to_owned();
+    };
+    let mut fields = Vec::new();
+    for key in [
+        "status", "runtime", "execution_backend", "isolation", "worker_reuse",
+        "version", "route_generation", "active_workers", "in_flight_dispatches",
+        "max_in_flight_dispatches", "uptime_ms",
+    ] {
+        let Some(value) = object.get(key) else { continue };
+        let rendered = match value {
+            Value::String(value) => value.clone(),
+            Value::Bool(value) => value.to_string(),
+            Value::Number(value) => value.to_string(),
+            _ => continue,
+        };
+        fields.push(format!("{key}={}", truncate_for_ui(&rendered, 96)));
+    }
+    if fields.is_empty() {
+        "Daemon online · valid status received.".to_owned()
+    } else {
+        format!("Daemon online · {}", fields.join(" · "))
+    }
+}
+
+fn truncate_for_ui(value: &str, max_chars: usize) -> String {
+    let mut chars = value.chars();
+    let prefix = chars.by_ref().take(max_chars).collect::<String>();
+    if chars.next().is_some() { format!("{prefix}…") } else { prefix }
+}
+
+'''
+
+          if mode == 'single':
+              old = '''            let text = match fetch_status(&client, &daemon_url, &token) {
+                Ok(value) => match serde_json::to_string_pretty(&value) {
+                    Ok(value) => value,
+                    Err(error) => format!("invalid status payload: {error}"),
+                },
+                Err(error) => format!("daemon unavailable: {error}"),
+            };'''
+              message = unavailable.replace('"', '\\"')
+              new = f'''            let text = match fetch_status(&client, &daemon_url, &token) {{
+                Ok(value) => render_status_summary(&value),
+                Err(_) => "{message}".to_owned(),
+            }};'''
+              if old not in text:
+                  raise SystemExit('single-status source pattern did not match exact candidate')
+              text = text.replace(old, new, 1)
+              marker = 'fn load_config() -> Result<RuntimeConfig> {'
+              if marker not in text:
+                  raise SystemExit('single-status helper insertion point missing')
+              text = text.replace(marker, summary_helpers + marker, 1)
+
+          elif mode == 'dual':
+              start = text.index('fn render_daemon_request(')
+              end = text.index('\nfn load_config()', start)
+              replacement = r'''fn render_daemon_request(result: Result<Value>, label: &str) -> String {
+    match result {
+        Ok(value) if label == "status" => render_status_summary(&value),
+        Ok(value) => render_collection_summary(&value, label),
+        Err(_) => format!("Daemon {label} unavailable. Check the local daemon and try again."),
+    }
+}
+
+fn render_collection_summary(value: &Value, label: &str) -> String {
+    if let Some(items) = value.as_array() {
+        return format!("{label}: {} item(s) loaded.", items.len());
+    }
+    if let Some(object) = value.as_object() {
+        for key in ["cells", "items", "instances", "workers"] {
+            if let Some(items) = object.get(key).and_then(Value::as_array) {
+                return format!("{label}: {} item(s) loaded.", items.len());
+            }
+        }
+        return format!("{label}: valid document loaded ({} field(s)).", object.len());
+    }
+    format!("{label}: valid document loaded.")
+}
+
+''' + summary_helpers
+              text = text[:start] + replacement + text[end + 1:]
+
+          elif mode == 'wasmx':
+              old = '''    if !status.is_success() {
+        bail!(
+            "daemon returned {status}: {}",
+            String::from_utf8_lossy(&body)
+        );
+    }'''
+              new = '''    if !status.is_success() {
+        bail!("daemon returned {status}");
+    }'''
+              if old not in text:
+                  raise SystemExit('wasmx response leakage pattern missing')
+              text = text.replace(old, new, 1)
+              text = text.replace(
+                  'Err(error) => format!("Daemon unavailable: {error}"),',
+                  'Err(_) => "Daemon unavailable. Start the local wasm-xprs daemon and try again.".to_owned(),', 1)
+              text = text.replace(
+                  'Ok(value) => format!("Invocation: {value}"),\n                    Err(error) => format!("Invocation failed: {error}"),',
+                  'Ok(value) => format!("Invocation succeeded · {}", render_json_preview(&value, 2048)),\n                    Err(_) => "Invocation failed. Check the payload, deployment, and daemon health, then try again.".to_owned(),', 1)
+              marker = 'fn read_token() -> Result<String> {'
+              helper = r'''fn render_json_preview(value: &Value, max_chars: usize) -> String {
+    let rendered = value.to_string();
+    let mut chars = rendered.chars();
+    let prefix = chars.by_ref().take(max_chars).collect::<String>();
+    if chars.next().is_some() { format!("{prefix}…") } else { prefix }
+}
+
+'''
+              if marker not in text:
+                  raise SystemExit('wasmx helper insertion point missing')
+              text = text.replace(marker, helper + marker, 1)
+          else:
+              raise SystemExit(f'unknown mode {mode}')
+
+          path.write_text(text)
+      - name: Format Rust source
+        run: cargo fmt --all
+      - name: Commit and push candidate hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- src/main.rs; then
+            echo "No source delta"
+            exit 0
+          fi
+          git config user.name "ORESoftware CI"
+          git config user.email "ci@oresoftware.com"
+          git add src/main.rs
+          git commit -m "fix(ui): redact and summarize daemon feedback"
+          git push origin HEAD:${{ matrix.branch }}
