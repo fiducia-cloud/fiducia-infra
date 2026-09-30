@@ -24,12 +24,15 @@ jobs:
           path: source
       - name: Guard source head
         working-directory: source
-        run: test "$(git rev-parse HEAD)" = "34cdf8de340281c9dd2f852febc7a7b9bf108d64"
+        run: test "$(git rev-parse HEAD)" = "ff64e258c03a98f18d03c16ef17d21650a262716"
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           channel: stable
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
+      - name: Resolve Flutter package
+        working-directory: source/flutter
+        run: flutter pub get
       - name: Apply formatter only to PR-owned files
         working-directory: source/flutter
         run: dart format lib/src/desktop_app_shell.dart test/desktop_app_shell_test.dart
@@ -44,7 +47,7 @@ jobs:
           git config user.name "ORESoftware CI"
           git config user.email "ci@oresoftware.com"
           git add flutter/lib/src/desktop_app_shell.dart flutter/test/desktop_app_shell_test.dart
-          git commit -m "style(flutter): apply Dart formatter"
+          git commit -m "style(flutter): format after package resolution"
           git push origin HEAD:ui/harden-stack-client-shells
 
   ores-stack-flutter:
@@ -58,12 +61,15 @@ jobs:
           path: source
       - name: Guard source head
         working-directory: source
-        run: test "$(git rev-parse HEAD)" = "4225103cbd3f97a0a92a7cc5d2da77fd87f3e086"
+        run: test "$(git rev-parse HEAD)" = "827c2d93b21f3ebaec5b68c56733995accfabcc2"
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           channel: stable
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
+      - name: Resolve Flutter package
+        working-directory: source
+        run: flutter pub get
       - name: Apply formatter
         working-directory: source
         run: dart format lib test
@@ -78,7 +84,7 @@ jobs:
           git config user.name "ORESoftware CI"
           git config user.email "ci@oresoftware.com"
           git add lib test
-          git commit -m "style(flutter): apply Dart formatter"
+          git commit -m "style(flutter): format after package resolution"
           git push origin HEAD:ui/bootstrap-operator-console
 
   ores-stack-native:
@@ -92,7 +98,7 @@ jobs:
           path: source
       - name: Guard source head
         working-directory: source
-        run: test "$(git rev-parse HEAD)" = "c217aafe8c72b31519739f4add6582de338e113b"
+        run: test "$(git rev-parse HEAD)" = "db48e244f394e4aaa995a9d2eea4513ce1f9de11"
       - name: Apply rustfmt
         working-directory: source
         run: cargo fmt --all
