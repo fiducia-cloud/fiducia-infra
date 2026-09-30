@@ -1,0 +1,78 @@
+name: certify BeamScale bounded models
+
+on:
+  push:
+    branches:
+      - proof/beamscale-formal-models-20260924
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/certify-beamscale-formal-models.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - repository: beamscale/bmscl-supervisor
+            sha: 621ff18a7a09ea60e494fe127cba4e2cdf83cc2b
+            pr: '80'
+          - repository: beamscale/bmscl-compiler
+            sha: 69a74da7e97c7bba3042f407ea4819d8e7f055a9
+            pr: '32'
+          - repository: beamscale/bmscl-cli
+            sha: e6cd94513495087d5bb6eceb3994b51b20fcd488
+            pr: '20'
+          - repository: beamscale/bmscl-infra
+            sha: 8e19edb760c41674045c1006606aa1f1ad3403aa
+            pr: '34'
+    steps:
+      - name: Require scoped source credential
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+      - name: Check out exact source head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ${{ matrix.repository }}
+          ref: ${{ matrix.sha }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify exact source identity
+        env:
+          EXPECTED_SHA: ${{ matrix.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: stable
+      - name: Exhaust bounded state space
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustc --edition=2021 -D warnings conformance/formal_model.rs -o "$RUNNER_TEMP/formal-model"
+          "$RUNNER_TEMP/formal-model"
+      - name: Final immutable-source guard
+        env:
+          EXPECTED_SHA: ${{ matrix.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
