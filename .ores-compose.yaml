@@ -1,0 +1,16 @@
+schema_version: ores.compose.v1
+# ores-compose-nano-id: eM6I-8ZQ0XpvCPyTvlk_E
+project: fiducia-cloud
+allow_lazy_start: false
+source:
+  repository: https://github.com/fiducia-cloud/fiducia-monorepo.git
+  commit: 4fff6e6733e08d36134133691fae7bd97447fbfc
+  checkout_dir: .ores/sources/fiducia-monorepo
+# Requires ORESoftware/ores-compose#156. Configure ORES_LOCAL_OBJECT_ACCESS_KEY,
+# ORES_LOCAL_OBJECT_SECRET_KEY and ORES_LOCAL_MC_HOST in project-root .env.
+services:
+  redis: { runtime: auto, image: "redis:7.4.11-alpine", command: ["redis-server", "--appendonly", "yes"], ports: [{ host: 127.0.0.1, published: 6379, target: 6379 }], mounts: [{ type: volume, source: ores-redis-data, target: /data }] }
+  nats: { runtime: auto, image: "nats:2.15.0-alpine", command: ["-js", "-sd", "/data", "-m", "8222"], ports: [{ host: 127.0.0.1, published: 4222, target: 4222 }, { host: 127.0.0.1, published: 8222, target: 8222 }], mounts: [{ type: volume, source: ores-nats-data, target: /data }] }
+  object-store: { runtime: auto, image: "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z", command: ["server", "/data", "--address", ":9000"], environment: { MINIO_ROOT_USER: { from_env: ORES_LOCAL_OBJECT_ACCESS_KEY } }, secrets: { MINIO_ROOT_PASSWORD: { from_env: ORES_LOCAL_OBJECT_SECRET_KEY } }, ports: [{ host: 127.0.0.1, published: 9000, target: 9000 }], mounts: [{ type: volume, source: ores-object-store-data, target: /data }] }
+  storage-ready: { runtime: auto, image: "minio/mc:RELEASE.2025-08-13T08-35-41Z", lifecycle: one-shot, depends_on: [object-store], secrets: { MC_HOST_local: { from_env: ORES_LOCAL_MC_HOST } }, command: ["ready", "local"] }
+  storage-init: { runtime: auto, image: "minio/mc:RELEASE.2025-08-13T08-35-41Z", lifecycle: one-shot, depends_on: [storage-ready], secrets: { MC_HOST_local: { from_env: ORES_LOCAL_MC_HOST } }, command: ["mb", "--ignore-existing", "local/s3-local-dummy", "local/r2-local-dummy"] }
