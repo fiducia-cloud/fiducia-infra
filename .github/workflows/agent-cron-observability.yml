@@ -1,0 +1,117 @@
+name: apply cron observability agent hardening
+
+on:
+  push:
+    branches:
+      - agent/cron-observability
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/cron-observability
+          fetch-depth: 0
+      - name: Add annotated metrics scrape and cron redaction boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('base/observability/otel-agent.yaml')
+          source = path.read_text()
+
+          receiver = '''      # Native /metrics endpoints opt in explicitly. This receiver is
+      # namespace-bound and requires a numeric port annotation; it never guesses
+      # ports or follows service-discovery targets outside Fiducia.
+      prometheus/fiducia_annotated_apps:
+        config:
+          scrape_configs:
+            - job_name: fiducia-annotated-apps
+              scrape_interval: 15s
+              kubernetes_sd_configs:
+                - role: pod
+                  namespaces:
+                    names: [fiducia]
+              relabel_configs:
+                - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+                  regex: "true"
+                  action: keep
+                - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+                  regex: "(.+)"
+                  target_label: __metrics_path__
+                  replacement: "$1"
+                - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+                  regex: "([^:]+)(?::\\d+)?;(\\d+)"
+                  target_label: __address__
+                  replacement: "$1:$2"
+                - source_labels: [__meta_kubernetes_pod_label_app]
+                  target_label: service
+                - source_labels: [__meta_kubernetes_pod_name]
+                  target_label: pod
+
+'''
+          marker = '    processors:\n'
+          if 'prometheus/fiducia_annotated_apps:' not in source:
+              if source.count(marker) != 1:
+                  raise SystemExit('processor insertion point changed')
+              source = source.replace(marker, receiver + marker, 1)
+
+          old = 'receivers: [otlp, prometheus/fiducia_sidecars]'
+          new = 'receivers: [otlp, prometheus/fiducia_sidecars, prometheus/fiducia_annotated_apps]'
+          if old in source:
+              source = source.replace(old, new, 1)
+          elif new not in source:
+              raise SystemExit('metrics pipeline insertion point changed')
+
+          extra_redaction = '''          - key: http.request.header.cookie
+            action: delete
+          - key: http.request.header.x-server-auth
+            action: delete
+          - key: http.request.header.x-fiducia-internal-auth
+            action: delete
+          - key: http.request.body
+            action: delete
+          - key: http.response.body
+            action: delete
+          - key: request.body
+            action: delete
+          - key: response.body
+            action: delete
+          - key: function.body
+            action: delete
+          - key: function.source
+            action: delete
+          - key: function.env
+            action: delete
+          - key: cron.payload
+            action: delete
+          - key: cron.source
+            action: delete
+'''
+          anchor = '''          - key: http.request.header.authorization
+            action: delete
+'''
+          if '          - key: function.body\n' not in source:
+              if source.count(anchor) != 1:
+                  raise SystemExit('redaction insertion point changed')
+              source = source.replace(anchor, anchor + extra_redaction, 1)
+
+          path.write_text(source)
+          PY
+          git diff --check
+          if git diff --quiet -- base/observability/otel-agent.yaml; then
+            echo 'agent hardening already applied'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add base/observability/otel-agent.yaml
+          git commit -m 'feat: harden cron telemetry collection'
+          git push origin HEAD:agent/cron-observability

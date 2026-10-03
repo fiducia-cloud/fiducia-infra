@@ -5,17 +5,15 @@ kind: Kustomization
 namespace: fiducia
 resources:
   - ../../../base
-  - tailnet-ingress.yaml
 components:
   - ../../../base/components/brain
   - ../../components/substrate
   - ../../components/runtime
-  - ../../components/connectivity
   - ../../components/messaging-ha
 configMapGenerator:
   - name: fiducia-cluster
     envs:
-      - topology.properties
+      - topology.env
 generatorOptions:
   disableNameSuffixHash: true
 commonAnnotations:

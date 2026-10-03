@@ -240,12 +240,7 @@ test("stale, self-approved, placeholder, critical, and secret-bearing live evide
   assert.throws(() => validateDurabilityEvidence(secretField, policy, { now: fixedNow }), /prohibited secret-bearing field/);
 
   const privateKey = makeLive();
-  privateKey.findings.push({
-    id: "bad-evidence",
-    severity: "low",
-    resolved: true,
-    note: ["-----BEGIN", "PRIVATE KEY-----"].join(" "),
-  });
+  privateKey.findings.push({ id: "bad-evidence", severity: "low", resolved: true, note: "-----BEGIN PRIVATE KEY-----" });
   assert.throws(() => validateDurabilityEvidence(privateKey, policy, { now: fixedNow }), /private-key pattern/);
 });
 
