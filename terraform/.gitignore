@@ -1,8 +1,0 @@
-# Terraform local state, plans, provider caches, and fetched kubeconfigs.
-.terraform/
-.terraform.lock.hcl
-*.tfstate
-*.tfstate.*
-*.tfplan
-terraform.tfvars
-*.kubeconfig
