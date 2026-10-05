@@ -1,6 +1,10 @@
-name: "ores-stack 283 targeted repair"
+name: "ores-stack 283 historical targeted repair"
 
-on: [push, workflow_dispatch]
+# Historical repair harness. The fixes it carried are already present in the
+# source branch; keep this manual-only so new evidence pushes cannot mutate an
+# obsolete source SHA.
+on:
+  workflow_dispatch:
 
 permissions:
   contents: read
