@@ -17,7 +17,7 @@ permissions:
 
 env:
   STACK_BASE: '933f5b5e26e26f91dd3fd4eff33998df9b44f304'
-  STACK_HEAD: '89d00de5bba81e44aee9c27ca2408f66b69b2526'
+  STACK_HEAD: '217279205a3cb1c54f714edc03f27bd98fe77db8'
   STACK_BRANCH: 'feat/governance-v2-scaffold-admission-20260923'
 
 jobs:
@@ -109,8 +109,6 @@ jobs:
           cargo +1.88.0 fetch
           git diff --check -- Cargo.lock
           test -n "$(git status --porcelain -- Cargo.lock)"
-          rewrite="url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf"
-          git config --global --unset-all "$rewrite" || true
 
       - name: Upload regenerated Cargo.lock
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -119,6 +117,17 @@ jobs:
           path: source/Cargo.lock
           if-no-files-found: error
           retention-days: 1
+
+      - name: Prime pinned scaffold compile-contract dependencies
+        working-directory: source
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          cargo +1.88.0 test -p ores-stack-cli --test scaffold_cli_compile_contract --locked
+          rewrite="url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf"
+          git config --global --unset-all "$rewrite" || true
 
       - name: Run exact-head governance certification
         working-directory: source
