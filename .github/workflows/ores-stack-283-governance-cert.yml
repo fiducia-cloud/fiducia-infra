@@ -17,7 +17,7 @@ permissions:
 
 env:
   STACK_BASE: '933f5b5e26e26f91dd3fd4eff33998df9b44f304'
-  STACK_HEAD: '217279205a3cb1c54f714edc03f27bd98fe77db8'
+  STACK_HEAD: '0052738961024bc41ca3ff462fe337db14da871b'
   STACK_BRANCH: 'feat/governance-v2-scaffold-admission-20260923'
 
 jobs:
