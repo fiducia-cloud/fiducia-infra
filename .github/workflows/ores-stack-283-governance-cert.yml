@@ -17,7 +17,8 @@ permissions:
 
 env:
   STACK_BASE: '933f5b5e26e26f91dd3fd4eff33998df9b44f304'
-  STACK_HEAD: 'f4b3e7f556bed00f38257d245003ba33dbb9c707'
+  STACK_HEAD: '90accb2f653bee052cb2b68779ec72d83dbe194c'
+  STACK_BRANCH: 'feat/governance-v2-scaffold-admission-20260923'
 
 jobs:
   certify:
@@ -139,3 +140,20 @@ jobs:
           node --check conformance/check.mjs
           node conformance/check.mjs > .ores-stack/conformance-check.json
           cat .ores-stack/conformance-check.json
+
+      - name: Publish certified Cargo.lock to source branch
+        working-directory: source
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$STACK_HEAD"
+          test "$(git diff --name-only)" = "Cargo.lock"
+          git diff --check -- Cargo.lock
+          git config user.name "ORESoftware"
+          git config user.email "alex@oresoftware.com"
+          git add Cargo.lock
+          git commit -m "chore: refresh Cargo.lock for governance hardening"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+          git push origin "HEAD:refs/heads/${STACK_BRANCH}"
