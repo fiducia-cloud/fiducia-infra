@@ -98,16 +98,26 @@ jobs:
         working-directory: source
         run: npm install --ignore-scripts --no-audit --no-fund
 
-      - name: Prime Rust dependencies and remove CI Git rewrite
+      - name: Regenerate Rust lockfile under exact toolchain
         working-directory: source
         shell: bash
         env:
           ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
         run: |
           set -euo pipefail
-          cargo +1.88.0 fetch --locked
+          cargo +1.88.0 fetch
+          git diff --check -- Cargo.lock
+          test -n "$(git status --porcelain -- Cargo.lock)"
           rewrite="url.https://x-access-token:${ORE_SOURCE_PAT}@github.com/.insteadOf"
           git config --global --unset-all "$rewrite" || true
+
+      - name: Upload regenerated Cargo.lock
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ores-stack-283-cargo-lock
+          path: source/Cargo.lock
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Run exact-head governance certification
         working-directory: source
