@@ -1,0 +1,44 @@
+name: Fiducia operator Rust CI
+
+on:
+  pull_request:
+    paths:
+      - "operator/**"
+      - ".github/workflows/operator-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "operator/**"
+      - ".github/workflows/operator-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: operator-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  operator:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out exact operator source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: "1.96.0"
+          components: rustfmt, clippy
+      - name: Verify operator formatting
+        working-directory: operator
+        run: cargo fmt --all -- --check
+      - name: Verify operator Clippy policy
+        working-directory: operator
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Run operator tests
+        working-directory: operator
+        run: cargo test --locked --all-targets
