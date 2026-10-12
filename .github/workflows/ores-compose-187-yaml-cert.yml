@@ -1,0 +1,132 @@
+name: ores-compose #187 exact-head certification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-compose-187-yaml-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  COMPOSE_HEAD: 2d5fbe9c7ef42d7112afc46f75cc184f521332f1
+  COMPOSE_BASE: fbfad966f9770a9a8d3895880523280324b4ddc6
+
+jobs:
+  certify-rust:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Require scoped source credential
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+
+      - name: Check out exact ores-compose source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.COMPOSE_HEAD }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Guard exact PR head and review scope
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$COMPOSE_HEAD"
+          actual="$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/ORESoftware/ores-compose.git" refs/pull/187/head | cut -f1)"
+          test "$actual" = "$COMPOSE_HEAD"
+          git cat-file -e "${COMPOSE_BASE}^{commit}"
+          mapfile -t changed < <(git diff --name-only "$COMPOSE_BASE" "$COMPOSE_HEAD")
+          expected=(src/config_loader.rs)
+          test "${#changed[@]}" -eq "${#expected[@]}"
+          diff -u <(printf '%s\n' "${expected[@]}" | sort) <(printf '%s\n' "${changed[@]}" | sort)
+          git diff --check "$COMPOSE_BASE" "$COMPOSE_HEAD"
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.98.1
+          components: rustfmt, clippy
+
+      - name: Verify pinned toolchain
+        run: rustc --version | grep -F 'rustc 1.98.1'
+
+      - name: Record source formatting baseline without blocking unchanged drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          rustfmt --check --edition 2021 --config skip_children=true src/config_loader.rs
+          head_fmt_status=$?
+          git worktree add --detach /tmp/ores-compose-187-format-base "$COMPOSE_BASE"
+          (
+            cd /tmp/ores-compose-187-format-base
+            rustfmt --check --edition 2021 --config skip_children=true src/config_loader.rs
+          )
+          base_fmt_status=$?
+          set -e
+          echo "head_rustfmt_status=$head_fmt_status"
+          echo "base_rustfmt_status=$base_fmt_status"
+          if [[ "$head_fmt_status" -ne 0 && "$base_fmt_status" -eq 0 ]]; then
+            echo "PR introduced formatting drift relative to a clean exact base" >&2
+            exit 31
+          fi
+
+      - name: Locked metadata
+        run: cargo metadata --locked --no-deps --format-version 1 >/dev/null
+
+      - name: Compile all targets and features
+        run: cargo check --locked --all-targets --all-features
+
+      - name: Focused config-loader regressions
+        run: cargo test --locked --all-features config_loader -- --nocapture
+
+      - name: Record strict Clippy baseline and reject changed-file diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          cargo clippy --locked --all-targets --all-features -- -D warnings 2>&1 | tee /tmp/head-clippy.log
+          head_clippy_status=${PIPESTATUS[0]}
+          (
+            cd /tmp/ores-compose-187-format-base
+            cargo clippy --locked --all-targets --all-features -- -D warnings
+          ) >/tmp/base-clippy.log 2>&1
+          base_clippy_status=$?
+          set -e
+          echo "head_clippy_status=$head_clippy_status"
+          echo "base_clippy_status=$base_clippy_status"
+          if grep -F 'src/config_loader.rs:' /tmp/head-clippy.log; then
+            echo "changed config_loader.rs has strict Clippy diagnostics" >&2
+            exit 32
+          fi
+          if [[ "$head_clippy_status" -ne 0 && "$base_clippy_status" -eq 0 ]]; then
+            echo "PR introduced a strict Clippy failure relative to the exact base" >&2
+            exit 33
+          fi
+
+      - name: Full test suite
+        run: cargo test --locked --all-targets --all-features
+
+      - name: Reconfirm immutable exact head
+        if: always()
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$COMPOSE_HEAD"
+          test -z "$(git status --porcelain --untracked-files=no)"
+          actual="$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/ORESoftware/ores-compose.git" refs/pull/187/head | cut -f1)"
+          test "$actual" = "$COMPOSE_HEAD"
+          echo ORES_COMPOSE_187_EXACT_HEAD_CERT_COMPLETE
