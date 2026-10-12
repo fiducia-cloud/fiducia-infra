@@ -62,13 +62,14 @@ function validatePayload(payload, expected) {
     assert(!seen.has(obj.role), 'duplicate object role');
     seen.add(obj.role);
   }
-  if (expected) {
-    assert(payload.cluster === expected.cluster && payload.shard === expected.shard,
-      'cluster/shard mismatch');
-    assert(payload.epoch === expected.epoch, 'stale or foreign epoch');
-    assert(payload.replay_from_log_index === expected.replay_from_log_index,
-      'replay boundary mismatch');
-  }
+  assert(expected && ident(expected.cluster) && ident(expected.shard)
+    && positiveInt(expected.epoch) && unsignedInt(expected.replay_from_log_index),
+    'trusted target cluster/shard/epoch/replay boundary required');
+  assert(payload.cluster === expected.cluster && payload.shard === expected.shard,
+    'cluster/shard mismatch');
+  assert(payload.epoch === expected.epoch, 'stale or foreign epoch');
+  assert(payload.replay_from_log_index === expected.replay_from_log_index,
+    'replay boundary mismatch');
 }
 async function hashFile(path, expectedBytes) {
   const st = await lstat(path);
