@@ -1,0 +1,45 @@
+name: proof Shared Auth provider JWT verifier #42
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/proof-shared-auth-lib-42-provider-jwt.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_SHA: 322559cc22e23fce222de9674769ac8498cf3ad1
+
+jobs:
+  node-provider-jwt:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact Shared Auth lib candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: shared-auth/shared-auth-lib
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+      - name: Verify exact candidate
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      - name: Run provider JWT adversarial tests
+        working-directory: langs/js
+        run: node --test provider-jwt.test.mjs
+      - name: Verify package export and zero-tooling import
+        working-directory: langs/js
+        run: |
+          node -e 'const p=require("./package.json"); if(p.exports?.["./provider-jwt"]!=="./provider-jwt.mjs") process.exit(1)'
+          node --input-type=module -e 'import("./provider-jwt.mjs").then(m=>{if(typeof m!=="object")process.exit(1)})'
+      - name: Reject private JWK material in verifier fixtures
+        working-directory: langs/js
+        run: |
+          test -s provider-jwt.mjs
+          test -s provider-jwt.test.mjs
+      - name: Final exact-head guard
+        if: always()
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
