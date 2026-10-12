@@ -2,7 +2,7 @@
 
 The verifier in `tools/verify-coordination-checkpoint.mjs` is deliberately
 **read-only and offline**. It authenticates a canonical payload using an
-independently trusted Ed25519 public key, validates its SHA-256 manifest digest,
+independently trusted Ed25519 public key and key ID, validates its SHA-256 manifest digest,
 cluster/shard/epoch/replay boundary and every digest-addressed local object
 before any restore can be attempted. It does not access credentials, mutable
 URLs, consensus state, object-store APIs or the live cluster.
@@ -11,7 +11,7 @@ URLs, consensus state, object-store APIs or the live cluster.
 node --test tools/verify-coordination-checkpoint.test.mjs
 node tools/verify-coordination-checkpoint.mjs \
   checkpoint.json /trusted/downloaded-objects trusted-pubkey.pem \
-  cluster-1 shard-4 9 43
+  key-2026-10 cluster-1 shard-4 9 43
 ```
 
 Expected object files: `OBJECTS_DIR/sha256/<lowercase-sha256>`. Obtain them
