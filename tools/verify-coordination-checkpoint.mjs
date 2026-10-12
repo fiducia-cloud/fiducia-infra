@@ -87,7 +87,7 @@ async function hashFile(path, expectedBytes) {
 
 /** Must be called before restore; neither this function nor its result authorizes activation. */
 export async function verifyCheckpoint(manifest, {
-  publicKey, objectsDir, expected
+  publicKey, trustedKeyId, objectsDir, expected
 }) {
   exactKeys(manifest, ['payload','payload_sha256','auth'], 'manifest');
   exactKeys(manifest.auth, ['algorithm','key_id','signature_base64'], 'authentication');
@@ -104,7 +104,8 @@ export async function verifyCheckpoint(manifest, {
     'invalid signature encoding');
   const signature = Buffer.from(manifest.auth.signature_base64, 'base64');
   assert(signature.length === 64, 'invalid Ed25519 signature length');
-  assert(publicKey, 'no independently trusted verification key');
+  assert(publicKey && ident(trustedKeyId) && manifest.auth.key_id === trustedKeyId,
+    'no matching independently trusted key ID/public key');
   const key = createPublicKey(publicKey);
   assert(key.asymmetricKeyType === 'ed25519'
     && verifySignature(null, digest, key, signature),
@@ -132,17 +133,17 @@ export function digestPayload(value) {
 }
 
 if (process.argv[1] && import.meta.url === new URL('file://' + process.argv[1]).href) {
-  const [manifestPath, objectsDir, publicKeyPath, cluster, shard, epoch, replay] = process.argv.slice(2);
-  if (!manifestPath || !objectsDir || !publicKeyPath || !cluster || !shard
+  const [manifestPath, objectsDir, publicKeyPath, trustedKeyId, cluster, shard, epoch, replay] = process.argv.slice(2);
+  if (!manifestPath || !objectsDir || !publicKeyPath || !trustedKeyId || !cluster || !shard
       || epoch === undefined || replay === undefined) {
-    console.error('usage: node tools/verify-coordination-checkpoint.mjs MANIFEST OBJECTS_DIR TRUSTED_PUBKEY_PEM CLUSTER SHARD EPOCH REPLAY_FROM_INDEX');
+    console.error('usage: node tools/verify-coordination-checkpoint.mjs MANIFEST OBJECTS_DIR TRUSTED_PUBKEY_PEM TRUSTED_KEY_ID CLUSTER SHARD EPOCH REPLAY_FROM_INDEX');
     process.exitCode = 2;
   } else {
     try {
       const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
       const publicKey = await readFile(publicKeyPath, 'utf8');
       console.log(JSON.stringify(await verifyCheckpoint(manifest, {
-        objectsDir, publicKey, expected: {
+        objectsDir, publicKey, trustedKeyId, expected: {
           cluster, shard, epoch: Number(epoch), replay_from_log_index: Number(replay)
         }
       })));
