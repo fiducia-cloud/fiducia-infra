@@ -78,5 +78,7 @@ test('rejects unsigned, unsupported, invalid and missing key metadata', async ()
     auth: { algorithm: 'none', key_id: 'k', signature_base64: '' } };
   await assert.rejects(verifyCheckpoint(manifest, {}), /unsupported authentication/);
   manifest.auth.algorithm = 'ed25519-sha256-v1';
-  await assert.rejects(verifyCheckpoint(manifest, {}), /invalid signature encoding/);
+  await assert.rejects(verifyCheckpoint(manifest, {
+    expected: { cluster: 'a', shard: 'b', epoch: 1, replay_from_log_index: 1 }
+  }), /invalid signature encoding/);
 });
