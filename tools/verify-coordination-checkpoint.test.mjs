@@ -35,7 +35,7 @@ test('signed immutable checkpoint is accepted only with complete scoped objects'
     const expected = { cluster: 'cluster-1', shard: 'shard-4',
       epoch: 9, replay_from_log_index: 43 };
     const verify = (manifest, overrides = {}) => verifyCheckpoint(manifest, {
-      publicKey: pem, objectsDir: root, expected, ...overrides
+      publicKey: pem, trustedKeyId: 'offline-test', objectsDir: root, expected, ...overrides
     });
     assert.equal((await verify(signed(payload))).verified, true);
     // Valid signatures on wrong identities/log boundaries still fail closed.
@@ -54,6 +54,7 @@ test('signed immutable checkpoint is accepted only with complete scoped objects'
     const forged = signed(payload);
     forged.payload = { ...payload, epoch: 10 };
     await assert.rejects(verify(forged));
+    await assert.rejects(verify(signed(payload), { trustedKeyId: 'wrong-key' }));
     await assert.rejects(verify(signed(payload), { publicKey:
       generateKeyPairSync('ed25519').publicKey.export({ type: 'spki', format: 'pem' }) }));
     await writeFile(objectPath, Buffer.from('immutable-state-v2'));
