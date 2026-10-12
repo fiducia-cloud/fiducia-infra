@@ -1,8 +1,8 @@
 // Offline, read-only checkpoint verifier. It does NOT publish or restore state.
 // No external dependencies, provider URLs, mutable locators or credentials.
 import { createHash, createPublicKey, verify as verifySignature } from 'node:crypto';
-import { createReadStream } from 'node:fs';
-import { lstat, readFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { lstat, open, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const HEX = /^[0-9a-f]{64}$/;
@@ -72,18 +72,34 @@ function validatePayload(payload, expected) {
     'replay boundary mismatch');
 }
 async function hashFile(path, expectedBytes) {
-  const st = await lstat(path);
-  assert(st.isFile() && !st.isSymbolicLink() && st.size === expectedBytes,
-    'object missing, nonregular or wrong size');
-  const hash = createHash('sha256');
-  let bytes = 0;
-  for await (const chunk of createReadStream(path, { flags: 'r' })) {
-    bytes += chunk.length;
-    assert(bytes <= expectedBytes, 'object size changed while reading');
-    hash.update(chunk);
+  // A prior lstat followed by reopening the path is vulnerable to a symlink
+  // swap. Require kernel-level O_NOFOLLOW, then verify the opened descriptor.
+  // O_NONBLOCK prevents an attacker-supplied FIFO from hanging the verifier.
+  assert(Number.isInteger(constants.O_NOFOLLOW) && Number.isInteger(constants.O_NONBLOCK),
+    'platform lacks safe object-open flags');
+  const handle = await open(path,
+    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const before = await handle.stat();
+    assert(before.isFile() && before.size === expectedBytes,
+      'object missing, nonregular or wrong size');
+    const hash = createHash('sha256');
+    let bytes = 0;
+    for await (const chunk of handle.createReadStream({ autoClose: false })) {
+      bytes += chunk.length;
+      assert(bytes <= expectedBytes, 'object size changed while reading');
+      hash.update(chunk);
+    }
+    assert(bytes === expectedBytes, 'object truncated while reading');
+    const after = await handle.stat();
+    assert(after.isFile() && before.dev === after.dev && before.ino === after.ino
+      && after.size === before.size && after.mtimeMs === before.mtimeMs
+      && after.ctimeMs === before.ctimeMs,
+      'object changed during verification');
+    return hash.digest('hex');
+  } finally {
+    await handle.close();
   }
-  assert(bytes === expectedBytes, 'object truncated while reading');
-  return hash.digest('hex');
 }
 
 /** Must be called before restore; neither this function nor its result authorizes activation. */
@@ -113,6 +129,10 @@ export async function verifyCheckpoint(manifest, {
     'invalid manifest signature');
   assert(typeof objectsDir === 'string' && objectsDir.length > 0,
     'missing object storage directory');
+  const digestDirectory = join(objectsDir, 'sha256');
+  const rootStat = await lstat(digestDirectory);
+  assert(rootStat.isDirectory() && !rootStat.isSymbolicLink(),
+    'object digest directory must be a real directory');
   for (const obj of manifest.payload.objects) {
     // Digest-derived paths only: untrusted manifest strings never become paths.
     const path = join(objectsDir, 'sha256', obj.sha256);
