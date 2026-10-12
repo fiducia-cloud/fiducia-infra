@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, rename, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { digestPayload, verifyCheckpoint } from './verify-coordination-checkpoint.mjs';
@@ -38,6 +38,25 @@ test('signed immutable checkpoint is accepted only with complete scoped objects'
       publicKey: pem, trustedKeyId: 'offline-test', objectsDir: root, expected, ...overrides
     });
     assert.equal((await verify(signed(payload))).verified, true);
+    // A path-to-object symlink with matching bytes and digest must still be
+    // rejected. The file descriptor, not a previously checked pathname,
+    // determines what can be read.
+    const copyOutside = join(root, 'matching-outside-object');
+    await writeFile(copyOutside, bytes);
+    await rm(objectPath);
+    await symlink(copyOutside, objectPath);
+    await assert.rejects(verify(signed(payload)));
+    await rm(objectPath);
+    await writeFile(objectPath, bytes);
+    assert.equal((await verify(signed(payload))).verified, true);
+    // Also reject a symlinked digest directory; even if its files are valid,
+    // this would weaken the digest-only lookup contract.
+    const realDir = join(root, 'digest-directory-backup');
+    await rename(join(root, 'sha256'), realDir);
+    await symlink(realDir, join(root, 'sha256'));
+    await assert.rejects(verify(signed(payload)), /real directory/);
+    await rm(join(root, 'sha256'));
+    await rename(realDir, join(root, 'sha256'));
     // Valid signatures on wrong identities/log boundaries still fail closed.
     for (const override of [
       { shard: 'shard-5' }, { epoch: 8 }, { replay_from_log_index: 44 },
