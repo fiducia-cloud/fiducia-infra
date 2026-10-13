@@ -63,11 +63,14 @@ function validatePayload(payload, expected) {
     seen.add(obj.role);
   }
   assert(expected && ident(expected.cluster) && ident(expected.shard)
-    && positiveInt(expected.epoch) && unsignedInt(expected.replay_from_log_index),
-    'trusted target cluster/shard/epoch/replay boundary required');
+    && positiveInt(expected.epoch) && positiveInt(expected.term)
+    && ident(expected.state_schema) && unsignedInt(expected.replay_from_log_index),
+    'trusted cluster/shard/epoch/term/schema/replay boundary required');
   assert(payload.cluster === expected.cluster && payload.shard === expected.shard,
     'cluster/shard mismatch');
   assert(payload.epoch === expected.epoch, 'stale or foreign epoch');
+  assert(payload.term === expected.term, 'stale or foreign term');
+  assert(payload.state_schema === expected.state_schema, 'state schema mismatch');
   assert(payload.replay_from_log_index === expected.replay_from_log_index,
     'replay boundary mismatch');
 }
@@ -154,10 +157,10 @@ export function digestPayload(value) {
 }
 
 if (process.argv[1] && import.meta.url === new URL('file://' + process.argv[1]).href) {
-  const [manifestPath, objectsDir, publicKeyPath, trustedKeyId, cluster, shard, epoch, replay] = process.argv.slice(2);
+  const [manifestPath, objectsDir, publicKeyPath, trustedKeyId, cluster, shard, epoch, term, stateSchema, replay] = process.argv.slice(2);
   if (!manifestPath || !objectsDir || !publicKeyPath || !trustedKeyId || !cluster || !shard
-      || epoch === undefined || replay === undefined) {
-    console.error('usage: node tools/verify-coordination-checkpoint.mjs MANIFEST OBJECTS_DIR TRUSTED_PUBKEY_PEM TRUSTED_KEY_ID CLUSTER SHARD EPOCH REPLAY_FROM_INDEX');
+      || epoch === undefined || term === undefined || !stateSchema || replay === undefined) {
+    console.error('usage: node tools/verify-coordination-checkpoint.mjs MANIFEST OBJECTS_DIR TRUSTED_PUBKEY_PEM TRUSTED_KEY_ID CLUSTER SHARD EPOCH TERM STATE_SCHEMA REPLAY_FROM_INDEX');
     process.exitCode = 2;
   } else {
     try {
@@ -165,7 +168,8 @@ if (process.argv[1] && import.meta.url === new URL('file://' + process.argv[1]).
       const publicKey = await readFile(publicKeyPath, 'utf8');
       console.log(JSON.stringify(await verifyCheckpoint(manifest, {
         objectsDir, publicKey, trustedKeyId, expected: {
-          cluster, shard, epoch: Number(epoch), replay_from_log_index: Number(replay)
+          cluster, shard, epoch: Number(epoch), term: Number(term),
+          state_schema: stateSchema, replay_from_log_index: Number(replay)
         }
       })));
     } catch (error) {
