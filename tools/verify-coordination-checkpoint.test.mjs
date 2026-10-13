@@ -33,7 +33,7 @@ test('signed immutable checkpoint is accepted only with complete scoped objects'
       };
     };
     const expected = { cluster: 'cluster-1', shard: 'shard-4',
-      epoch: 9, replay_from_log_index: 43 };
+      epoch: 9, term: 11, state_schema: 'kv-v3', replay_from_log_index: 43 };
     const verify = (manifest, overrides = {}) => verifyCheckpoint(manifest, {
       publicKey: pem, trustedKeyId: 'offline-test', objectsDir: root, expected, ...overrides
     });
@@ -59,7 +59,8 @@ test('signed immutable checkpoint is accepted only with complete scoped objects'
     await rename(realDir, join(root, 'sha256'));
     // Valid signatures on wrong identities/log boundaries still fail closed.
     for (const override of [
-      { shard: 'shard-5' }, { epoch: 8 }, { replay_from_log_index: 44 },
+      { shard: 'shard-5' }, { epoch: 8 }, { term: 12 },
+      { state_schema: 'kv-v4' }, { replay_from_log_index: 44 },
       { cluster: 'cluster-other' }
     ]) {
       await assert.rejects(verify(signed(payload), { expected: { ...expected, ...override } }));
@@ -98,6 +99,7 @@ test('rejects unsigned, unsupported, invalid and missing key metadata', async ()
   await assert.rejects(verifyCheckpoint(manifest, {}), /unsupported authentication/);
   manifest.auth.algorithm = 'ed25519-sha256-v1';
   await assert.rejects(verifyCheckpoint(manifest, {
-    expected: { cluster: 'a', shard: 'b', epoch: 1, replay_from_log_index: 1 }
+    expected: { cluster: 'a', shard: 'b', epoch: 1, term: 1,
+      state_schema: 's', replay_from_log_index: 1 }
   }), /invalid signature encoding/);
 });
