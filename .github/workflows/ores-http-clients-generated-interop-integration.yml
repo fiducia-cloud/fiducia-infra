@@ -1,0 +1,93 @@
+name: ores-http-clients generated interop integration
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/ores-http-clients-generated-interop-integration.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integrate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - name: Check out source integration branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ORESoftware/ores-http-clients
+          ref: fix/generated-stream-graphql-interop-integration
+          path: source
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Merge certified bounded-response main and format generated Dart only
+        working-directory: source
+        run: |
+          set -euo pipefail
+          git config user.name "ORESoftware"
+          git config user.email "alex@oresoftware.com"
+          git fetch origin 0a9e20b29af2cd852fbb82502b7113ffed2c9bf8
+          git merge --no-edit 0a9e20b29af2cd852fbb82502b7113ffed2c9bf8
+
+      - name: Structural conformance
+        working-directory: source
+        run: sh scripts/check.sh
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22.22.1"
+      - name: TypeScript
+        working-directory: source/src/ts
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          npm test
+
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: stable
+      - name: Dart
+        working-directory: source/src/dart
+        run: |
+          dart pub get
+          dart format lib/src/generated_interop.dart test/generated_interop_test.dart
+          dart format --output=none --set-exit-if-changed lib/src/generated_interop.dart test/generated_interop_test.dart
+          dart analyze --fatal-infos
+          dart test
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.96.0
+          targets: wasm32-unknown-unknown
+          components: rustfmt,clippy
+      - name: Rust
+        working-directory: source/src/rust
+        run: |
+          cargo fmt --all -- --check
+          cargo test --all-targets
+          cargo test --all-targets --features rxrust-support
+          cargo clippy --all-targets --features rxrust-support -- -D warnings
+          cargo check --target wasm32-unknown-unknown
+
+      - name: Push verified integration and open source PR
+        working-directory: source
+        env:
+          GH_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          git add src/dart/lib/src/generated_interop.dart src/dart/test/generated_interop_test.dart
+          if ! git diff --cached --quiet; then
+            git commit -m "style(dart): format generated interop"
+          fi
+          git push origin HEAD:fix/generated-stream-graphql-interop-integration
+          if ! gh pr view fix/generated-stream-graphql-interop-integration --repo ORESoftware/ores-http-clients >/dev/null 2>&1; then
+            gh pr create \
+              --repo ORESoftware/ores-http-clients \
+              --base main \
+              --head fix/generated-stream-graphql-interop-integration \
+              --title "feat: generated RPC and GraphQL client interop" \
+              --body "Integrates the latest generated RPC/GraphQL interop work with current main. Preserves ores-http-clients as transport/scheduler authority; generated wrappers do not double-schedule. Server streams acquire transport admission only for OPEN and retain native stream cancellation/lifecycle. Includes TypeSpec/JSON Schema operation contracts plus TS/Dart/Rust adapters and tests. External certification: fiducia-cloud/fiducia-infra#110."
+          fi
