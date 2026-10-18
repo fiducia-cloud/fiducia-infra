@@ -1,0 +1,227 @@
+name: tmp-ores-stack-one-pass-inventory-rerun
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/tmp-ores-stack-one-pass-inventory-rerun.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tmp-ores-stack-one-pass-inventory-rerun-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repair-and-certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout harness source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Extract guarded source transformation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source = Path('.github/workflows/tmp-ores-stack-one-pass-inventory.yml').read_text()
+          start_marker = "          python3 - <<'PY'\n"
+          end_marker = "\n          PY\n"
+          start = source.index(start_marker) + len(start_marker)
+          end = source.index(end_marker, start)
+          lines = source[start:end].splitlines()
+          prefix = '          '
+          if any(line and not line.startswith(prefix) for line in lines):
+              raise SystemExit('unexpected transform indentation')
+          Path('/tmp/repair_one_pass_inventory.py').write_text(
+              '\n'.join(line[len(prefix):] if line else '' for line in lines) + '\n'
+          )
+          PY
+          test -s /tmp/repair_one_pass_inventory.py
+
+      - name: Require source token
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+
+      - name: Checkout exact ores-stack source branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/ores-stack
+          ref: fix/one-pass-admitted-callable-inventory-20260922
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: ores-stack
+          persist-credentials: true
+          fetch-depth: 2
+
+      - name: Guard unchanged source base
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "029d499318707e5ac7b84c0784a8513b49c795a0"
+          git diff --check
+          test -z "$(git status --porcelain)"
+
+      - name: Apply one-pass admitted-inventory repair
+        working-directory: ores-stack
+        shell: bash
+        run: python3 /tmp/repair_one_pass_inventory.py
+
+      - name: Apply compiler-feedback repair
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('crates/ores-stack-core/src/lambda_callable_inventory.rs')
+          text = path.read_text()
+
+          old_helper = 'fn assemble_registry(\n'
+          if text.count(old_helper) != 1:
+              raise SystemExit(f'test-only compatibility helper: expected one match, found {text.count(old_helper)}')
+          text = text.replace(old_helper, '#[cfg(test)]\nfn assemble_registry(\n', 1)
+
+          initializer = '        let operation = SemanticOperation {\n'
+          function_field = '            function_name: "get_user".to_owned(),\n'
+          if text.count(initializer) != 1:
+              raise SystemExit(f'expected-invoker initializer: expected one match, found {text.count(initializer)}')
+          start = text.index(initializer)
+          insert_at = text.index(function_field, start) + len(function_field)
+          authority_field = '            authority_source: "src/routes/rest/users/get/handlers.rs".to_owned(),\n'
+          if text.find(authority_field, insert_at) < 0:
+              raise SystemExit('expected-invoker authority field not found after function field')
+          fields = (
+              '            origin_kind: CallableOriginKind::RestLeaf,\n'
+              '            leaf_identity: format!(\n'
+              '                "{}:{}",\n'
+              '                CallableOriginKind::RestLeaf.as_str(),\n'
+              '                "src/routes/rest/users/get"\n'
+              '            ),\n'
+          )
+          text = text[:insert_at] + fields + text[insert_at:]
+          path.write_text(text)
+          PY
+
+      - name: Install Rust 1.88
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
+
+      - name: Format only repaired source files
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2021 crates/ores-stack-core/src/lambda_callable_inventory.rs
+          rustfmt --edition 2021 crates/ores-stack-core/src/lambda_execution_leaf_plan.rs
+          rustfmt --edition 2021 --check crates/ores-stack-core/src/lambda_callable_inventory.rs
+          rustfmt --edition 2021 --check crates/ores-stack-core/src/lambda_execution_leaf_plan.rs
+          git diff --check
+          changed="$(git diff --name-only -- . ':(exclude)Cargo.lock' | sort)"
+          expected=$'crates/ores-stack-core/src/lambda_callable_inventory.rs\ncrates/ores-stack-core/src/lambda_execution_leaf_plan.rs'
+          test "$changed" = "$expected"
+
+      - name: Bootstrap deterministic lock
+        working-directory: ores-stack
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+        run: |
+          set -euo pipefail
+          gh auth setup-git
+          bash ./scripts/bootstrap-cargo-lock.sh ensure
+          cargo metadata --locked --no-deps >/dev/null
+
+      - name: Check core
+        working-directory: ores-stack
+        env:
+          GH_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+        run: cargo check --locked -p ores-stack-core --all-targets
+
+      - name: Test callable inventory
+        working-directory: ores-stack
+        env:
+          GH_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+        run: cargo test --locked -p ores-stack-core lambda_callable_inventory -- --nocapture
+
+      - name: Test execution leaf plan
+        working-directory: ores-stack
+        env:
+          GH_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+        run: cargo test --locked -p ores-stack-core lambda_execution_leaf_plan -- --nocapture
+
+      - name: Clippy core and reject warnings in touched files
+        working-directory: ores-stack
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+        run: |
+          set -euo pipefail
+          cargo clippy --locked -p ores-stack-core --all-targets --message-format=json 2>/tmp/ores-stack-core-clippy-stderr.log | tee /tmp/ores-stack-core-clippy.jsonl
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          suffixes = (
+              'crates/ores-stack-core/src/lambda_callable_inventory.rs',
+              'crates/ores-stack-core/src/lambda_execution_leaf_plan.rs',
+          )
+          bad = []
+          for line in Path('/tmp/ores-stack-core-clippy.jsonl').read_text().splitlines():
+              try:
+                  obj = json.loads(line)
+              except json.JSONDecodeError:
+                  continue
+              if obj.get('reason') != 'compiler-message':
+                  continue
+              message = obj.get('message') or {}
+              if message.get('level') != 'warning':
+                  continue
+              spans = message.get('spans') or []
+              if any(
+                  (span.get('file_name') or '').replace('\\', '/').endswith(suffixes)
+                  for span in spans
+              ):
+                  bad.append(message.get('rendered') or message.get('message') or 'warning')
+          if bad:
+              print('\n'.join(bad), file=sys.stderr)
+              raise SystemExit(1)
+          PY
+          cat /tmp/ores-stack-core-clippy-stderr.log >&2
+
+      - name: Commit certified source repair
+        working-directory: ores-stack
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          git diff --check
+          changed="$(git diff --name-only -- . ':(exclude)Cargo.lock' | sort)"
+          expected=$'crates/ores-stack-core/src/lambda_callable_inventory.rs\ncrates/ores-stack-core/src/lambda_execution_leaf_plan.rs'
+          test "$changed" = "$expected"
+          git config user.name 'ORESoftware automation'
+          git config user.email 'noreply@oresoftware.com'
+          git add crates/ores-stack-core/src/lambda_callable_inventory.rs crates/ores-stack-core/src/lambda_execution_leaf_plan.rs
+          git commit -m 'fix(lambda): derive leaf plan from one admitted inventory'
+          git push origin HEAD:fix/one-pass-admitted-callable-inventory-20260922

@@ -1,0 +1,511 @@
+name: tmp-ores-stack-one-pass-inventory
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/tmp-ores-stack-one-pass-inventory.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tmp-ores-stack-one-pass-inventory-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repair-and-certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Require source token
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+
+      - name: Checkout exact ores-stack source branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/ores-stack
+          ref: fix/one-pass-admitted-callable-inventory-20260922
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: ores-stack
+          persist-credentials: true
+          fetch-depth: 2
+
+      - name: Guard source base
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "029d499318707e5ac7b84c0784a8513b49c795a0"
+          git diff --check
+          test -z "$(git status --porcelain)"
+
+      - name: Apply one-pass admitted-inventory repair
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          inventory_path = Path('crates/ores-stack-core/src/lambda_callable_inventory.rs')
+          planner_path = Path('crates/ores-stack-core/src/lambda_execution_leaf_plan.rs')
+
+          inventory = inventory_path.read_text()
+          planner = planner_path.read_text()
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
+              return text.replace(old, new, 1)
+
+          inventory = replace_once(
+              inventory,
+              '''#[derive(Clone, Debug)]
+          struct SemanticOperation {
+              callable: LambdaCallableIdentity,
+              function_name: String,
+              authority_source: String,
+              lambda_source: String,
+              stream_mode: TransportLeafStreamMode,
+              projections: Vec<CallableProjectionLocator>,
+          }
+          ''',
+              '''#[derive(Clone, Debug, Eq, PartialEq)]
+          pub struct AdmittedLambdaSemanticLeaf {
+              pub callable: LambdaCallableIdentity,
+              pub origin_kind: CallableOriginKind,
+              pub leaf_identity: String,
+              pub authority_source: String,
+              pub lambda_source: String,
+              pub stream_mode: TransportLeafStreamMode,
+          }
+
+          #[derive(Clone, Debug, Eq, PartialEq)]
+          pub struct AdmittedLambdaCallableInventory {
+              pub semantic_leaves: Vec<AdmittedLambdaSemanticLeaf>,
+              pub registry: LambdaCallableRegistry,
+          }
+
+          #[derive(Clone, Debug)]
+          struct SemanticOperation {
+              callable: LambdaCallableIdentity,
+              function_name: String,
+              origin_kind: CallableOriginKind,
+              leaf_identity: String,
+              authority_source: String,
+              lambda_source: String,
+              stream_mode: TransportLeafStreamMode,
+              projections: Vec<CallableProjectionLocator>,
+          }
+          ''',
+              'semantic inventory public types',
+          )
+
+          inventory = replace_once(
+              inventory,
+              '''pub fn build_lambda_callable_registry(
+              root: &Path,
+          ) -> Result<LambdaCallableRegistry, LambdaCallableInventoryError> {
+              let rest_operations = api_lambda_operations(root)?;
+              let leaves = discover_api_leaf_authorities(root)?;
+              assemble_registry(root, &rest_operations, &leaves)
+          }
+
+          fn assemble_registry(
+              root: &Path,
+              rest_operations: &[LambdaOperation],
+              leaves: &[ApiLeafAuthority],
+          ) -> Result<LambdaCallableRegistry, LambdaCallableInventoryError> {
+          ''',
+              '''pub fn build_admitted_lambda_callable_inventory(
+              root: &Path,
+          ) -> Result<AdmittedLambdaCallableInventory, LambdaCallableInventoryError> {
+              let rest_operations = api_lambda_operations(root)?;
+              let leaves = discover_api_leaf_authorities(root)?;
+              assemble_admitted_inventory(root, &rest_operations, &leaves)
+          }
+
+          pub fn build_lambda_callable_registry(
+              root: &Path,
+          ) -> Result<LambdaCallableRegistry, LambdaCallableInventoryError> {
+              Ok(build_admitted_lambda_callable_inventory(root)?.registry)
+          }
+
+          fn assemble_registry(
+              root: &Path,
+              rest_operations: &[LambdaOperation],
+              leaves: &[ApiLeafAuthority],
+          ) -> Result<LambdaCallableRegistry, LambdaCallableInventoryError> {
+              Ok(assemble_admitted_inventory(root, rest_operations, leaves)?.registry)
+          }
+
+          fn assemble_admitted_inventory(
+              root: &Path,
+              rest_operations: &[LambdaOperation],
+              leaves: &[ApiLeafAuthority],
+          ) -> Result<AdmittedLambdaCallableInventory, LambdaCallableInventoryError> {
+          ''',
+              'admitted inventory builder',
+          )
+
+          inventory = replace_once(
+              inventory,
+              '''            SemanticOperation {
+                          callable,
+                          function_name: operation.handler_name.clone(),
+                          authority_source: leaf.authority_source.clone(),
+                          lambda_source: leaf.lambda_source.clone(),
+                          stream_mode,
+                          projections,
+                      },
+          ''',
+              '''            SemanticOperation {
+                          callable,
+                          function_name: operation.handler_name.clone(),
+                          origin_kind: CallableOriginKind::RestLeaf,
+                          leaf_identity: format!("{}:{}", CallableOriginKind::RestLeaf.as_str(), leaf.leaf_dir),
+                          authority_source: leaf.authority_source.clone(),
+                          lambda_source: leaf.lambda_source.clone(),
+                          stream_mode,
+                          projections,
+                      },
+          ''',
+              'REST semantic locator',
+          )
+
+          inventory = replace_once(
+              inventory,
+              '''                SemanticOperation {
+                              callable,
+                              function_name: operation.function_name,
+                              authority_source: leaf.authority_source.clone(),
+                              lambda_source: leaf.lambda_source.clone(),
+                              stream_mode: operation.stream_mode,
+                              projections: vec![projection],
+                          },
+          ''',
+              '''                SemanticOperation {
+                              callable,
+                              function_name: operation.function_name,
+                              origin_kind: CallableOriginKind::RpcLeaf,
+                              leaf_identity: format!("{}:{}", CallableOriginKind::RpcLeaf.as_str(), leaf.leaf_dir),
+                              authority_source: leaf.authority_source.clone(),
+                              lambda_source: leaf.lambda_source.clone(),
+                              stream_mode: operation.stream_mode,
+                              projections: vec![projection],
+                          },
+          ''',
+              'RPC semantic locator',
+          )
+
+          entries_start = inventory.index('    let mut entries = semantics\n        .into_values()')
+          entries_end_marker = '    Ok(LambdaCallableRegistry::new(entries)?)\n'
+          entries_end = inventory.index(entries_end_marker, entries_start) + len(entries_end_marker)
+          inventory = inventory[:entries_start] + '''    for semantic in semantics.values_mut() {
+              semantic.projections.sort_by(|left, right| {
+                  left.origin_kind
+                      .cmp(&right.origin_kind)
+                      .then_with(|| left.lambda_source.cmp(&right.lambda_source))
+                      .then_with(|| {
+                          left.transport_identity
+                              .transport
+                              .cmp(&right.transport_identity.transport)
+                      })
+                      .then_with(|| {
+                          left.transport_identity
+                              .projection_id
+                              .cmp(&right.transport_identity.projection_id)
+                      })
+              });
+          }
+
+          let semantic_leaves = semantics
+              .values()
+              .map(|semantic| AdmittedLambdaSemanticLeaf {
+                  callable: semantic.callable.clone(),
+                  origin_kind: semantic.origin_kind,
+                  leaf_identity: semantic.leaf_identity.clone(),
+                  authority_source: semantic.authority_source.clone(),
+                  lambda_source: semantic.lambda_source.clone(),
+                  stream_mode: semantic.stream_mode,
+              })
+              .collect::<Vec<_>>();
+
+          let mut entries = semantics
+              .into_values()
+              .filter(|semantic| !semantic.projections.is_empty())
+              .map(|semantic| CallableRegistryEntry {
+                  callable: semantic.callable,
+                  projections: semantic.projections,
+              })
+              .collect::<Vec<_>>();
+
+          reject_global_projection_collisions(&entries)?;
+          entries.sort_by(|left, right| left.callable.callable_id.cmp(&right.callable.callable_id));
+          Ok(AdmittedLambdaCallableInventory {
+              semantic_leaves,
+              registry: LambdaCallableRegistry::new(entries)?,
+          })
+          ''' + inventory[entries_end:]
+
+          test_anchor = '''    #[test]
+              fn native_rpc_and_graphql_join_existing_semantic_identity() {
+          '''
+          if inventory.count(test_anchor) != 1:
+              raise SystemExit('admitted inventory regression anchor changed')
+          admitted_test = '''    #[test]
+              fn projectionless_rest_semantic_remains_in_admitted_inventory() {
+                  let root = tempdir().unwrap();
+                  let mut operation = rest_operation();
+                  operation.rpc_enabled = false;
+                  operation.http_projection = None;
+                  let admitted = assemble_admitted_inventory(
+                      root.path(),
+                      &[operation],
+                      &[leaf(
+                          ApiLeafKind::Rest,
+                          "src/routes/rest/users/get",
+                          "handlers.rs",
+                      )],
+                  )
+                  .expect("admitted inventory");
+
+                  assert!(admitted.registry.entries.is_empty());
+                  assert_eq!(admitted.semantic_leaves.len(), 1);
+                  let semantic = &admitted.semantic_leaves[0];
+                  assert_eq!(semantic.callable.callable_name, "users.get_user");
+                  assert_eq!(semantic.origin_kind, CallableOriginKind::RestLeaf);
+                  assert_eq!(
+                      semantic.lambda_source,
+                      "src/routes/rest/users/get/lambda.rs"
+                  );
+              }
+
+          '''
+          inventory = inventory.replace(test_anchor, admitted_test + test_anchor, 1)
+
+          planner = replace_once(
+              planner,
+              '''use crate::{
+              ApiLambdaInventoryError, LambdaOperation,
+              api_leaf_authority::{
+                  ApiLeafAuthority, ApiLeafAuthorityError, ApiLeafKind, discover_api_leaf_authorities,
+              },
+              lambda_callable_inventory::{LambdaCallableInventoryError, build_lambda_callable_registry},
+              lambda_callable_registry::{
+                  CallableOriginKind, LambdaCallableRegistry, LambdaCallableRegistryError,
+              },
+          };
+          ''',
+              '''use crate::{
+              lambda_callable_inventory::{
+                  AdmittedLambdaCallableInventory, LambdaCallableInventoryError,
+                  build_admitted_lambda_callable_inventory,
+              },
+              lambda_callable_registry::{
+                  CallableOriginKind, LambdaCallableRegistry, LambdaCallableRegistryError,
+              },
+          };
+          ''',
+              'planner imports',
+          )
+
+          planner = replace_once(
+              planner,
+              '''    #[error(transparent)]
+              ApiInventory(#[from] ApiLambdaInventoryError),
+              #[error(transparent)]
+              LeafAuthority(#[from] ApiLeafAuthorityError),
+          ''',
+              '',
+              'planner duplicate discovery errors',
+          )
+
+          build_start = planner.index('/// Build the admitted physical execution-leaf plan directly from authored API')
+          build_end = planner.index('/// Group an already validated callable registry by its physical generated', build_start)
+          planner = planner[:build_start] + '''/// Build the admitted physical execution-leaf plan from the same normalized
+          /// inventory used to derive the public callable registry.
+          ///
+          /// Semantic ownership is admitted once. Projectionless/direct-only REST
+          /// operations therefore remain physical Lambda leaves without inventing a
+          /// synthetic public transport, while REST/RPC/GraphQL projections remain a
+          /// derived registry view.
+          pub fn build_lambda_execution_leaf_plan(
+              root: &Path,
+          ) -> Result<Vec<LambdaExecutionLeaf>, LambdaExecutionLeafPlanError> {
+              let admitted = build_admitted_lambda_callable_inventory(root)?;
+              execution_leaf_plan_from_admitted_inventory(&admitted)
+          }
+
+          ''' + planner[build_end:]
+
+          admitted_start = planner.index('fn execution_leaf_plan_from_admitted_parts(')
+          admitted_end = planner.index('\nfn overlay_registry_projections(', admitted_start)
+          planner = planner[:admitted_start] + '''pub fn execution_leaf_plan_from_admitted_inventory(
+              admitted: &AdmittedLambdaCallableInventory,
+          ) -> Result<Vec<LambdaExecutionLeaf>, LambdaExecutionLeafPlanError> {
+              admitted.registry.validate()?;
+
+              let mut leaves = BTreeMap::<LeafKey, PendingLeaf>::new();
+              for semantic in &admitted.semantic_leaves {
+                  let key = LeafKey {
+                      origin_kind: semantic.origin_kind,
+                      leaf_identity: semantic.leaf_identity.clone(),
+                      authority_source: semantic.authority_source.clone(),
+                      lambda_source: semantic.lambda_source.clone(),
+                  };
+                  leaves
+                      .entry(key)
+                      .or_default()
+                      .operation_keys
+                      .insert(semantic.callable.callable_name.clone());
+              }
+
+              overlay_registry_projections(&mut leaves, &admitted.registry);
+              finalize_leaves(leaves)
+          }
+          ''' + planner[admitted_end:]
+
+          planner = replace_once(
+              planner,
+              '''    use crate::{
+                  LambdaSections,
+                  lambda_callable_identity::LambdaCallableIdentity,
+                  lambda_callable_registry::{CallableProjectionLocator, CallableRegistryEntry},
+              };
+          ''',
+              '''    use crate::{
+                  lambda_callable_identity::LambdaCallableIdentity,
+                  lambda_callable_inventory::{
+                      AdmittedLambdaCallableInventory, AdmittedLambdaSemanticLeaf,
+                  },
+                  lambda_callable_registry::{CallableProjectionLocator, CallableRegistryEntry},
+              };
+          ''',
+              'planner test imports',
+          )
+
+          test_start = planner.index('    #[test]\n    fn preserves_projectionless_rest_semantics_for_direct_invoke_planning()')
+          test_end = planner.index('    #[test]\n    fn source_move_changes_leaf_locator_not_callable_identity()', test_start)
+          direct_test = '''    #[test]
+              fn preserves_projectionless_rest_semantics_for_direct_invoke_planning() {
+                  let callable = LambdaCallableIdentity::new("jobs.rotate_secret", 1).expect("callable");
+                  let admitted = AdmittedLambdaCallableInventory {
+                      semantic_leaves: vec![AdmittedLambdaSemanticLeaf {
+                          callable,
+                          origin_kind: CallableOriginKind::RestLeaf,
+                          leaf_identity: format!(
+                              "{}:{}",
+                              CallableOriginKind::RestLeaf.as_str(),
+                              "src/routes/rest/jobs/rotate_secret"
+                          ),
+                          authority_source: "src/routes/rest/jobs/rotate_secret/handlers.rs".to_owned(),
+                          lambda_source: "src/routes/rest/jobs/rotate_secret/lambda.rs".to_owned(),
+                          stream_mode: TransportLeafStreamMode::Unary,
+                      }],
+                      registry: LambdaCallableRegistry::new(Vec::new())
+                          .expect("empty projected registry"),
+                  };
+
+                  let plan = execution_leaf_plan_from_admitted_inventory(&admitted)
+                      .expect("direct-only semantic plan");
+                  assert_eq!(plan.len(), 1);
+                  assert!(plan[0].is_rest());
+                  assert_eq!(plan[0].operation_keys, vec!["jobs.rotate_secret"]);
+                  assert!(plan[0].projections.is_empty());
+                  assert_eq!(
+                      plan[0].lambda_source,
+                      "src/routes/rest/jobs/rotate_secret/lambda.rs"
+                  );
+              }
+
+          '''
+          planner = planner[:test_start] + direct_test + planner[test_end:]
+
+          inventory_path.write_text(inventory)
+          planner_path.write_text(planner)
+          PY
+
+      - name: Install Rust 1.88
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
+
+      - name: Format only repaired source files
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2021 crates/ores-stack-core/src/lambda_callable_inventory.rs
+          rustfmt --edition 2021 crates/ores-stack-core/src/lambda_execution_leaf_plan.rs
+          rustfmt --edition 2021 --check crates/ores-stack-core/src/lambda_callable_inventory.rs
+          rustfmt --edition 2021 --check crates/ores-stack-core/src/lambda_execution_leaf_plan.rs
+          git diff --check
+          changed="$(git diff --name-only -- . ':(exclude)Cargo.lock' | sort)"
+          expected=$'crates/ores-stack-core/src/lambda_callable_inventory.rs\ncrates/ores-stack-core/src/lambda_execution_leaf_plan.rs'
+          test "$changed" = "$expected"
+
+      - name: Bootstrap deterministic lock
+        working-directory: ores-stack
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+        run: |
+          set -euo pipefail
+          gh auth setup-git
+          ./scripts/bootstrap-cargo-lock.sh ensure
+          cargo metadata --locked --no-deps >/dev/null
+
+      - name: Check core
+        working-directory: ores-stack
+        env:
+          GH_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+        run: cargo check --locked -p ores-stack-core --all-targets
+
+      - name: Test callable inventory
+        working-directory: ores-stack
+        env:
+          GH_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+        run: cargo test --locked -p ores-stack-core lambda_callable_inventory -- --nocapture
+
+      - name: Test execution leaf plan
+        working-directory: ores-stack
+        env:
+          GH_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+        run: cargo test --locked -p ores-stack-core lambda_execution_leaf_plan -- --nocapture
+
+      - name: Clippy core
+        working-directory: ores-stack
+        env:
+          GH_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+        run: cargo clippy --locked -p ores-stack-core --all-targets -- -D warnings
+
+      - name: Commit certified source repair
+        working-directory: ores-stack
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          git diff --check
+          changed="$(git diff --name-only -- . ':(exclude)Cargo.lock' | sort)"
+          expected=$'crates/ores-stack-core/src/lambda_callable_inventory.rs\ncrates/ores-stack-core/src/lambda_execution_leaf_plan.rs'
+          test "$changed" = "$expected"
+          git config user.name 'ORESoftware automation'
+          git config user.email 'noreply@oresoftware.com'
+          git add crates/ores-stack-core/src/lambda_callable_inventory.rs crates/ores-stack-core/src/lambda_execution_leaf_plan.rs
+          git commit -m 'fix(lambda): derive leaf plan from one admitted inventory'
+          git push origin HEAD:fix/one-pass-admitted-callable-inventory-20260922
