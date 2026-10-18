@@ -1,0 +1,176 @@
+name: ppr-live-prereqs
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ppr-live-prereqs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+  ORES_MIDDLEWARE_271_SHA: '346b4963aa5794a10a82a37009c8be6cdc38db58'
+  ORES_STACK_236_SHA: '466ab5782615975110fca160c5af1f49449d3343'
+  ORES_STACK_241_SHA: 'e82f5f21fb328585ac9d8319bddafb32be584323'
+
+jobs:
+  middleware-271:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Configure source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Fetch exact ores-middleware #271
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init source
+          git -C source remote add origin https://github.com/ORESoftware/ores-middleware.git
+          git -C source fetch --depth=1 origin "$ORES_MIDDLEWARE_271_SHA"
+          git -C source checkout --detach FETCH_HEAD
+          test "$(git -C source rev-parse HEAD)" = "$ORES_MIDDLEWARE_271_SHA"
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+      - name: Exact source format
+        shell: bash
+        working-directory: source
+        run: |
+          rustfmt --edition 2024 --check src/rust/src/hosts/edge_minimal_local.rs
+          git diff --exit-code
+      - name: Portable core Clippy
+        shell: bash
+        working-directory: source
+        run: cargo clippy --locked -p ores-middleware --no-default-features --lib -- -D warnings
+      - name: Edge-minimal host tests
+        shell: bash
+        working-directory: source
+        run: cargo test --locked -p ores-middleware --no-default-features hosts::edge_minimal_local::tests -- --nocapture
+      - name: Portable all-target check
+        shell: bash
+        working-directory: source
+        run: |
+          cargo check --locked -p ores-middleware --no-default-features --all-targets
+          git diff --exit-code
+
+  stack-p2-236:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Configure source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Fetch exact ores-stack #236
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init source
+          git -C source remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C source fetch --depth=1 origin "$ORES_STACK_236_SHA"
+          git -C source checkout --detach FETCH_HEAD
+          test "$(git -C source rev-parse HEAD)" = "$ORES_STACK_236_SHA"
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+      - name: Exact P2 source format
+        shell: bash
+        working-directory: source
+        run: rustfmt --edition 2024 --check crates/ores-stack-p2-edge-minimal/src/lib.rs
+      - name: Bootstrap lock evidence
+        shell: bash
+        working-directory: source
+        run: bash scripts/bootstrap-cargo-lock.sh ensure
+      - name: P2 protocol check
+        shell: bash
+        working-directory: source
+        run: cargo check --locked -p ores-stack-p2-edge-minimal --all-targets
+      - name: P2 protocol tests
+        shell: bash
+        working-directory: source
+        run: cargo test --locked -p ores-stack-p2-edge-minimal -- --nocapture
+      - name: P2 protocol Clippy
+        shell: bash
+        working-directory: source
+        run: cargo clippy --locked -p ores-stack-p2-edge-minimal --all-targets -- -D warnings
+
+  stack-dev-tree-241:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Configure source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Fetch exact ores-stack #241
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init source
+          git -C source remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C source fetch --depth=1 origin "$ORES_STACK_241_SHA"
+          git -C source checkout --detach FETCH_HEAD
+          test "$(git -C source rev-parse HEAD)" = "$ORES_STACK_241_SHA"
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+      - name: Exact dev source format
+        shell: bash
+        working-directory: source
+        run: rustfmt --edition 2024 --check crates/ores-stack-cli/src/dev.rs
+      - name: Bootstrap lock evidence
+        shell: bash
+        working-directory: source
+        run: bash scripts/bootstrap-cargo-lock.sh ensure
+      - name: Dev/process-tree check
+        shell: bash
+        working-directory: source
+        run: cargo check --locked -p ores-stack-cli -p ores-stack-process-tree --all-targets
+      - name: Dev/process-tree tests
+        shell: bash
+        working-directory: source
+        run: |
+          cargo test --locked -p ores-stack-process-tree -- --nocapture
+          cargo test --locked -p ores-stack-cli dev::tests -- --nocapture
+      - name: Dev/process-tree Clippy
+        shell: bash
+        working-directory: source
+        run: cargo clippy --locked -p ores-stack-cli -p ores-stack-process-tree --all-targets -- -D warnings
