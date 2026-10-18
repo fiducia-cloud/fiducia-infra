@@ -1,0 +1,106 @@
+name: certify ores-stack 279 exact head
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/cert-ores-stack-279-20260923.yml']
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_REPO: ORESoftware/ores-stack
+  SOURCE_BRANCH: feat/stack-dev-build-deploy-ppr-20260923
+  SOURCE_SHA: 5223e4b012aa17352e9f30c00bcd8885b74e8650
+
+jobs:
+  hosted-ci:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Configure authenticated source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch immutable ores-stack candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init source
+          git -C source remote add origin "https://github.com/$SOURCE_REPO.git"
+          git -C source fetch --depth=1 origin "$SOURCE_BRANCH"
+          test "$(git -C source rev-parse FETCH_HEAD)" = "$SOURCE_SHA"
+          git -C source checkout --detach "$SOURCE_SHA"
+
+      - name: Syntax-check validation scripts
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/bootstrap-cargo-lock.sh
+          bash -n scripts/check-cli-standardization.sh
+          bash -n scripts/ci-build-dev-smoke.sh
+          bash -n scripts/local-generated-stack-smoke.sh
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+          components: rustfmt,clippy
+
+      - name: Bootstrap lockfile and shared CLI policy
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/bootstrap-cargo-lock.sh ensure
+          bash scripts/check-cli-standardization.sh
+          cargo metadata --locked --format-version 1 --no-deps >/dev/null
+
+      - name: Rust formatting
+        working-directory: source
+        run: cargo fmt --all -- --check
+
+      - name: Rust clippy
+        working-directory: source
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Rust tests
+        working-directory: source
+        run: cargo test --workspace --all-targets --locked
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+          package-manager-cache: false
+
+      - name: Install contract dependencies
+        working-directory: source
+        run: npm install
+
+      - name: Contract checks
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ores-stack
+          npm run check:contracts
+
+      - name: Final immutable source guard
+        working-directory: source
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=no)"
+          echo ORES_STACK_279_HOSTED_EXACT_HEAD_PASS

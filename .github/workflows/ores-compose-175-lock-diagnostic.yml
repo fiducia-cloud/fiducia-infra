@@ -1,0 +1,94 @@
+name: ores-compose #175 guarded lock refresh
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/ores-compose-175-lock-diagnostic.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+  SOURCE_BRANCH: formal/exhaustive-dependency-waves-20260922
+  SOURCE_SHA: 73bf0cccff26301dce0266a4729aa02ac5c9899d
+  SOURCE_BASE: 2e0d1488ca32371e4f410f95cf6886674b86876c
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Configure authenticated source access
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Checkout exact source head
+        run: |
+          set -euo pipefail
+          git init source
+          git -C source remote add origin https://github.com/ORESoftware/ores-compose.git
+          git -C source fetch --depth=20 origin main "$SOURCE_BRANCH"
+          test "$(git -C source rev-parse origin/main)" = "$SOURCE_BASE"
+          test "$(git -C source rev-parse origin/$SOURCE_BRANCH)" = "$SOURCE_SHA"
+          git -C source checkout --detach "$SOURCE_SHA"
+          test "$(git -C source merge-base HEAD "$SOURCE_BASE")" = "$SOURCE_BASE"
+          test "$(git -C source diff --name-only "$SOURCE_BASE"..HEAD | tr '\n' ' ')" = "tests/formal_dependency_graph_exhaustive.rs "
+          test -z "$(git -C source status --porcelain)"
+      - name: Rust 1.98.1
+        run: |
+          rustup toolchain install 1.98.1 --profile minimal --no-self-update
+          rustup default 1.98.1
+      - name: Generate verified lock refresh
+        working-directory: source
+        run: |
+          set -euo pipefail
+          cargo metadata --format-version 1 >/dev/null
+          git diff --name-only | sort | tee /tmp/changed.txt
+          test "$(cat /tmp/changed.txt)" = "Cargo.lock"
+          git diff -- Cargo.lock | tee /tmp/Cargo.lock.patch
+          test -s /tmp/Cargo.lock.patch
+          grep -F 'name = "granit-parser"' Cargo.lock >/dev/null
+          grep -F 'name = "ores-config-discovery"' Cargo.lock >/dev/null
+          grep -F 'name = "serde-saphyr"' Cargo.lock >/dev/null
+          cp Cargo.lock /tmp/Cargo.lock
+      - name: Apply lock refresh only if source head is still exact
+        working-directory: source
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote origin "refs/heads/$SOURCE_BRANCH" | cut -f1)"
+          test "$remote_head" = "$SOURCE_SHA"
+          git config user.name 'ORESoftware'
+          git config user.email 'alex@oresoftware.com'
+          git add Cargo.lock
+          git commit -m 'chore: refresh locked dependency graph'
+          new_head="$(git rev-parse HEAD)"
+          git push origin "HEAD:refs/heads/$SOURCE_BRANCH"
+          test "$(git ls-remote origin "refs/heads/$SOURCE_BRANCH" | cut -f1)" = "$new_head"
+          echo "NEW_SOURCE_HEAD=$new_head" >> "$GITHUB_ENV"
+      - name: Verify refreshed source is reproducible
+        working-directory: source
+        run: |
+          set -euo pipefail
+          cargo metadata --locked --format-version 1 >/dev/null
+          test "$(git rev-parse HEAD)" = "$NEW_SOURCE_HEAD"
+          test -z "$(git status --porcelain)"
+          test "$(git diff --name-only "$SOURCE_BASE"..HEAD | sort | tr '\n' ' ')" = "Cargo.lock tests/formal_dependency_graph_exhaustive.rs "
+      - name: Upload applied lock evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ores-compose-175-lock-refresh-applied
+          path: |
+            /tmp/Cargo.lock
+            /tmp/Cargo.lock.patch
+            /tmp/changed.txt
+          if-no-files-found: warn

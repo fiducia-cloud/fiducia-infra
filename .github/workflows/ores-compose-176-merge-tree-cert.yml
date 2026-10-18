@@ -1,0 +1,132 @@
+name: ores-compose #176 current merge-tree certification
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/ores-compose-176-merge-tree-cert.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+  SOURCE_BRANCH: fix/command-spec-static-program-test-20260922
+  SOURCE_SHA: 7d486851b68bcedae6979f99efb72ea2d44ea936
+  BASE_SHA: 2deb9229521acd66f9f14bf858ac6f78c734d106
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Configure authenticated source access
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Build exact synthetic merge tree
+        run: |
+          set -euo pipefail
+          git init source
+          git -C source remote add origin https://github.com/ORESoftware/ores-compose.git
+          git -C source fetch --depth=30 origin main "$SOURCE_BRANCH"
+          test "$(git -C source rev-parse origin/main)" = "$BASE_SHA"
+          test "$(git -C source rev-parse origin/$SOURCE_BRANCH)" = "$SOURCE_SHA"
+          git -C source checkout --detach "$SOURCE_SHA"
+          test "$(git -C source merge-base "$SOURCE_SHA" "$BASE_SHA")" = "2e0d1488ca32371e4f410f95cf6886674b86876c"
+          git -C source config user.name 'merge-tree-cert'
+          git -C source config user.email 'merge-tree-cert@example.invalid'
+          git -C source merge --no-ff --no-edit "$BASE_SHA"
+          merge_sha="$(git -C source rev-parse HEAD)"
+          echo "MERGE_SHA=$merge_sha" >> "$GITHUB_ENV"
+          test "$(git -C source rev-parse HEAD^1)" = "$SOURCE_SHA"
+          test "$(git -C source rev-parse HEAD^2)" = "$BASE_SHA"
+          test "$(git -C source diff --name-only "$BASE_SHA"..HEAD | tr '\n' ' ')" = "tests/source_filter_execution_regressions.rs "
+          git -C source diff --check "$BASE_SHA"..HEAD
+          test -z "$(git -C source status --porcelain)"
+
+      - name: Rust 1.98.1
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.98.1 --profile minimal --component rustfmt,clippy --no-self-update
+          rustup default 1.98.1
+
+      - name: PR-owned formatting
+        working-directory: source
+        run: rustfmt --edition 2021 --check tests/source_filter_execution_regressions.rs
+
+      - name: Locked graph
+        working-directory: source
+        run: cargo metadata --locked --format-version 1 >/dev/null
+
+      - name: Compile all targets and features
+        working-directory: source
+        run: cargo check --locked --all-targets --all-features
+
+      - name: Run focused source-filter regression
+        working-directory: source
+        run: cargo test --locked --test source_filter_execution_regressions -- --nocapture
+
+      - name: Compare Clippy diagnostics with repaired main
+        run: |
+          set -uo pipefail
+          set +e
+          CARGO_TARGET_DIR=/tmp/head-target cargo clippy --manifest-path source/Cargo.toml --locked --all-targets --all-features --message-format=json > /tmp/head.jsonl
+          head_rc=$?
+          git -C source worktree add --detach /tmp/compose-main "$BASE_SHA"
+          CARGO_TARGET_DIR=/tmp/base-target cargo clippy --manifest-path /tmp/compose-main/Cargo.toml --locked --all-targets --all-features --message-format=json > /tmp/base.jsonl
+          base_rc=$?
+          set -e
+          export HEAD_RC="$head_rc" BASE_RC="$base_rc"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          def norm(v):
+              v=str(v or '').replace('\\','/')
+              for marker in ('/compose-main/','/source/'):
+                  if marker in v: return v.split(marker,1)[1]
+              return v
+          def diagnostics(path):
+              out=set()
+              for raw in Path(path).read_text().splitlines():
+                  try: obj=json.loads(raw)
+                  except json.JSONDecodeError: continue
+                  if obj.get('reason')!='compiler-message': continue
+                  m=obj.get('message') or {}
+                  if m.get('level') not in {'warning','error'}: continue
+                  spans=m.get('spans') or []
+                  p=next((x for x in spans if x.get('is_primary')),spans[0] if spans else {})
+                  out.add((m.get('level') or '',(m.get('code') or {}).get('code') or '',norm(p.get('file_name')),(m.get('message') or '').strip()))
+              return out
+          base, head = diagnostics('/tmp/base.jsonl'), diagnostics('/tmp/head.jsonl')
+          new=sorted(head-base)
+          removed=sorted(base-head)
+          print(f"exit base={os.environ['BASE_RC']} head={os.environ['HEAD_RC']}")
+          print(f"diagnostics base={len(base)} head={len(head)} new={len(new)} removed={len(removed)}")
+          for x in new: print('NEW', x)
+          for x in removed: print('REMOVED', x)
+          if new: raise SystemExit(1)
+          if int(os.environ['HEAD_RC']) != 0 and int(os.environ['BASE_RC']) == 0:
+              raise SystemExit('merge tree introduced Clippy failure')
+          PY
+
+      - name: Final source and merge-tree guard
+        working-directory: source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$MERGE_SHA"
+          test "$(git rev-parse HEAD^1)" = "$SOURCE_SHA"
+          test "$(git rev-parse HEAD^2)" = "$BASE_SHA"
+          test "$(git ls-remote origin "refs/heads/$SOURCE_BRANCH" | cut -f1)" = "$SOURCE_SHA"
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$BASE_SHA"
+          test -z "$(git status --porcelain)"
+          echo ORES_COMPOSE_176_MERGE_TREE_CERT_PASS

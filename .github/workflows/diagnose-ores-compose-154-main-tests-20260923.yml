@@ -1,0 +1,66 @@
+name: diagnose ores-compose 154 exact main baseline
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/diagnose-ores-compose-154-main-tests-20260923.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_REPO: ORESoftware/ores-compose
+  SOURCE_MAIN_SHA: fb6d0b2aeb7d87c598e006bed050162b55e0c9f0
+
+jobs:
+  exact-main-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Configure authenticated source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init source-main
+          git -C source-main remote add origin "https://github.com/$SOURCE_REPO.git"
+          git -C source-main fetch --depth=1 origin "$SOURCE_MAIN_SHA"
+          git -C source-main checkout --detach "$SOURCE_MAIN_SHA"
+          test "$(git -C source-main rev-parse HEAD)" = "$SOURCE_MAIN_SHA"
+
+      - name: Install reviewed Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.98.1 --profile minimal --no-self-update
+          rustup default 1.98.1
+
+      - name: Exact-main all-target/all-feature tests
+        working-directory: source-main
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --all-targets --all-features
+
+      - name: Final immutable main guard
+        if: ${{ always() }}
+        working-directory: source-main
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_MAIN_SHA"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
+          echo ORES_COMPOSE_154_MAIN_BASELINE_GUARD_PASS
