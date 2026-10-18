@@ -1,0 +1,121 @@
+name: diagnose ores-compose #154 TJSV parity
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/proof-ores-compose-154-tjsv.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_REPO: ORESoftware/ores-compose
+  SOURCE_BRANCH: feat/service-environment-isolation
+  SOURCE_HEAD: 9a0a3a98db0c266dc2a16ae2b1897521d5a9ca79
+  SOURCE_BASE: fb6d0b2aeb7d87c598e006bed050162b55e0c9f0
+  TJSV_SHA: c55b2af2af0b3cdfa39904f1e2504f6bf4b97284
+
+jobs:
+  parity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Require scoped source credential
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+      - name: Check out exact ores-compose source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ env.SOURCE_HEAD }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Guard exact source branch
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
+          remote_head=$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)
+          test "$remote_head" = "$SOURCE_HEAD"
+          git cat-file -e "${SOURCE_BASE}^{commit}"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22.9.0'
+      - name: Measure exact-base TJSV parity
+        id: base_parity
+        shell: bash
+        run: |
+          set +e
+          git worktree add --detach /tmp/ores-compose-base "$SOURCE_BASE"
+          cd /tmp/ores-compose-base
+          mkdir -p target
+          npx --yes \
+            --package="https://github.com/ORESoftware/typespec-json-schema-validator/archive/${TJSV_SHA}.tar.gz" \
+            tjsv check \
+            --typespec=contracts/typespec/main.tsp \
+            --schema=contracts/json-schema/contract.schema.json \
+            --instances=contracts/instances \
+            --report=target/compose-base-contract-parity.json \
+            2>&1 | tee target/compose-base-tjsv.log
+          status=${PIPESTATUS[0]}
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if [[ -f target/compose-base-contract-parity.json ]]; then
+            cat target/compose-base-contract-parity.json
+          fi
+          exit 0
+      - name: Retain exact-base parity evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ores-compose-154-base-tjsv-${{ github.run_id }}
+          path: |
+            /tmp/ores-compose-base/target/compose-base-contract-parity.json
+            /tmp/ores-compose-base/target/compose-base-tjsv.log
+          if-no-files-found: warn
+      - name: Run exact-head TJSV and retain status
+        id: parity
+        shell: bash
+        run: |
+          set +e
+          mkdir -p target
+          npx --yes \
+            --package="https://github.com/ORESoftware/typespec-json-schema-validator/archive/${TJSV_SHA}.tar.gz" \
+            tjsv check \
+            --typespec=contracts/typespec/main.tsp \
+            --schema=contracts/json-schema/contract.schema.json \
+            --instances=contracts/instances \
+            --report=target/compose-contract-parity.json \
+            2>&1 | tee target/compose-tjsv.log
+          status=${PIPESTATUS[0]}
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if [[ -f target/compose-contract-parity.json ]]; then
+            cat target/compose-contract-parity.json
+          fi
+          exit 0
+      - name: Retain exact-head TJSV parity evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ores-compose-154-head-tjsv-${{ github.run_id }}
+          path: |
+            target/compose-contract-parity.json
+            target/compose-tjsv.log
+          if-no-files-found: warn
+      - name: Report base versus head status
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          echo "base_status=${{ steps.base_parity.outputs.status }}"
+          echo "head_status=${{ steps.parity.outputs.status }}"
+      - name: Enforce exact-head parity result
+        shell: bash
+        run: test "${{ steps.parity.outputs.status }}" = '0'

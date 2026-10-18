@@ -1,0 +1,223 @@
+name: ores-compose #154 exact-head certification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-compose-154-current-head-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  COMPOSE_HEAD: 48bb3a014d4d53b26160936761ea146a8f6722f9
+  COMPOSE_BASE: fb6d0b2aeb7d87c598e006bed050162b55e0c9f0
+  TJSV_SHA: adda967063b6b52da803cb7c66243aab0f0ebef8
+
+jobs:
+  certify-contract-parity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Require scoped source credential
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+
+      - name: Check out exact ores-compose source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.COMPOSE_HEAD }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Guard exact PR head
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$COMPOSE_HEAD"
+          actual="$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/ORESoftware/ores-compose.git" refs/pull/154/head | cut -f1)"
+          test "$actual" = "$COMPOSE_HEAD"
+          git cat-file -e "${COMPOSE_BASE}^{commit}"
+          git diff --check "$COMPOSE_BASE" "$COMPOSE_HEAD"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22.13.0'
+
+      - name: Compare independent TypeSpec and JSON Schema authorities
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p target
+          npx --yes \
+            --package="https://github.com/ORESoftware/typespec-json-schema-validator/archive/${TJSV_SHA}.tar.gz" \
+            tjsv check \
+            --typespec=contracts/typespec/main.tsp \
+            --schema=contracts/json-schema/contract.schema.json \
+            --instances=contracts/instances \
+            --report=target/compose-contract-parity.json
+          cat target/compose-contract-parity.json
+
+      - name: Reconfirm immutable exact head
+        if: always()
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$COMPOSE_HEAD"
+          test -z "$(git status --porcelain --untracked-files=no)"
+          actual="$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/ORESoftware/ores-compose.git" refs/pull/154/head | cut -f1)"
+          test "$actual" = "$COMPOSE_HEAD"
+          echo ORES_COMPOSE_154_TJSV_CERT_PASS
+
+  certify-rust:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Require scoped source credential
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+
+      - name: Check out exact ores-compose source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.COMPOSE_HEAD }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Guard exact PR head and review scope
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$COMPOSE_HEAD"
+          actual="$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/ORESoftware/ores-compose.git" refs/pull/154/head | cut -f1)"
+          test "$actual" = "$COMPOSE_HEAD"
+          git cat-file -e "${COMPOSE_BASE}^{commit}"
+          mapfile -t changed < <(git diff --name-only "$COMPOSE_BASE" "$COMPOSE_HEAD")
+          expected=(
+            contracts/json-schema/contract.schema.json
+            contracts/typespec/main.tsp
+            src/config_loader.rs
+            src/local_up_process.rs
+            src/service_environment.rs
+            src/up_orchestrator.rs
+          )
+          test "${#changed[@]}" -eq "${#expected[@]}"
+          diff -u <(printf '%s\n' "${expected[@]}" | sort) <(printf '%s\n' "${changed[@]}" | sort)
+          git diff --check "$COMPOSE_BASE" "$COMPOSE_HEAD"
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.98.1
+          components: rustfmt, clippy
+
+      - name: Verify pinned toolchain
+        shell: bash
+        run: rustc --version | grep -F 'rustc 1.98.1'
+
+      - name: Check changed Rust formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustfmt --check --edition 2021 --config skip_children=true \
+            src/config_loader.rs \
+            src/local_up_process.rs \
+            src/service_environment.rs \
+            src/up_orchestrator.rs
+
+      - name: Locked metadata
+        run: cargo metadata --locked --no-deps --format-version 1 >/dev/null
+
+      - name: Compile all targets and features
+        run: cargo check --locked --all-targets --all-features
+
+      - name: Focused service-environment regressions
+        run: cargo test --locked --all-features -- --nocapture service_environment
+
+      - name: Full suite differential against exact base
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p target
+          set +e
+          cargo test --locked --all-targets --all-features 2>&1 | tee target/head-full-tests.log
+          head_status=${PIPESTATUS[0]}
+          set -e
+          if [[ "$head_status" -eq 0 ]]; then
+            echo 'exact head full suite passed'
+            exit 0
+          fi
+
+          git worktree add --detach /tmp/ores-compose-154-base "$COMPOSE_BASE"
+          set +e
+          (
+            cd /tmp/ores-compose-154-base
+            cargo test --locked --all-targets --all-features 2>&1 | tee /tmp/ores-compose-154-base-tests.log
+            exit ${PIPESTATUS[0]}
+          )
+          base_status=$?
+          set -e
+          if [[ "$base_status" -eq 0 ]]; then
+            echo 'exact base passes while head fails; #154 introduced a regression' >&2
+            exit 41
+          fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          def failed_tests(path):
+              text = Path(path).read_text(errors='replace')
+              matches = re.findall(r'\nfailures:\n((?:    [^\n]+\n)+)\ntest result:', text)
+              if not matches:
+                  raise SystemExit(f'could not extract named failing tests from {path}')
+              return sorted(line.strip() for line in matches[-1].splitlines() if line.strip())
+
+          head = failed_tests('target/head-full-tests.log')
+          base = failed_tests('/tmp/ores-compose-154-base-tests.log')
+          print('head failing tests:')
+          print('\n'.join(head))
+          print('base failing tests:')
+          print('\n'.join(base))
+          if not head:
+              raise SystemExit('head failed without named test failures')
+          if head != base:
+              raise SystemExit('head/base failing test sets differ; #154 regression is not baseline-equivalent')
+          print(f'baseline-equivalent full-suite failures: {len(head)} named tests')
+          PY
+
+      - name: Strict Clippy
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+
+      - name: Reconfirm immutable exact head
+        if: always()
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$COMPOSE_HEAD"
+          test -z "$(git status --porcelain --untracked-files=no)"
+          actual="$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/ORESoftware/ores-compose.git" refs/pull/154/head | cut -f1)"
+          test "$actual" = "$COMPOSE_HEAD"
+          echo ORES_COMPOSE_154_RUST_CERT_PASS
