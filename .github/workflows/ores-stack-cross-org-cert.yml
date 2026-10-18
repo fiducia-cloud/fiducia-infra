@@ -1,0 +1,133 @@
+name: ores-stack-cross-org-cert
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-stack-cross-org-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+
+jobs:
+  deploy-190:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Configure authenticated GitHub source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact ores-stack deploy head
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected=0a28b5e250e0926ca18c397f496c7b53aebb19e1
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --depth=1 origin "$expected"
+          git -C ores-stack checkout --detach FETCH_HEAD
+          test "$(git -C ores-stack rev-parse HEAD)" = "$expected"
+
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt
+
+      - name: Cargo format
+        shell: bash
+        working-directory: ores-stack
+        run: cargo fmt --all -- --check
+
+      - name: Cargo check CLI
+        shell: bash
+        working-directory: ores-stack
+        run: cargo check -p ores-stack-cli
+
+      - name: Shared JSON propagation regression
+        shell: bash
+        working-directory: ores-stack
+        run: cargo test -p ores-stack-cli deploy_receives_resolved_shared_json_output_mode
+
+      - name: Deploy integrity regressions
+        shell: bash
+        working-directory: ores-stack
+        run: cargo test -p ores-stack-cli --test deploy_artifact_integrity --test deploy_generated_env
+
+  ppr-191:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Configure authenticated GitHub source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact ores-stack P2 head
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected=1c22befc3a5fb71dd0b077d475cfcaa11606b8d5
+          git init ores-stack
+          git -C ores-stack remote add origin https://github.com/ORESoftware/ores-stack.git
+          git -C ores-stack fetch --depth=1 origin "$expected"
+          git -C ores-stack checkout --detach FETCH_HEAD
+          test "$(git -C ores-stack rev-parse HEAD)" = "$expected"
+
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt
+
+      - name: Cargo format
+        shell: bash
+        working-directory: ores-stack
+        run: cargo fmt --all -- --check
+
+      - name: Cargo check PPR crates
+        shell: bash
+        working-directory: ores-stack
+        run: cargo check -p ores-stack-process-tree -p ores-stack-middleware-runner
+
+      - name: Process-tree tests
+        shell: bash
+        working-directory: ores-stack
+        run: cargo test -p ores-stack-process-tree
+
+      - name: Middleware-runner protocol tests
+        shell: bash
+        working-directory: ores-stack
+        run: cargo test -p ores-stack-middleware-runner
