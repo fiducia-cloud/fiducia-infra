@@ -1,0 +1,384 @@
+name: ores-http-clients bounded-stream remediation v2
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/ores-http-clients-fix-bounded-streams-v2.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  remediate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out source fix branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ORESoftware/ores-http-clients
+          ref: fix/bounded-response-streams
+          path: source
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Apply bounded streaming fix and regression tests
+        working-directory: source
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          def regex_replace(path: str, pattern: str, replacement: str) -> None:
+              p = Path(path)
+              text = p.read_text()
+              if replacement.strip() in text:
+                  return
+              updated, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
+              if count != 1:
+                  raise SystemExit(f"expected one regex target in {path}, got {count}")
+              p.write_text(updated)
+
+          ts_method = '''  async readBoundedBytes(response: Response): Promise<Uint8Array> {
+            const advertised = response.headers.get("content-length");
+            if (advertised && /^\\d+$/.test(advertised)) {
+              const value = Number(advertised);
+              if (value > this.maxResponseBytes) throw new ResponseTooLargeError(this.maxResponseBytes, value);
+            }
+            if (!response.body) return new Uint8Array();
+            const reader = response.body.getReader();
+            const chunks: Uint8Array[] = [];
+            let observed = 0;
+            try {
+              while (true) {
+                const {done, value} = await reader.read();
+                if (done) break;
+                if (!value) continue;
+                observed += value.byteLength;
+                if (observed > this.maxResponseBytes) {
+                  try { await reader.cancel(); } catch { /* best-effort transport cancellation */ }
+                  throw new ResponseTooLargeError(this.maxResponseBytes, observed);
+                }
+                chunks.push(value);
+              }
+            } finally {
+              reader.releaseLock();
+            }
+            const bytes = new Uint8Array(observed);
+            let offset = 0;
+            for (const chunk of chunks) {
+              bytes.set(chunk, offset);
+              offset += chunk.byteLength;
+            }
+            return bytes;
+          }'''
+          regex_replace(
+              "src/ts/src/index.ts",
+              r'  async readBoundedBytes\(response: Response\): Promise<Uint8Array> \{.*?\n  \}\n\}',
+              ts_method + "\n}",
+          )
+
+          ts_test = Path("src/ts/test/client.test.ts")
+          ts_text = ts_test.read_text()
+          ts_marker = 'test("chunked responses stop reading and cancel when maxResponseBytes is crossed"'
+          if ts_marker not in ts_text:
+              ts_test.write_text(ts_text + '''
+
+          test("chunked responses stop reading and cancel when maxResponseBytes is crossed", async () => {
+            let pulls = 0;
+            let cancelled = false;
+            const chunk = Uint8Array.of(1, 2, 3, 4);
+            const clients = new OresHttpClients({
+              baseUrl: "https://example.test",
+              maxResponseBytes: 8,
+              fetch: async () => new Response(new ReadableStream({
+                pull(controller) {
+                  pulls += 1;
+                  if (pulls <= 100) controller.enqueue(chunk);
+                  else controller.close();
+                },
+                cancel() {
+                  cancelled = true;
+                },
+              }), {status: 200, headers: {"content-type": "application/octet-stream"}}),
+            });
+            await assert.rejects(() => clients.files.getAsset("chunked.bin"), ResponseTooLargeError);
+            assert.ok(pulls <= 3, `response limit was enforced only after ${pulls} pulls`);
+            assert.equal(cancelled, true);
+          });
+          ''')
+
+          dart_body = '''    final builder = BytesBuilder(copy: false);
+            var observed = 0;
+            await for (final chunk in streamed.stream) {
+              observed += chunk.length;
+              if (observed > _config.maxResponseBytes) {
+                throw ResponseTooLargeException(_config.maxResponseBytes, observed);
+              }
+              builder.add(chunk);
+            }
+            return BinaryResponse(
+              bytes: builder.takeBytes(),
+              statusCode: streamed.statusCode,
+              headers: _lowerHeaders(streamed.headers),
+            );'''
+          regex_replace(
+              "src/dart/lib/src/client.dart",
+              r'    final response = await http\.Response\.fromStream\(streamed\);.*?    \);',
+              dart_body,
+          )
+
+          dart_test = Path("src/dart/test/client_test.dart")
+          dart_text = dart_test.read_text()
+          if "package:http/http.dart" not in dart_text:
+              dart_text = dart_text.replace(
+                  "import 'package:ores_http_clients/ores_http_clients.dart';",
+                  "import 'package:http/http.dart' as http;\nimport 'package:ores_http_clients/ores_http_clients.dart';",
+                  1,
+              )
+          if "final class _ChunkedClient" not in dart_text:
+              dart_text = dart_text.replace(
+                  "void main() {",
+                  '''final class _ChunkedClient extends http.BaseClient {
+            var pulls = 0;
+            var cancelled = false;
+
+            @override
+            Future<http.StreamedResponse> send(http.BaseRequest request) async {
+              Stream<List<int>> chunks() async* {
+                try {
+                  for (var i = 0; i < 100; i += 1) {
+                    pulls += 1;
+                    yield const [1, 2, 3, 4];
+                  }
+                } finally {
+                  cancelled = true;
+                }
+              }
+
+              return http.StreamedResponse(
+                chunks(),
+                200,
+                headers: const {'content-type': 'application/octet-stream'},
+              );
+            }
+          }
+
+          void main() {''',
+                  1,
+              )
+          dart_marker = "chunked responses stop reading when maxResponseBytes is crossed"
+          if dart_marker not in dart_text:
+              insert_at = dart_text.rfind("\n}")
+              if insert_at < 0:
+                  raise SystemExit("could not locate Dart main closing brace")
+              test_block = '''
+
+            test('chunked responses stop reading when maxResponseBytes is crossed', () async {
+              final transport = _ChunkedClient();
+              final clients = OresHttpClients(
+                ClientConfig(
+                  baseUrl: Uri.parse('https://example.test'),
+                  httpClient: transport,
+                  maxResponseBytes: 8,
+                ),
+              );
+              await expectLater(
+                clients.files.getAsset('chunked.bin'),
+                throwsA(isA<ResponseTooLargeException>()),
+              );
+              expect(transport.pulls, 3);
+              expect(transport.cancelled, isTrue);
+            });'''
+              dart_text = dart_text[:insert_at] + test_block + dart_text[insert_at:]
+          dart_test.write_text(dart_text)
+
+          rust_method = '''    async fn read_bounded(
+                  &self,
+                  mut response: Response,
+              ) -> Result<(Vec<u8>, u16, HeadersMap), Error> {
+                  let status = response.status().as_u16();
+                  if !response.status().is_success() {
+                      return Err(response
+                          .error_for_status()
+                          .expect_err("non-success status")
+                          .into());
+                  }
+                  let advertised = response.content_length();
+                  if let Some(length) = advertised
+                      && length > self.max_response_bytes as u64
+                  {
+                      return Err(Error::ResponseTooLarge {
+                          limit: self.max_response_bytes,
+                          observed: Some(length),
+                      });
+                  }
+                  let headers = response
+                      .headers()
+                      .iter()
+                      .filter_map(|(name, value)| {
+                          value
+                              .to_str()
+                              .ok()
+                              .map(|v| (name.as_str().to_ascii_lowercase(), v.to_owned()))
+                      })
+                      .collect();
+                  let mut bytes = Vec::with_capacity(
+                      advertised
+                          .and_then(|length| usize::try_from(length).ok())
+                          .unwrap_or(0)
+                          .min(self.max_response_bytes),
+                  );
+                  while let Some(chunk) = response.chunk().await? {
+                      let observed = bytes.len().checked_add(chunk.len()).unwrap_or(usize::MAX);
+                      if observed > self.max_response_bytes {
+                          return Err(Error::ResponseTooLarge {
+                              limit: self.max_response_bytes,
+                              observed: Some(u64::try_from(observed).unwrap_or(u64::MAX)),
+                          });
+                      }
+                      bytes.extend_from_slice(&chunk);
+                  }
+                  Ok((bytes, status, headers))
+              }'''
+          regex_replace(
+              "src/rust/src/lib.rs",
+              r'    async fn read_bounded\(&self, response: Response\) -> Result<\(Vec<u8>, u16, HeadersMap\), Error> \{.*?        Ok\(\(bytes, status, headers\)\)\n    \}',
+              rust_method,
+          )
+
+          cargo = Path("src/rust/Cargo.toml")
+          cargo_text = cargo.read_text()
+          cargo_text = cargo_text.replace('features = ["json", "rustls"]', 'features = ["json", "rustls", "stream"]')
+          cargo_text = cargo_text.replace('features = ["json"]', 'features = ["json", "stream"]')
+          cargo_text = cargo_text.replace(
+              'tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }',
+              'tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }',
+          )
+          cargo.write_text(cargo_text)
+
+          rust_test = Path("src/rust/tests/client.rs")
+          rust_text = rust_test.read_text()
+          rust_text = rust_text.replace(
+              'use ores_http_clients::{ClientConfig, OresHttpClients, RpcProvider, TransportPaths};\nuse url::Url;',
+              'use ores_http_clients::{ClientConfig, Error, OresHttpClients, RpcProvider, TransportPaths};\nuse std::time::Duration;\nuse tokio::io::{AsyncReadExt, AsyncWriteExt};\nuse tokio::net::TcpListener;\nuse tokio::time::{sleep, timeout};\nuse url::Url;',
+              1,
+          )
+          rust_marker = "chunked_response_limit_returns_before_body_finishes"
+          if rust_marker not in rust_text:
+              rust_text += '''
+
+          #[tokio::test]
+          async fn chunked_response_limit_returns_before_body_finishes() {
+              let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+              let addr = listener.local_addr().unwrap();
+              let server = tokio::spawn(async move {
+                  let (mut socket, _) = listener.accept().await.unwrap();
+                  let mut request = [0_u8; 1024];
+                  let _ = socket.read(&mut request).await;
+                  socket
+                      .write_all(
+                          b"HTTP/1.1 200 OK\r\ncontent-type: application/octet-stream\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n",
+                      )
+                      .await
+                      .unwrap();
+                  for _ in 0..3 {
+                      socket.write_all(b"4\r\nabcd\r\n").await.unwrap();
+                      socket.flush().await.unwrap();
+                  }
+                  sleep(Duration::from_secs(2)).await;
+                  let _ = socket.write_all(b"0\r\n\r\n").await;
+              });
+
+              let mut config = ClientConfig::new(Url::parse(&format!("http://{addr}/")).unwrap());
+              config.max_response_bytes = 8;
+              let clients = OresHttpClients::new(config).unwrap();
+              let result = timeout(
+                  Duration::from_millis(750),
+                  clients.files.get_asset("chunked.bin"),
+              )
+              .await
+              .expect("client should reject before the server finishes the response");
+              assert!(matches!(
+                  result,
+                  Err(Error::ResponseTooLarge {
+                      limit: 8,
+                      observed: Some(12)
+                  })
+              ));
+              server.abort();
+          }
+          '''
+          rust_test.write_text(rust_text)
+          PY
+
+      - name: Structural conformance
+        working-directory: source
+        run: sh scripts/check.sh
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22.22.1"
+      - name: TypeScript tests
+        working-directory: source/src/ts
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          npm test
+
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: stable
+      - name: Dart checks
+        working-directory: source/src/dart
+        run: |
+          dart pub get
+          dart format lib test
+          dart format --output=none --set-exit-if-changed lib test
+          dart analyze --fatal-infos
+          dart test
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.96.0
+          targets: wasm32-unknown-unknown
+          components: rustfmt,clippy
+      - name: Rust checks
+        working-directory: source/src/rust
+        run: |
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo test --all-targets
+          cargo test --all-targets --features rxrust-support
+          cargo clippy --all-targets --features rxrust-support -- -D warnings
+          cargo check --target wasm32-unknown-unknown
+
+      - name: Commit and push verified source fix
+        working-directory: source
+        env:
+          GH_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          git status --short
+          git config user.name "ORESoftware"
+          git config user.email "alex@oresoftware.com"
+          git add src/ts/src/index.ts src/ts/test/client.test.ts \
+            src/dart/lib/src/client.dart src/dart/test/client_test.dart \
+            src/rust/src/lib.rs src/rust/tests/client.rs src/rust/Cargo.toml src/rust/Cargo.lock
+          if ! git diff --cached --quiet; then
+            git commit -m "fix: bound streamed response bodies incrementally"
+            git push origin HEAD:fix/bounded-response-streams
+          fi
+          if ! gh pr view fix/bounded-response-streams --repo ORESoftware/ores-http-clients >/dev/null 2>&1; then
+            gh pr create \
+              --repo ORESoftware/ores-http-clients \
+              --base main \
+              --head fix/bounded-response-streams \
+              --title "fix: bound streamed response bodies incrementally" \
+              --body "Fixes #7. Enforces maxResponseBytes while chunked/no-Content-Length bodies are consumed in TypeScript, Dart, and Rust; adds early-cancellation/early-return regression coverage; preserves the existing Content-Length preflight and native/wasm gates. External reproducer: fiducia-cloud/fiducia-infra#106."
+          fi
