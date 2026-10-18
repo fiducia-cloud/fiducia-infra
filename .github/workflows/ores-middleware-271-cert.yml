@@ -1,0 +1,84 @@
+name: ores-middleware #271 guarded repair and certification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-middleware-271-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+  TARGET_SHA: '346b4963aa5794a10a82a37009c8be6cdc38db58'
+  TARGET_BRANCH: 'fix/edge-minimal-ingress-framing-20260922'
+  OWNED_FILE: 'src/rust/src/hosts/edge_minimal_local.rs'
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Configure source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+      - name: Fetch exact middleware head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ores-middleware
+          git -C ores-middleware remote add origin https://github.com/ORESoftware/ores-middleware.git
+          git -C ores-middleware fetch --depth=1 origin "$TARGET_SHA"
+          git -C ores-middleware checkout -b repair FETCH_HEAD
+          test "$(git -C ores-middleware rev-parse HEAD)" = "$TARGET_SHA"
+          test "$(git -C ores-middleware status --porcelain)" = ""
+      - name: Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup default 1.88.0
+          rustup component add rustfmt clippy
+      - name: Format only edge-minimal host source
+        shell: bash
+        working-directory: ores-middleware
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2024 "$OWNED_FILE"
+          rustfmt --edition 2024 --check "$OWNED_FILE" src/rust/src/provider_api.rs
+          git diff --check
+          test "$(git diff --name-only)" = "$OWNED_FILE"
+      - name: Verify edge_minimal ingress authority
+        shell: bash
+        working-directory: ores-middleware
+        run: |
+          set -euo pipefail
+          cargo check --manifest-path src/rust/Cargo.toml --all-targets
+          cargo test --manifest-path src/rust/Cargo.toml edge_minimal -- --nocapture
+          cargo clippy --manifest-path src/rust/Cargo.toml --all-targets -- -D warnings
+          git diff --check
+          test "$(git diff --name-only)" = "$OWNED_FILE"
+      - name: Fast-forward formatting-only repair
+        shell: bash
+        working-directory: ores-middleware
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)"
+          test "$remote_head" = "$TARGET_SHA" || { echo "source branch moved: expected $TARGET_SHA got $remote_head"; exit 1; }
+          test "$(git diff --name-only)" = "$OWNED_FILE"
+          git config user.name 'ores-middleware certification'
+          git config user.email 'actions@users.noreply.github.com'
+          git add "$OWNED_FILE"
+          git commit -m 'style(edge): format ingress authority host'
+          git push origin HEAD:"$TARGET_BRANCH"
