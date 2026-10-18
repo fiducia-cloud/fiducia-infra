@@ -1,0 +1,176 @@
+name: proof audit 100 open PR heads
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/proof-audit-100-open-prs.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      matrix: ${{ steps.inventory.outputs.matrix }}
+      count: ${{ steps.inventory.outputs.count }}
+    env:
+      GH_TOKEN: ${{ secrets.FLEET_GITHUB_READ_TOKEN || github.token }}
+    steps:
+      - id: inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gh_json_file() {
+            local destination="$1"
+            shift
+            local attempt=1
+            local max=8
+            local temporary="${destination}.attempt"
+            while true; do
+              rm -f "$temporary"
+              if gh api "$@" > "$temporary" && jq -e . "$temporary" >/dev/null 2>&1; then
+                mv "$temporary" "$destination"
+                return 0
+              fi
+              rm -f "$temporary"
+              if [ "$attempt" -ge "$max" ]; then
+                echo "GitHub API request failed after $max attempts: gh api $*" >&2
+                return 1
+              fi
+              sleep $((attempt * 3))
+              attempt=$((attempt + 1))
+            done
+          }
+
+          query='is:pr is:open author:ORESoftware -repo:fiducia-cloud/fiducia-infra'
+          gh_json_file /tmp/search.json -X GET search/issues \
+            -f q="$query" \
+            -f per_page=100 \
+            -f sort=updated \
+            -f order=desc
+
+          jq -r '.items[] | [.repository_url, (.number|tostring)] | @tsv' /tmp/search.json > /tmp/prs.tsv
+          count=$(wc -l < /tmp/prs.tsv | tr -d ' ')
+          if [ "$count" -lt 100 ]; then
+            echo "need at least 100 open PRs for this tranche, got $count" >&2
+            exit 1
+          fi
+          head -n 100 /tmp/prs.tsv > /tmp/prs-100.tsv
+
+          : > /tmp/matrix.ndjson
+          while IFS=$'\t' read -r repository_url pr_number; do
+            repo=${repository_url#https://api.github.com/repos/}
+            gh_json_file /tmp/pr.json "repos/$repo/pulls/$pr_number"
+            head_sha=$(jq -r '.head.sha' /tmp/pr.json)
+            base_sha=$(jq -r '.base.sha' /tmp/pr.json)
+            title=$(jq -r '.title' /tmp/pr.json)
+            draft=$(jq -r '.draft' /tmp/pr.json)
+            jq -cn \
+              --arg repo "$repo" \
+              --argjson pr "$pr_number" \
+              --arg sha "$head_sha" \
+              --arg base_sha "$base_sha" \
+              --arg title "$title" \
+              --argjson draft "$draft" \
+              '{repo:$repo,pr:$pr,sha:$sha,base_sha:$base_sha,title:$title,draft:$draft}' \
+              >> /tmp/matrix.ndjson
+          done < /tmp/prs-100.tsv
+
+          matrix=$(jq -sc '{include:.}' /tmp/matrix.ndjson)
+          echo "count=100" >> "$GITHUB_OUTPUT"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+          echo "## 100-PR inventory" >> "$GITHUB_STEP_SUMMARY"
+          echo "Captured **100** current open PR heads before audit execution." >> "$GITHUB_STEP_SUMMARY"
+          jq -r '"- `\(.repo)#\(.pr)` `\(.sha)` draft=\(.draft) — \(.title)"' /tmp/matrix.ndjson >> "$GITHUB_STEP_SUMMARY"
+
+  audit:
+    needs: discover
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
+    name: audit ${{ matrix.repo }}#${{ matrix.pr }}
+    env:
+      GH_TOKEN: ${{ secrets.FLEET_GITHUB_READ_TOKEN || github.token }}
+      CARGO_TERM_COLOR: never
+    steps:
+      - name: Exact-head checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh repo clone "${{ matrix.repo }}" source -- --no-checkout --filter=blob:none
+          cd source
+          git fetch --no-tags --depth=1 origin "${{ matrix.base_sha }}"
+          git fetch --no-tags --depth=1 origin "${{ matrix.sha }}"
+          git checkout -q --detach "${{ matrix.sha }}"
+          actual=$(git rev-parse HEAD)
+          test "$actual" = "${{ matrix.sha }}"
+          printf '%s\n' "repo=${{ matrix.repo }}" "pr=${{ matrix.pr }}" "head=$actual" "base=${{ matrix.base_sha }}"
+
+      - name: Review-surface integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd source
+          git diff --check "${{ matrix.base_sha }}" "${{ matrix.sha }}"
+          echo "## ${{ matrix.repo }}#${{ matrix.pr }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Exact head: `${{ matrix.sha }}`" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          git diff --stat "${{ matrix.base_sha }}" "${{ matrix.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Rust gates
+        if: ${{ hashFiles('source/Cargo.toml') != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd source
+          cargo fmt --all -- --check
+          if [ -f Cargo.lock ]; then
+            cargo check --locked --all-targets
+            cargo test --locked --all-targets
+          else
+            cargo check --all-targets
+            cargo test --all-targets
+          fi
+
+      - name: Node gates
+        if: ${{ hashFiles('source/package.json') != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd source
+          if [ ! -f package-lock.json ]; then
+            echo 'No package-lock.json: dependency-installing Node gates skipped.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          npm ci --ignore-scripts
+          if node -e 'process.exit(require("./package.json").scripts?.typecheck?0:1)'; then npm run typecheck; fi
+          if node -e 'process.exit(require("./package.json").scripts?.test?0:1)'; then npm test; fi
+
+      - name: Go gates
+        if: ${{ hashFiles('source/go.mod') != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd source
+          go test ./...
+
+      - name: Final immutable-head guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd source
+          test "$(git rev-parse HEAD)" = "${{ matrix.sha }}"
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            echo 'verification mutated tracked source' >&2
+            git status --short >&2
+            exit 1
+          fi
