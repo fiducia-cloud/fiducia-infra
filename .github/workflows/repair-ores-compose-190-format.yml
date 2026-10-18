@@ -1,0 +1,105 @@
+name: repair ores-compose #190 formatting
+
+on:
+  push:
+    branches: [test/ores-compose-190-phase-env-cert]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_HEAD: 816c7444baa73b2d3f8421878df855e08f4e97e5
+  SOURCE_BRANCH: feat/phase-scoped-service-environments-restacked
+
+jobs:
+  rustfmt-repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Require scoped source credential
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+
+      - name: Check out exact source head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.EXPECTED_HEAD }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Guard branch has not moved
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/ORESoftware/ores-compose.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)"
+          test "$actual" = "$EXPECTED_HEAD"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.98.1
+          components: rustfmt
+
+      - name: Apply rustfmt to Task 5 Rust surface only
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2021 --config skip_children=true \
+            src/config_loader.rs \
+            src/local_up_process.rs \
+            src/service_environment.rs \
+            tests/cli_config_contract.rs \
+            tests/phase_environment_executor_e2e.rs \
+            tests/phase_environment_security.rs
+          git diff --check
+          mapfile -t changed < <(git diff --name-only)
+          expected=(
+            src/local_up_process.rs
+            src/service_environment.rs
+            tests/cli_config_contract.rs
+            tests/phase_environment_executor_e2e.rs
+            tests/phase_environment_security.rs
+          )
+          test "${#changed[@]}" -eq "${#expected[@]}"
+          diff -u <(printf '%s\n' "${expected[@]}" | sort) <(printf '%s\n' "${changed[@]}" | sort)
+          git diff --stat
+
+      - name: Commit and push formatting-only repair
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'ORESoftware'
+          git config user.email 'oresoftware@users.noreply.github.com'
+          git add \
+            src/local_up_process.rs \
+            src/service_environment.rs \
+            tests/cli_config_contract.rs \
+            tests/phase_environment_executor_e2e.rs \
+            tests/phase_environment_security.rs
+          git commit -m 'style: format phase-scoped environment changes'
+          formatted_head="$(git rev-parse HEAD)"
+          remote="https://x-access-token:${ORE_SOURCE_PAT}@github.com/ORESoftware/ores-compose.git"
+          git push "$remote" "HEAD:refs/heads/${SOURCE_BRANCH}"
+          echo "FORMATTED_HEAD=$formatted_head" >> "$GITHUB_ENV"
+
+      - name: Verify source branch advanced exactly to formatting commit
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/ORESoftware/ores-compose.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)"
+          test "$actual" = "$FORMATTED_HEAD"
+          echo "ores-compose #190 formatted head: $FORMATTED_HEAD"
