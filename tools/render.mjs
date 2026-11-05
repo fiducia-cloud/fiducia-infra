@@ -97,6 +97,9 @@ export function validateTopology(t) {
     fail(`need at least replication_factor (${t.replication_factor}) clusters for quorum; have ${clusters.length}`);
   }
   const seen = new Set();
+  // A repeated dial target collapses independently declared failure domains.
+  // Reject per-role aliases before emitting Raft membership and edge origins.
+  const seenEndpoints = new Map();
   const required = ["name", "storage_class", "node_replicas", "brain_endpoint", "node_peer_endpoint", "lb_endpoint"];
   // Without the name check, `name = "../../etc/x"` escapes the repo on `render`
   // (arbitrary file write) / reads an arbitrary path on --check. See safeName.
@@ -121,6 +124,13 @@ export function validateTopology(t) {
     }
     if (seen.has(c.name)) fail(`duplicate cluster name: ${c.name}`);
     seen.add(c.name);
+    for (const field of ["brain_endpoint", "node_peer_endpoint", "lb_endpoint", ...(c.node_api_endpoint === undefined ? [] : ["node_api_endpoint"])]) {
+      const address = String(c[field]);
+      const identity = `${field}:${address}`;
+      const first = seenEndpoints.get(identity);
+      if (first) fail(`duplicate ${field} ${JSON.stringify(address)} between clusters ${first} and ${c.name}`);
+      seenEndpoints.set(identity, c.name);
+    }
   }
   // Brain membership: a cluster runs a brain member unless `brain = false`
   // (node-only). The brain Raft group must be an ODD number >= replication_factor
