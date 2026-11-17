@@ -1,0 +1,78 @@
+name: summarize 100-PR funded audit
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/proof-summarize-100-open-prs.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  summarize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_RUN_ID: '36470644494'
+    steps:
+      - name: Collect all audit jobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --paginate \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "repos/fiducia-cloud/fiducia-infra/actions/runs/${SOURCE_RUN_ID}/jobs?per_page=100" \
+            --jq '.jobs[]' | jq -s '.' > /tmp/all-jobs.json
+
+          jq '[.[] | select(.name | startswith("audit "))]' /tmp/all-jobs.json > /tmp/audit-jobs.json
+          count=$(jq 'length' /tmp/audit-jobs.json)
+          if [ "$count" -ne 100 ]; then
+            echo "expected 100 audit jobs, got $count" >&2
+            exit 1
+          fi
+
+          jq -r '
+            .[] |
+            (.name | sub("^audit "; "")) as $subject |
+            ([.steps[]? | select(.conclusion == "failure") | .name][0] // "") as $failed_step |
+            [$subject, .conclusion, $failed_step, (.id|tostring)] | @tsv
+          ' /tmp/audit-jobs.json | sort > audit-100-ledger.tsv
+
+          jq '[.[] | select(.conclusion == "success")] | length' /tmp/audit-jobs.json > /tmp/pass
+          jq '[.[] | select(.conclusion == "failure")] | length' /tmp/audit-jobs.json > /tmp/fail
+          jq '[.[] | select(.conclusion != "success" and .conclusion != "failure")] | length' /tmp/audit-jobs.json > /tmp/other
+          pass=$(cat /tmp/pass)
+          fail=$(cat /tmp/fail)
+          other=$(cat /tmp/other)
+
+          jq -n \
+            --argjson total "$count" \
+            --argjson pass "$pass" \
+            --argjson fail "$fail" \
+            --argjson other "$other" \
+            --arg run_id "$SOURCE_RUN_ID" \
+            '{schema:"ores.fleet.pr-audit-summary/v1", run_id:$run_id, total:$total, pass:$pass, fail:$fail, other:$other}' \
+            > audit-100-summary.json
+
+          echo "## Funded 100-PR audit" >> "$GITHUB_STEP_SUMMARY"
+          echo "- source run: $SOURCE_RUN_ID" >> "$GITHUB_STEP_SUMMARY"
+          echo "- total: $count" >> "$GITHUB_STEP_SUMMARY"
+          echo "- pass: $pass" >> "$GITHUB_STEP_SUMMARY"
+          echo "- fail: $fail" >> "$GITHUB_STEP_SUMMARY"
+          echo "- other: $other" >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+          echo '### Failed gates' >> "$GITHUB_STEP_SUMMARY"
+          awk -F '\t' '$2 == "failure" {printf "- `%s` — %s\n", $1, $3}' audit-100-ledger.tsv >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload audit ledger
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: audit-100-ledger
+          path: |
+            audit-100-ledger.tsv
+            audit-100-summary.json
+          if-no-files-found: error
+          retention-days: 14
