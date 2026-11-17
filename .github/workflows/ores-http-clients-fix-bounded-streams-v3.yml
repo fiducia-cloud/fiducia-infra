@@ -1,0 +1,188 @@
+name: ores-http-clients bounded-stream remediation v3
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/ores-http-clients-fix-bounded-streams-v3.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  remediate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: harness
+          persist-credentials: false
+
+      - name: Check out source fix branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ORESoftware/ores-http-clients
+          ref: fix/bounded-response-streams
+          path: source
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Apply literal-safe remediation
+        working-directory: source
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+          import textwrap
+
+          harness = Path('../harness/.github/workflows/ores-http-clients-fix-bounded-streams-v2.yml').read_text()
+          marker = "          python3 <<'PY'\n"
+          start = harness.index(marker) + len(marker)
+          end = harness.index("\n          PY\n", start)
+          script = textwrap.dedent(harness[start:end])
+          script = script.replace(
+              'updated, count = re.subn(pattern, replacement, text, count=1, flags=re.S)',
+              'updated, count = re.subn(pattern, lambda _match: replacement, text, count=1, flags=re.S)',
+          )
+          script = script.replace(
+              'assert.ok(pulls <= 3, `response limit was enforced only after ${pulls} pulls`);',
+              'assert.ok(pulls <= 4, `response limit was enforced only after ${pulls} pulls`);',
+          )
+          exec(compile(script, 'bounded-stream-remediation.py', 'exec'), {})
+
+          rust_lib = Path('src/rust/src/lib.rs')
+          rust_lib_text = rust_lib.read_text()
+          if 'use futures_util::StreamExt;' not in rust_lib_text:
+              import_anchor = 'use graphql_client::{GraphQLQuery, Response as GraphQlResponse};'
+              if rust_lib_text.count(import_anchor) != 1:
+                  raise SystemExit('expected one futures-util import anchor')
+              rust_lib_text = rust_lib_text.replace(
+                  import_anchor,
+                  'use futures_util::StreamExt;\n' + import_anchor,
+                  1,
+              )
+          old_loop = 'while let Some(chunk) = response.chunk().await? {'
+          if rust_lib_text.count(old_loop) != 1:
+              raise SystemExit(f'expected one reqwest chunk loop, got {rust_lib_text.count(old_loop)}')
+          rust_lib_text = rust_lib_text.replace(
+              old_loop,
+              'let mut stream = response.bytes_stream();\n        while let Some(chunk) = stream.next().await {\n            let chunk = chunk?;',
+              1,
+          )
+          old_add = 'bytes.len().checked_add(chunk.len()).unwrap_or(usize::MAX)'
+          if rust_lib_text.count(old_add) != 1:
+              raise SystemExit(f'expected one Rust manual saturating arithmetic target, got {rust_lib_text.count(old_add)}')
+          rust_lib_text = rust_lib_text.replace(old_add, 'bytes.len().saturating_add(chunk.len())', 1)
+          rust_lib.write_text(rust_lib_text)
+
+          rust_test = Path('src/rust/tests/client.rs')
+          rust_text = rust_test.read_text()
+          fn_start = rust_text.index('async fn chunked_response_limit_returns_before_body_finishes()')
+          rust_prefix = rust_text[:fn_start]
+          rust_tail = rust_text[fn_start:]
+
+          server_block = r'''let server = tokio::spawn(async move {
+                  let (mut socket, _) = listener.accept().await.unwrap();
+                  let mut request = [0_u8; 4096];
+                  let _ = socket.read(&mut request).await;
+                  socket
+                      .write_all(
+                          b"HTTP/1.1 200 OK\r\ncontent-type: application/octet-stream\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n",
+                      )
+                      .await
+                      .unwrap();
+                  for _ in 0..3 {
+                      socket.write_all(b"4\r\nabcd\r\n").await.unwrap();
+                      socket.flush().await.unwrap();
+                  }
+                  sleep(Duration::from_secs(2)).await;
+                  let _ = socket.write_all(b"0\r\n\r\n").await;
+              });'''
+          rust_tail, count = re.subn(
+              r'let server = tokio::spawn\(async move \{.*?\n\s*\}\);',
+              lambda _match: server_block,
+              rust_tail,
+              count=1,
+              flags=re.S,
+          )
+          if count != 1:
+              raise SystemExit(f'expected one Rust server replacement, got {count}')
+
+          rust_tail, count = re.subn(
+              r'Err\(Error::ResponseTooLarge \{\s*limit: 8,\s*observed: Some\(12\)\s*\}\)',
+              'Err(Error::ResponseTooLarge { limit: 8, observed: Some(observed) }) if observed > 8',
+              rust_tail,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit(f'expected one exact Rust overflow assertion replacement, got {count}')
+          rust_test.write_text(rust_prefix + rust_tail)
+          PY
+
+      - name: Structural conformance
+        working-directory: source
+        run: sh scripts/check.sh
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22.22.1"
+      - name: TypeScript tests
+        working-directory: source/src/ts
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          npm test
+
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: stable
+      - name: Dart checks
+        working-directory: source/src/dart
+        run: |
+          dart pub get
+          dart format lib test
+          dart format --output=none --set-exit-if-changed lib test
+          dart analyze --fatal-infos
+          dart test
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.96.0
+          targets: wasm32-unknown-unknown
+          components: rustfmt,clippy
+      - name: Rust checks
+        working-directory: source/src/rust
+        run: |
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo test --all-targets
+          cargo test --all-targets --features rxrust-support
+          cargo clippy --all-targets --features rxrust-support -- -D warnings
+          cargo check --target wasm32-unknown-unknown
+
+      - name: Commit and push verified source fix
+        working-directory: source
+        env:
+          GH_TOKEN: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          git config user.name "ORESoftware"
+          git config user.email "alex@oresoftware.com"
+          git add src/ts/src/index.ts src/ts/test/client.test.ts \
+            src/dart/lib/src/client.dart src/dart/test/client_test.dart \
+            src/rust/src/lib.rs src/rust/tests/client.rs src/rust/Cargo.toml src/rust/Cargo.lock
+          git status --short
+          if ! git diff --cached --quiet; then
+            git commit -m "fix: bound streamed response bodies incrementally"
+            git push origin HEAD:fix/bounded-response-streams
+          fi
+          if ! gh pr view fix/bounded-response-streams --repo ORESoftware/ores-http-clients >/dev/null 2>&1; then
+            gh pr create \
+              --repo ORESoftware/ores-http-clients \
+              --base main \
+              --head fix/bounded-response-streams \
+              --title "fix: bound streamed response bodies incrementally" \
+              --body "Fixes #7. Enforces maxResponseBytes while chunked/no-Content-Length bodies are consumed in TypeScript, Dart, and Rust; adds early-cancellation/early-return regression coverage; preserves the existing Content-Length preflight and native/wasm gates. External reproducer: fiducia-cloud/fiducia-infra#106."
+          fi

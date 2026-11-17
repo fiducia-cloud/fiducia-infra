@@ -1,0 +1,68 @@
+name: ores-http-clients bounded-stream TS formatting
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/ores-http-clients-bounded-streams-ts-format.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ORESoftware/ores-http-clients
+          ref: fix/bounded-response-streams
+          path: source
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Normalize readBoundedBytes indentation
+        working-directory: source
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          p = Path('src/ts/src/index.ts')
+          text = p.read_text()
+          start = text.index('  async readBoundedBytes(response: Response): Promise<Uint8Array> {')
+          end = text.index('\n}\n}', start) + 2
+          block = text[start:end]
+          lines = block.splitlines()
+          fixed = [lines[0]]
+          for line in lines[1:-1]:
+              fixed.append('  ' + line)
+          fixed.append('  }')
+          replacement = '\n'.join(fixed)
+          p.write_text(text[:start] + replacement + text[end:])
+          PY
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22.22.1"
+      - name: Re-run structural and TypeScript gates
+        working-directory: source
+        run: |
+          sh scripts/check.sh
+          cd src/ts
+          npm install --ignore-scripts --no-audit --no-fund
+          npm test
+
+      - name: Commit verified formatting cleanup
+        working-directory: source
+        run: |
+          set -euo pipefail
+          git config user.name "ORESoftware"
+          git config user.email "alex@oresoftware.com"
+          git add src/ts/src/index.ts
+          git diff --cached --check
+          if ! git diff --cached --quiet; then
+            git commit -m "style(ts): normalize bounded response reader"
+            git push origin HEAD:fix/bounded-response-streams
+          fi
