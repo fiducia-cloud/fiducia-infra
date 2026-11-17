@@ -1,0 +1,140 @@
+# Exact-source repair lane for ores-compose#154 candidate-owned test regressions.
+name: repair ores-compose 154 candidate tests
+
+on:
+  push:
+    branches:
+      - test/ores-compose-154-service-env-cert-20260922
+    paths:
+      - .github/workflows/repair-ores-compose-154-test-regressions.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SOURCE_REPO: ORESoftware/ores-compose
+      SOURCE_BRANCH: feat/service-environment-isolation
+      SOURCE_SHA: 14b10f64ef6e77430ce60fc8a2df9f5bea41ccbf
+    steps:
+      - name: Require exact mutable source head
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          remote="$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)"
+          test "$remote" = "$SOURCE_SHA"
+
+      - name: Checkout source branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ORESoftware/ores-compose
+          ref: feat/service-environment-isolation
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Patch only candidate-owned regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("src/local_up_process.rs")
+          text = path.read_text()
+
+          def span(source: str, name: str):
+              needle = f"fn {name}("
+              start = source.index(needle)
+              end = source.find("\n    #[", start + len(needle))
+              if end < 0:
+                  end = len(source)
+              return start, end
+
+          def edit_function(source: str, name: str, editor):
+              start, end = span(source, name)
+              body = source[start:end]
+              updated = editor(body)
+              assert updated != body, f"{name}: expected a deterministic edit"
+              return source[:start] + updated + source[end:]
+
+          fixture_tests = [
+              "environment_admission_merges_authored_and_runtime_values",
+              "missing_secret_fails_before_source_materialization",
+              "runtime_environment_collision_fails_before_source_materialization",
+              "bare_program_requires_explicit_path_before_source_materialization",
+          ]
+
+          for name in fixture_tests:
+              def add_required_field(body: str, test=name):
+                  assert "allow_lazy_start:" not in body, f"{test}: field already present"
+                  assert body.count("project: test\n") == 1, f"{test}: unexpected fixture shape"
+                  return body.replace(
+                      "project: test\n",
+                      "project: test\nallow_lazy_start: false\n",
+                      1,
+                  )
+              text = edit_function(text, name, add_required_field)
+
+          def repair_isolation_probe(body: str):
+              assert body.count('env::var_os("PATH")') == 1
+              assert body.count('${PATH+x}') == 3
+              body = body.replace('env::var_os("PATH")', 'env::var_os("HOME")', 1)
+              body = body.replace('test requires an ambient PATH', 'test requires an ambient HOME', 1)
+              body = body.replace('${PATH+x}', '${HOME+x}')
+              return body
+
+          text = edit_function(
+              text,
+              "build_service_and_healthcheck_clear_ambient_environment",
+              repair_isolation_probe,
+          )
+          path.write_text(text)
+          PY
+          rustfmt --edition 2021 --config skip_children=true src/local_up_process.rs
+          mapfile -t changed < <(git diff --name-only)
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = "src/local_up_process.rs"
+          git diff --check
+
+      - name: Prove the five repaired regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          for test_name in \
+            environment_admission_merges_authored_and_runtime_values \
+            missing_secret_fails_before_source_materialization \
+            runtime_environment_collision_fails_before_source_materialization \
+            bare_program_requires_explicit_path_before_source_materialization \
+            build_service_and_healthcheck_clear_ambient_environment
+          do
+            cargo test --locked --all-targets --all-features "$test_name"
+          done
+
+      - name: Commit and push exact repair
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          remote="$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)"
+          test "$remote" = "$SOURCE_SHA"
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          mapfile -t changed < <(git diff --name-only)
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = "src/local_up_process.rs"
+          git config user.name "ORESoftware CI"
+          git config user.email "alexander.d.mills@gmail.com"
+          git add src/local_up_process.rs
+          git commit -m "test: fix service environment isolation regressions"
+          git push origin "HEAD:refs/heads/${SOURCE_BRANCH}"

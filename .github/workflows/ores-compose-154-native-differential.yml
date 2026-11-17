@@ -1,0 +1,149 @@
+name: ores-compose #154 native Rust differential
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ores-compose-154-native-differential.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  COMPOSE_HEAD: fafea34be8d8ff768231c88bd77d545bc79185ce
+  COMPOSE_BASE: fb6d0b2aeb7d87c598e006bed050162b55e0c9f0
+
+jobs:
+  native-rust-differential:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Require scoped source credential
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+
+      - name: Check out exact base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.COMPOSE_BASE }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 0
+          path: base
+
+      - name: Check out exact head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.COMPOSE_HEAD }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 0
+          path: head
+
+      - name: Guard exact revisions and source scope
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C base rev-parse HEAD)" = "$COMPOSE_BASE"
+          test "$(git -C head rev-parse HEAD)" = "$COMPOSE_HEAD"
+          remote_head="$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/ORESoftware/ores-compose.git" refs/pull/154/head | cut -f1)"
+          test "$remote_head" = "$COMPOSE_HEAD"
+          mapfile -t changed < <(git -C head diff --name-only "$COMPOSE_BASE" "$COMPOSE_HEAD")
+          expected=(
+            contracts/json-schema/contract.schema.json
+            contracts/typespec/main.tsp
+            src/config_loader.rs
+            src/local_up_process.rs
+            src/service_environment.rs
+            src/up_orchestrator.rs
+          )
+          test "${#changed[@]}" -eq "${#expected[@]}"
+          diff -u <(printf '%s\n' "${expected[@]}" | sort) <(printf '%s\n' "${changed[@]}" | sort)
+          git -C head diff --check "$COMPOSE_BASE" "$COMPOSE_HEAD"
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.98.1
+          components: rustfmt, clippy
+
+      - name: Verify native formatting gate on head
+        working-directory: head
+        run: cargo fmt --all --check
+
+      - name: Run native Clippy and test gates on base and head
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p evidence
+          run_gate() {
+            local revision=$1
+            local cmd=$2
+            local log="evidence/${revision}-${cmd}.log"
+            local rcfile="evidence/${revision}-${cmd}.rc"
+            if [[ "$cmd" == clippy ]]; then
+              (cd "$revision" && cargo clippy --all-targets --all-features -- -D warnings) >"$log" 2>&1
+            else
+              (cd "$revision" && cargo test --all-targets --all-features) >"$log" 2>&1
+            fi
+            printf '%s\n' "$?" >"$rcfile"
+          }
+          run_gate base clippy
+          run_gate head clippy
+          run_gate base test
+          run_gate head test
+          exit 0
+
+      - name: Require no new Clippy regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          base_rc=$(cat evidence/base-clippy.rc)
+          head_rc=$(cat evidence/head-clippy.rc)
+          echo "base clippy rc=$base_rc; head clippy rc=$head_rc"
+          if [[ "$base_rc" == 0 ]]; then
+            test "$head_rc" == 0
+          elif [[ "$head_rc" != 0 ]]; then
+            grep -E '^error(\[[^]]+\])?:' evidence/base-clippy.log | sort -u > evidence/base-clippy-errors.txt || true
+            grep -E '^error(\[[^]]+\])?:' evidence/head-clippy.log | sort -u > evidence/head-clippy-errors.txt || true
+            diff -u evidence/base-clippy-errors.txt evidence/head-clippy-errors.txt
+          fi
+
+      - name: Require no new test regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          base_rc=$(cat evidence/base-test.rc)
+          head_rc=$(cat evidence/head-test.rc)
+          echo "base test rc=$base_rc; head test rc=$head_rc"
+          if [[ "$base_rc" == 0 ]]; then
+            test "$head_rc" == 0
+          elif [[ "$head_rc" != 0 ]]; then
+            sed -n '/^failures:$/,/^test result:/p' evidence/base-test.log | grep '^    ' | sort -u > evidence/base-test-failures.txt || true
+            sed -n '/^failures:$/,/^test result:/p' evidence/head-test.log | grep '^    ' | sort -u > evidence/head-test-failures.txt || true
+            diff -u evidence/base-test-failures.txt evidence/head-test-failures.txt
+            grep '^test result:' evidence/base-test.log | tail -1 > evidence/base-test-result.txt
+            grep '^test result:' evidence/head-test.log | tail -1 > evidence/head-test-result.txt
+            diff -u evidence/base-test-result.txt evidence/head-test-result.txt
+          fi
+
+      - name: Reconfirm immutable exact head
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C head rev-parse HEAD)" = "$COMPOSE_HEAD"
+          test -z "$(git -C head status --porcelain --untracked-files=no)"
+          remote_head="$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/ORESoftware/ores-compose.git" refs/pull/154/head | cut -f1)"
+          test "$remote_head" = "$COMPOSE_HEAD"
+          echo ORES_COMPOSE_154_NATIVE_DIFFERENTIAL_PASS
