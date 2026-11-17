@@ -1,0 +1,226 @@
+name: repair zed hoisted bin launcher semantics
+
+on:
+  push:
+    branches: [test/cross-org-certs-20260922]
+    paths: ['.github/workflows/repair-zed-hoisted-bin-20260923.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_REPO: zed-pkg/zed-cli
+  SOURCE_BRANCH: fix/hoisted-bin-relative-launchers-20260923
+  EXPECTED_HEAD: 5fb44aa350833ef3e05220774427a09dd5edf021
+  BASE_SHA: 44fcc6649464fe0b7a4a59e6d14485bed6907086
+
+jobs:
+  repair-and-prove:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Fetch exact repair branch
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git clone --no-tags "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" source
+          git -C source fetch origin "$SOURCE_BRANCH"
+          git -C source checkout -B "$SOURCE_BRANCH" "origin/$SOURCE_BRANCH"
+          test "$(git -C source rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git -C source merge-base HEAD "$BASE_SHA")" = "$BASE_SHA"
+
+      - name: Patch hoisted bin projection
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/ops.rs')
+          text = path.read_text()
+          old = '''/// Hoist package-declared executables into `zed_modules/.bin/<name>` so
+/// `zed run` and PATH-prepending wrappers find them without polluting the OS
+/// PATH.
+///
+/// Hoisted bins are deliberately project-owned copies in both install modes.
+/// In symlink mode the package target may resolve into the immutable global
+/// store; chmod'ing that target would mutate the shared store inode for every
+/// consumer. Copying the usually-small executable and setting permissions on
+/// the destination preserves the store while retaining runnable bins.
+fn hoist_bins(modules: &Path, bins: &BTreeMap<String, PathBuf>, _mode: InstallMode) -> Result<()> {
+    if bins.is_empty() {
+        return Ok(());
+    }
+    let bin_dir = modules.join(BIN_DIR);
+    fs::create_dir_all(&bin_dir)?;
+    for (name, target) in bins {
+        if !target.exists() {
+            eprintln!(
+                "warning: bin `{name}` points at missing {}; skipping",
+                target.display()
+            );
+            continue;
+        }
+        let destination = bin_dir.join(name);
+        replace_dest(&destination)?;
+        fs::copy(target, &destination)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = fs::metadata(&destination)?.permissions();
+            permissions.set_mode(permissions.mode() | 0o111);
+            fs::set_permissions(&destination, permissions)?;
+        }
+    }
+    Ok(())
+}
+'''
+          new = '''/// Hoist package-declared executables into `zed_modules/.bin/<name>` so
+/// `zed run` and PATH-prepending wrappers find them without polluting the OS
+/// PATH.
+///
+/// On Unix the hoisted entry is a project-local shim that execs the executable
+/// at its package path. Byte-copying script launchers into `.bin` changes their
+/// directory and breaks package-relative imports/resources (for example an ESM
+/// launcher importing `../src/cli.mjs`). The relative shim keeps copy-mode
+/// projects relocatable while preserving the launcher's package context.
+///
+/// Windows retains a project-owned copy because `zed run` already performs
+/// extension/shebang dispatch there and portable symlink semantics are not
+/// available.
+fn hoist_bins(modules: &Path, bins: &BTreeMap<String, PathBuf>, _mode: InstallMode) -> Result<()> {
+    if bins.is_empty() {
+        return Ok(());
+    }
+    let bin_dir = modules.join(BIN_DIR);
+    fs::create_dir_all(&bin_dir)?;
+    for (name, target) in bins {
+        if !target.exists() {
+            eprintln!(
+                "warning: bin `{name}` points at missing {}; skipping",
+                target.display()
+            );
+            continue;
+        }
+        let destination = bin_dir.join(name);
+        replace_dest(&destination)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let relative = pathdiff_relative(&bin_dir, target)
+                .to_string_lossy()
+                .replace('\\\\', "/");
+            let quoted = relative.replace('\\'', "'\\\"'\\\"'");
+            fs::write(
+                &destination,
+                format!("#!/bin/sh\\nexec \\\"$(dirname \\\"$0\\\")\\\"/'{quoted}' \\\"$@\\\"\\n"),
+            )?;
+            let mut permissions = fs::metadata(&destination)?.permissions();
+            permissions.set_mode(permissions.mode() | 0o111);
+            fs::set_permissions(&destination, permissions)?;
+        }
+        #[cfg(not(unix))]
+        fs::copy(target, &destination)?;
+    }
+    Ok(())
+}
+'''
+          if old not in text:
+              raise SystemExit('expected base hoist_bins body missing')
+          text = text.replace(old, new, 1)
+
+          marker = '''    #[test]\n    fn parse_age_units_and_default() {\n'''
+          test = '''    #[cfg(unix)]
+    #[test]
+    fn hoisted_bin_preserves_package_relative_launcher_context() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir()?;
+        let modules = temp.path().join("zed_modules");
+        let package = modules.join("acme/tool");
+        fs::create_dir_all(package.join("bin"))?;
+        fs::create_dir_all(package.join("src"))?;
+        fs::write(package.join("src/payload.txt"), "package-relative-ok\\n")?;
+        let launcher = package.join("bin/tool");
+        fs::write(
+            &launcher,
+            "#!/bin/sh\\ncat \\\"$(dirname \\\"$0\\\")/../src/payload.txt\\\"\\n",
+        )?;
+        let mut permissions = fs::metadata(&launcher)?.permissions();
+        permissions.set_mode(permissions.mode() | 0o111);
+        fs::set_permissions(&launcher, permissions)?;
+
+        let bins = BTreeMap::from([("tool".to_string(), launcher)]);
+        hoist_bins(&modules, &bins, InstallMode::Copy)?;
+
+        let hoisted = modules.join(BIN_DIR).join("tool");
+        let output = Command::new(&hoisted).output()?;
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(String::from_utf8(output.stdout)?, "package-relative-ok\\n");
+        let shim = fs::read_to_string(hoisted)?;
+        assert!(shim.contains("exec \\\"$(dirname \\\"$0\\\")\\\"/"), "{shim}");
+        assert!(shim.contains("../acme/tool/bin/tool"), "{shim}");
+        Ok(())
+    }
+
+'''
+          if marker not in text:
+              raise SystemExit('test marker missing')
+          text = text.replace(marker, test + marker, 1)
+          path.write_text(text)
+          PY
+
+          rm -f .github/workflows/repair-hoisted-bin-relative-launchers.yml
+          cargo fmt --all
+          git diff --check "$BASE_SHA"
+          mapfile -t changed < <(git diff --name-only "$BASE_SHA")
+          printf 'changed=%s\n' "${changed[*]}"
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = "src/ops.rs"
+
+      - name: Prove targeted regression
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test ops::tests::hoisted_bin_preserves_package_relative_launcher_context -- --exact --nocapture
+
+      - name: Prove source gates
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo check --all-targets
+          cargo clippy --all-targets -- -D warnings
+
+      - name: Commit and push exact repair
+        working-directory: source
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config user.name "ORESoftware automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          mapfile -t changed < <(git diff --cached --name-only "$BASE_SHA")
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = "src/ops.rs"
+          git commit -m "fix: preserve package-relative bin launcher context"
+          new_sha=$(git rev-parse HEAD)
+          remote_before=$(git ls-remote origin "refs/heads/$SOURCE_BRANCH" | cut -f1)
+          test "$remote_before" = "$EXPECTED_HEAD"
+          git push origin "HEAD:refs/heads/$SOURCE_BRANCH"
+          remote_after=$(git ls-remote origin "refs/heads/$SOURCE_BRANCH" | cut -f1)
+          test "$remote_after" = "$new_sha"
+          echo "ZED_REPAIR_SHA=$new_sha"
