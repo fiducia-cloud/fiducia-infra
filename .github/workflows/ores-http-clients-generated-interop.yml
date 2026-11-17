@@ -1,0 +1,71 @@
+name: ores-http-clients generated RPC GraphQL interop
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/ores-http-clients-generated-interop.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact interop branch head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ORESoftware/ores-http-clients
+          ref: 994cedd8db1fb4a9ac76504c2b2c996fba57af4a
+          path: source
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Structural conformance
+        working-directory: source
+        run: sh scripts/check.sh
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22.22.1"
+      - name: TypeScript generated interop
+        working-directory: source/src/ts
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          npm test
+
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: stable
+      - name: Dart generated interop
+        working-directory: source/src/dart
+        run: |
+          dart pub get
+          dart format --output=none --set-exit-if-changed lib test
+          dart analyze --fatal-infos
+          dart test
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.96.0
+          targets: wasm32-unknown-unknown
+          components: rustfmt,clippy
+      - name: Rust generated interop
+        working-directory: source/src/rust
+        run: |
+          cargo fmt --all -- --check
+          cargo test --all-targets
+          cargo test --all-targets --features rxrust-support
+          cargo clippy --all-targets --features rxrust-support -- -D warnings
+          cargo check --target wasm32-unknown-unknown
+
+      - name: Generated transport-boundary audit
+        working-directory: source
+        run: |
+          set -euo pipefail
+          grep -R "does not re-admit\|does not re_admit\|NO RequestScheduler admission\|one shared queue" -n \
+            src/ts src/dart src/rust .governance README.md
+          grep -R "subscription\|server_stream" -n src/ts/src/generated.ts src/dart/lib/src/generated_interop.dart src/rust/src/generated.rs
