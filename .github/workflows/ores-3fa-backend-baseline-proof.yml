@@ -1,0 +1,80 @@
+name: ORESoftware 3fa-backend baseline proof
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ores-3fa-backend-baseline-proof.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    name: 3fa-backend.rs#45 exact-head
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      SOURCE_REPO: ORESoftware/3fa-backend.rs
+      SOURCE_BRANCH: fix/rustfmt-flags-main
+      SOURCE_SHA: e4930f5488a6d06ccef1e3eef39b7ab6c7909cb4
+      SOURCE_MAIN_SHA: f2a81af9947be5a2f19964de0780490b61467897
+    steps:
+      - name: Require scoped source credential
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+      - name: Checkout exact private source head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/3fa-backend.rs
+          ref: e4930f5488a6d06ccef1e3eef39b7ab6c7909cb4
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 0
+          path: source
+      - name: Guard exact one-file formatting delta
+        working-directory: source
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          mapfile -t changed < <(git diff --name-only "$SOURCE_MAIN_SHA" "$SOURCE_SHA")
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = "src/flags.rs"
+          git diff --check "$SOURCE_MAIN_SHA" "$SOURCE_SHA"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: '1.95.0'
+          components: rustfmt, clippy
+      - name: Locked Rust source suite
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all --check
+          cargo check --quiet --locked --all-targets --all-features
+          cargo test --quiet --locked --all-features
+          cargo clippy --locked --all-targets --all-features -- -D warnings
+      - name: Final immutable source guard
+        working-directory: source
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          git reset --hard "$SOURCE_SHA" >/dev/null
+          git clean -ffd >/dev/null
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"

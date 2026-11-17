@@ -1,0 +1,157 @@
+name: ORESoftware funded proc-isolation proof
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ores-funded-proof-batch.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  proc-isolation:
+    name: ores-proc-isolation-cli#6 (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    env:
+      SOURCE_REPO: ORESoftware/ores-proc-isolation-cli
+      SOURCE_BRANCH: security/beamscale-tripwire-mount
+      SOURCE_SHA: 041aa4ce3fb451da0b30e5990caaa3e42f9fcb70
+      SOURCE_MAIN_SHA: e14de62f31eb51fa8a2d9ea442abe8a69965266a
+    steps:
+      - name: Require scoped source credential
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+      - name: Checkout exact private source head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ORESoftware/ores-proc-isolation-cli
+          ref: 041aa4ce3fb451da0b30e5990caaa3e42f9fcb70
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 0
+          path: source
+      - name: Guard exact source identity
+        working-directory: source
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git diff --check "$SOURCE_MAIN_SHA" "$SOURCE_SHA"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: '1.88.0'
+          components: rustfmt, clippy
+      - name: Install Linux policy helpers and scoped AppArmor profile
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y apparmor-profiles apparmor-utils bubblewrap slirp4netns iproute2 iptables shellcheck curl
+          if [[ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || printf '0')" == '1' ]]; then
+            profile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+            test -f "$profile"
+            sudo install -m 0644 "$profile" /etc/apparmor.d/bwrap-userns-restrict
+            sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          fi
+      - name: Mirror source policy and Rust checks
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/linux/ores-proc-isolate.sh
+          bash -n scripts/macos/ores-proc-isolate.sh
+          if [[ "$RUNNER_OS" == Linux ]]; then shellcheck scripts/linux/ores-proc-isolate.sh scripts/macos/ores-proc-isolate.sh; fi
+          cargo fmt --all -- --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test --all-targets
+          cargo run --quiet -- check --config .ores-proc-isolation.yaml
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            cargo run --quiet -- doctor --config .ores-proc-isolation.yaml
+          else
+            set +e
+            cargo run --quiet -- doctor --config .ores-proc-isolation.yaml
+            rc=$?
+            set -e
+            test "$rc" -eq 2
+          fi
+      - name: Linux sandbox smoke in privileged container
+        if: runner.os == 'Linux'
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --privileged --security-opt apparmor=unconfined \
+            -v "$PWD:/src" -w /src rust:1.88-bookworm bash -c '
+              set -euo pipefail
+              export PATH="/usr/local/cargo/bin:$PATH"
+              apt-get update
+              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends bubblewrap slirp4netns iproute2 iptables curl ca-certificates
+              cargo build --quiet --examples --bins
+              cat > /tmp/ores-pi-smoke.yaml <<"YAML"
+          version: 1
+          defaults:
+            group: no-net
+          groups:
+            no-net:
+              network:
+                mode: none
+            external:
+              network:
+                mode: external
+                deny_loopback: true
+                deny_private_networks: true
+          processes:
+            true:
+              group: no-net
+              command: [/usr/bin/true]
+            passwd:
+              group: no-net
+              command: [/usr/bin/cat, /etc/passwd]
+            internet:
+              group: external
+              command: [/usr/bin/curl, --fail, --silent, --show-error, --head, https://example.com]
+            curl-flex:
+              group: external
+              command: [/usr/bin/curl, --fail, --silent, --show-error]
+          YAML
+              target/debug/ores-proc-isolation run true --config /tmp/ores-pi-smoke.yaml
+              if target/debug/ores-proc-isolation run passwd --config /tmp/ores-pi-smoke.yaml; then exit 1; fi
+              target/debug/ores-proc-isolation run internet --config /tmp/ores-pi-smoke.yaml
+              target/debug/examples/loopback_fixture 127.0.0.1:18080 >/tmp/ores-pi-http.log 2>&1 &
+              server=$!
+              trap "kill $server || true" EXIT
+              sleep 1
+              curl --fail --silent http://127.0.0.1:18080 >/dev/null
+              if target/debug/ores-proc-isolation run curl-flex --config /tmp/ores-pi-smoke.yaml -- http://127.0.0.1:18080; then exit 1; fi
+            '
+      - name: Final immutable source guard
+        working-directory: source
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          sudo chown -R "$(id -u):$(id -g)" .
+          git reset --hard "$SOURCE_SHA" >/dev/null
+          git clean -ffd >/dev/null
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"

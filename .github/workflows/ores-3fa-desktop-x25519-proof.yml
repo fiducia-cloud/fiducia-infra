@@ -1,0 +1,105 @@
+name: ORESoftware 3FA desktop x25519 proof
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ores-3fa-desktop-x25519-proof.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  x25519:
+    name: 3FA-desktop.rs#25 (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      SOURCE_REPO: ORESoftware/3FA-desktop.rs
+      SOURCE_BRANCH: dependabot/cargo/x25519-dalek-3.0.0
+      SOURCE_SHA: 451c5f13d868da359fb5ef3d1b494dcbecd3a97a
+      SOURCE_MAIN_SHA: ec1ce8683071cd574542b838c4eb175f652a1c56
+    steps:
+      - name: Require scoped source credential
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+      - name: Checkout exact private source head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/3FA-desktop.rs
+          ref: 451c5f13d868da359fb5ef3d1b494dcbecd3a97a
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 0
+          path: source
+      - name: Guard exact dependency-only delta
+        working-directory: source
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          mapfile -t changed < <(git diff --name-only "$SOURCE_MAIN_SHA" "$SOURCE_SHA")
+          test "${#changed[@]}" -eq 2
+          printf '%s\n' "${changed[@]}"
+          test "${changed[0]}" = "Cargo.lock"
+          test "${changed[1]}" = "Cargo.toml"
+          git diff --check "$SOURCE_MAIN_SHA" "$SOURCE_SHA"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - name: Format and interface provenance
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --check
+          python3 scripts/check_vendored_interfaces.py
+          cargo test --locked --no-default-features --test interface_pin
+      - name: Headless core and formal models
+        if: runner.os == 'Linux'
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 formal/session_model.py
+          python3 formal/app_lifecycle_model.py
+          printf '%s\n' '{"op":"replay","events":[{"op":"unlock"},{"op":"advance","seconds":90},{"op":"poll"}]}' | python3 formal/session_model.py --json-stdin
+          cargo check --locked --no-default-features
+          cargo test --locked --no-default-features
+      - name: Shipped GUI build and tests
+        if: runner.os == 'macOS'
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --locked
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+      - name: Final immutable source guard
+        working-directory: source
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          git reset --hard "$SOURCE_SHA" >/dev/null
+          git clean -ffd >/dev/null
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" "refs/heads/${SOURCE_BRANCH}" | cut -f1)" = "$SOURCE_SHA"
+          test "$(git ls-remote "https://x-access-token:${ORE_SOURCE_PAT}@github.com/${SOURCE_REPO}.git" refs/heads/main | cut -f1)" = "$SOURCE_MAIN_SHA"
