@@ -1,0 +1,63 @@
+name: proof-scintilla-infra-31
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/proof-scintilla-infra-31.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_SHA: 72dd45ed5510e8f04c4399abddb4ab2871bb556d
+
+jobs:
+  exact-head-contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['22', '24']
+    steps:
+      - name: Checkout exact Scintilla infra head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: scintilla-run/scintilla-infra
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          show-progress: false
+
+      - name: Verify exact immutable source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git diff --check
+          grep -F 'default = "ores-process-lifecycle-agent"' fleet/nixos/scintilla-lifecycle-agent.nix
+          grep -F 'SCINTILLA_LIFECYCLE_AGENT_UID = "0"' fleet/nixos/scintilla-lifecycle-agent.nix
+          grep -F 'SCINTILLA_LIFECYCLE_AGENT_GID = "0"' fleet/nixos/scintilla-lifecycle-agent.nix
+          grep -F 'SCINTILLA_LIFECYCLE_SOCKET = cfg.controlSocket' fleet/nixos/scintilla-lifecycle-agent.nix
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install exact dependencies
+        run: npm ci
+
+      - name: Run full infra unit and contract suite
+        run: npm test
+
+      - name: Parse renderer entrypoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check scripts/render-gitops.mjs
+          node --check scripts/render-lib.mjs
