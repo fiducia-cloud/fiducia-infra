@@ -1,0 +1,68 @@
+name: certify ORESoftware ores-middleware 280 policy canary
+
+on:
+  push:
+    branches:
+      - proof/ores-middleware-280-policy-20260924
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SOURCE_SHA: 048dd2bbb1bef73b970a541f0b55477d3a5ec8df
+      ORESC_REV: 3d0b34bf8e93c382114bca888dbecddc32678b50
+      RUST_TOOLCHAIN: 1.95.0
+    steps:
+      - name: Check out exact middleware head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-middleware
+          ref: ${{ env.SOURCE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify middleware identity
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+
+      - name: Fetch exact ores-cli candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-cli
+          ref: ${{ env.ORESC_REV }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+          path: .ores-cli-candidate
+
+      - name: Verify exact ores-cli candidate identity
+        run: test "$(git -C .ores-cli-candidate rev-parse HEAD)" = "$ORESC_REV"
+
+      - name: Test and build exact ores-cli candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/oresc-target"
+          cargo +"$RUST_TOOLCHAIN" test --locked --manifest-path .ores-cli-candidate/Cargo.toml --lib
+          cargo +"$RUST_TOOLCHAIN" build --locked --manifest-path .ores-cli-candidate/Cargo.toml --bin oresc
+          install -d "$RUNNER_TEMP/oresc-bin"
+          install -m 0755 "$CARGO_TARGET_DIR/debug/oresc" "$RUNNER_TEMP/oresc-bin/oresc"
+          echo "$RUNNER_TEMP/oresc-bin" >> "$GITHUB_PATH"
+          rm -rf .ores-cli-candidate
+
+      - name: Audit repository and root TOML contracts
+        run: oresc --no-json audit repo --path .
+
+      - name: Audit environment declaration/reference coverage
+        run: oresc --no-json audit env --path .
+
+      - name: Final exact-head guard
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
