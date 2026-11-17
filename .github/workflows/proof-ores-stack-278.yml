@@ -1,0 +1,76 @@
+name: proof ores-stack 278 exact head
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/proof-ores-stack-278.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ORES_STACK_SHA: 0d75749c9cf94c965ec5220b62e215eb0b4ee56d
+  TJSV_SHA: 2f6a5e1564c2a52af0e61e5b47a983b145b28884
+
+jobs:
+  exact-head-governance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact ores-stack candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-stack
+          ref: ${{ env.ORES_STACK_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify exact source head
+        run: test "$(git rev-parse HEAD)" = "$ORES_STACK_SHA"
+
+      - name: Configure scoped private Git dependency access
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Install reviewed Rust 1.88 toolchain
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal --component rustfmt --component clippy
+          rustup default 1.88.0
+          rustc --version
+          cargo --version
+
+      - name: Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Rust clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Rust tests
+        run: cargo test --workspace --all-targets
+
+      - name: Pin the already-reviewed TJSV revision for carrier install
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          p.devDependencies['@oresoftware/typespec-json-schema-validator'] = `https://github.com/ORESoftware/typespec-json-schema-validator/archive/${process.env.TJSV_SHA}.tar.gz`;
+          fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');
+          NODE
+          npm install --ignore-scripts --no-audit --no-fund
+
+      - name: Governance TypeSpec/JSON Schema parity
+        run: npm run check:governance
+
+      - name: Full contract parity regression
+        run: npm run check:contracts
+
+      - name: Final exact-head guard
+        if: always()
+        run: test "$(git rev-parse HEAD)" = "$ORES_STACK_SHA"
