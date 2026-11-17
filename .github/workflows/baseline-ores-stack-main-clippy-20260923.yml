@@ -1,0 +1,57 @@
+name: baseline ores-stack main strict Clippy
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/baseline-ores-stack-main-clippy-20260923.yml']
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_REPO: ORESoftware/ores-stack
+  SOURCE_MAIN_SHA: d46c07e0f91c2dbda9b2fee64bdd82f6d52fc1ef
+
+jobs:
+  baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Configure authenticated source access
+        shell: bash
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$ORE_SOURCE_PAT"
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          git config --global url."https://x-access-token:${ORE_SOURCE_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Fetch exact main baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init source
+          git -C source remote add origin "https://github.com/$SOURCE_REPO.git"
+          git -C source fetch --depth=1 origin main
+          test "$(git -C source rev-parse origin/main)" = "$SOURCE_MAIN_SHA"
+          git -C source checkout --detach "$SOURCE_MAIN_SHA"
+
+      - name: Install Rust 1.88
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --component rustfmt,clippy --no-self-update
+          rustup default 1.88.0
+
+      - name: Run repository-owned Rust baseline exactly
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/bootstrap-cargo-lock.sh ensure
+          bash scripts/check-cli-standardization.sh
+          cargo metadata --locked --format-version 1 --no-deps >/dev/null
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+          cargo test --workspace --all-targets --locked
