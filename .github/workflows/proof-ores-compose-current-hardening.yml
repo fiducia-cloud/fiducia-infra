@@ -1,0 +1,144 @@
+name: proof ores-compose current hardening
+
+on:
+  push:
+    branches:
+      - proof/ores-compose-current-hardening-20260929
+  pull_request:
+    paths:
+      - '.github/workflows/proof-ores-compose-current-hardening.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-head-rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: relative-config-e2e
+            compose_sha: de9159245f7a971b24daa3b86e46eb205fa1075e
+          - label: isolation-policy-integrity
+            compose_sha: e7b77e086984912ebf8e8ddecd46919973cacda6
+          - label: ci-trust-hardening
+            compose_sha: af2b8b4eef3fa834ed1a19eff21c3b363f4a690d
+          - label: sdk-dependency-direction
+            compose_sha: 82ef86e422e78ac96be97383f2112ac2466e5beb
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact ores-compose head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ matrix.compose_sha }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify exact source head
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ matrix.compose_sha }}"
+          test -f Cargo.lock
+          git ls-files --error-unmatch Cargo.lock >/dev/null
+      - name: Configure scoped private Git dependency access
+        env:
+          ORE_SOURCE_PAT: ${{ secrets.ORE_SOURCE_PAT }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${ORE_SOURCE_PAT}" ]]; then
+            echo "ORE_SOURCE_PAT is required for private exact-source proof" >&2
+            exit 1
+          fi
+          echo "::add-mask::$ORE_SOURCE_PAT"
+          token_file="${RUNNER_TEMP}/ore-source-pat"
+          askpass_file="${RUNNER_TEMP}/ore-git-askpass.sh"
+          umask 077
+          printf '%s' "${ORE_SOURCE_PAT}" > "${token_file}"
+          cat > "${askpass_file}" <<'EOF'
+          #!/usr/bin/env sh
+          set -eu
+          case "${1:-}" in
+            *Username*) printf '%s\n' 'x-access-token' ;;
+            *Password*) cat "${ORE_GIT_TOKEN_FILE}" ;;
+            *) exit 1 ;;
+          esac
+          EOF
+          chmod 700 "${askpass_file}"
+          {
+            echo "ORE_GIT_TOKEN_FILE=${token_file}"
+            echo "GIT_ASKPASS=${askpass_file}"
+            echo "GIT_TERMINAL_PROMPT=0"
+            echo "CARGO_NET_GIT_FETCH_WITH_CLI=true"
+          } >> "${GITHUB_ENV}"
+      - name: Install reviewed Rust toolchain
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.98.1 --profile minimal --component rustfmt,clippy
+          rustup default 1.98.1
+          rustc --version | grep -F 'rustc 1.98.1'
+      - name: Locked metadata
+        run: cargo metadata --locked --format-version 1 >/dev/null
+      - name: Format exact head
+        run: cargo fmt --all --check
+      - name: Check all targets and features
+        if: always()
+        run: cargo check --locked --all-targets --all-features
+      - name: Deny Clippy warnings
+        if: always()
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - name: Test all targets and features
+        if: always()
+        run: cargo test --locked --all-targets --all-features
+      - name: Final exact-head and source immutability guard
+        if: always()
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ matrix.compose_sha }}"
+          git diff --exit-code
+          git diff --cached --exit-code
+      - name: Remove private dependency credentials
+        if: always()
+        run: |
+          rm -f "${ORE_GIT_TOKEN_FILE:-}" "${GIT_ASKPASS:-}"
+
+  ci-contract-parity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      COMPOSE_SHA: af2b8b4eef3fa834ed1a19eff21c3b363f4a690d
+    steps:
+      - name: Checkout exact CI-hardening head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.COMPOSE_SHA }}
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify exact source head
+        run: test "$(git rev-parse HEAD)" = "$COMPOSE_SHA"
+      - name: Install reviewed Node runtime
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22.9.0'
+      - name: Compare independent TypeSpec and JSON Schema authorities
+        run: |
+          set -euo pipefail
+          mkdir -p target
+          npx --yes \
+            --package=https://github.com/ORESoftware/typespec-json-schema-validator/archive/db0f1e66b2a65cad43c909aa558ae00c6a91578c.tar.gz \
+            tjsv check \
+            --typespec=contracts/typespec/main.tsp \
+            --schema=contracts/json-schema/contract.schema.json \
+            --instances=contracts/instances \
+            --report=target/compose-contract-parity.json \
+            --quiet
+      - name: Final exact-head guard
+        if: always()
+        run: |
+          test "$(git rev-parse HEAD)" = "$COMPOSE_SHA"
+          git diff --exit-code
+          git diff --cached --exit-code
