@@ -1,0 +1,117 @@
+name: apply stack UI formatting
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/apply-stack-ui-format.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: "3.47.5"
+
+jobs:
+  shared-flutter:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ORESoftware/ores-common-desktop-infra
+          ref: ui/harden-stack-client-shells
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: source
+      - name: Guard source head
+        working-directory: source
+        run: test "$(git rev-parse HEAD)" = "ff64e258c03a98f18d03c16ef17d21650a262716"
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Resolve Flutter package
+        working-directory: source/flutter
+        run: flutter pub get
+      - name: Apply formatter only to PR-owned files
+        working-directory: source/flutter
+        run: dart format lib/src/desktop_app_shell.dart test/desktop_app_shell_test.dart
+      - name: Commit formatter output
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- flutter/lib/src/desktop_app_shell.dart flutter/test/desktop_app_shell_test.dart; then
+            exit 0
+          fi
+          git config user.name "ORESoftware CI"
+          git config user.email "ci@oresoftware.com"
+          git add flutter/lib/src/desktop_app_shell.dart flutter/test/desktop_app_shell_test.dart
+          git commit -m "style(flutter): format after package resolution"
+          git push origin HEAD:ui/harden-stack-client-shells
+
+  ores-stack-flutter:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ores-stack/ores-stack-flutter
+          ref: ui/bootstrap-operator-console
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: source
+      - name: Guard source head
+        working-directory: source
+        run: test "$(git rev-parse HEAD)" = "827c2d93b21f3ebaec5b68c56733995accfabcc2"
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Resolve Flutter package
+        working-directory: source
+        run: flutter pub get
+      - name: Apply formatter
+        working-directory: source
+        run: dart format lib test
+      - name: Commit formatter output
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- lib test; then
+            exit 0
+          fi
+          git config user.name "ORESoftware CI"
+          git config user.email "ci@oresoftware.com"
+          git add lib test
+          git commit -m "style(flutter): format after package resolution"
+          git push origin HEAD:ui/bootstrap-operator-console
+
+  ores-stack-native:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ores-stack/ores-stack-desktop-app.rs
+          ref: ui/bootstrap-native-console
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: source
+      - name: Guard source head
+        working-directory: source
+        run: test "$(git rev-parse HEAD)" = "db48e244f394e4aaa995a9d2eea4513ce1f9de11"
+      - name: Apply rustfmt
+        working-directory: source
+        run: cargo fmt --all
+      - name: Commit formatter output
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- src/main.rs; then
+            exit 0
+          fi
+          git config user.name "ORESoftware CI"
+          git config user.email "ci@oresoftware.com"
+          git add src/main.rs
+          git commit -m "style(rust): apply rustfmt"
+          git push origin HEAD:ui/bootstrap-native-console

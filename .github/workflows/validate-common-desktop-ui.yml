@@ -1,0 +1,116 @@
+name: validate common desktop UI
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/validate-common-desktop-ui.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: "3.47.5"
+
+jobs:
+  shared-flutter-ui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact shared desktop source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ORESoftware/ores-common-desktop-infra
+          ref: ff64e258c03a98f18d03c16ef17d21650a262716
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: source
+          persist-credentials: false
+      - name: Verify exact source revision
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "ff64e258c03a98f18d03c16ef17d21650a262716"
+      - name: Install Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Resolve Flutter package
+        working-directory: source/flutter
+        run: flutter pub get
+      - name: Check PR-owned Flutter formatting
+        working-directory: source/flutter
+        run: dart format --output=none --set-exit-if-changed lib/src/desktop_app_shell.dart test/desktop_app_shell_test.dart
+      - name: Analyze Flutter package
+        working-directory: source/flutter
+        run: flutter analyze
+      - name: Test Flutter package
+        working-directory: source/flutter
+        run: flutter test
+
+  ores-stack-flutter:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact ORES Stack Flutter source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ores-stack/ores-stack-flutter
+          ref: 827c2d93b21f3ebaec5b68c56733995accfabcc2
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: source
+          persist-credentials: false
+      - name: Verify exact source revision
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "827c2d93b21f3ebaec5b68c56733995accfabcc2"
+      - name: Install Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Resolve Flutter package
+        working-directory: source
+        run: flutter pub get
+      - name: Check Flutter formatting
+        working-directory: source
+        run: dart format --output=none --set-exit-if-changed lib test
+      - name: Analyze Flutter package
+        working-directory: source
+        run: flutter analyze
+      - name: Test Flutter package
+        working-directory: source
+        run: flutter test
+
+  ores-stack-native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact ORES Stack native source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ores-stack/ores-stack-desktop-app.rs
+          ref: db48e244f394e4aaa995a9d2eea4513ce1f9de11
+          token: ${{ secrets.ORE_SOURCE_PAT }}
+          path: source
+          persist-credentials: false
+      - name: Verify exact source revision
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "db48e244f394e4aaa995a9d2eea4513ce1f9de11"
+      - name: Check Rust formatting
+        working-directory: source
+        run: cargo fmt --all -- --check
+      - name: Lint native app
+        working-directory: source
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Test native app
+        working-directory: source
+        run: cargo test --all-targets
