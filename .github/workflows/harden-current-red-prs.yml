@@ -1,0 +1,267 @@
+name: harden current red PR heads
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/harden-current-red-prs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: harden-current-red-prs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  harden:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        subject: ["ORESoftware/api-docs#270", "ORESoftware/api-docs#271", "ORESoftware/api-docs#272", "ORESoftware/drua-fork#1", "ORESoftware/ores-middleware#217", "ORESoftware/ores-middleware#285", "anticaptrad/act-desktop-app.rs#10", "canonical-cloud/canonical-mcp-server.rs#86", "canonical-cloud/canonical-mcp-server.rs#89", "declarative-migrations/declmig-desktop-app.rs#5", "fiducia-cloud/fiducia-cli.rs#73", "gha-indie-worker/gha-indie-worker-desktop-app.rs#5", "gha-indie-worker/gha-indie-worker-desktop-app.rs#7", "gha-indie-worker/gha-indie-worker.rs#81", "gha-indie-worker/gha-indie-worker.rs#82", "gha-indie-worker/gha-indie-worker.rs#83", "gha-indie-worker/giw-desktop-cli#1", "gha-indie-worker/giw-desktop-cli#2", "gha-indie-worker/giw-desktop-daemon#1", "gha-indie-worker/giw-desktop-daemon#2", "gha-indie-worker/giw-desktop-daemon#4", "hacker-house-medellin/hhm-desktop-app.rs#2", "hacker-house-medellin/hhm-desktop-app.rs#3", "happy-wakey/happy-wakey.rs#3", "lunatic-lorry/ll-desktop-cli#1", "lunatic-lorry/ll-desktop-daemon#15", "opto-sync/opto-sync-desktop-app.rs#7", "ores-otel/ores-otel-api-server.rs#17", "ores-otel/ores-otel-api-server.rs#6", "pony-expres/poex-desktop-cli#3", "wasm-xprs/wasmx-desktop-daemon#20", "zed-pkg/zed-cli#377", "zed-pkg/zed-cli#498", "zed-pkg/zed-cli#519", "zed-pkg/zed-cli#521"]
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SUBJECT: ${{ matrix.subject }}
+      CARGO_TERM_COLOR: never
+
+    steps:
+      - name: Resolve current PR head
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${SUBJECT%#*}"
+          pr="${SUBJECT##*#}"
+          slug="$(printf '%s' "$SUBJECT" | tr '/#' '__' | tr -cd 'A-Za-z0-9._-')"
+          mkdir -p out
+          gh api -H 'X-GitHub-Api-Version: 2022-11-28' "repos/$repo/pulls/$pr" > /tmp/pr.json
+          state="$(jq -r '.state' /tmp/pr.json)"
+          draft="$(jq -r '.draft' /tmp/pr.json)"
+          head="$(jq -r '.head.sha // ""' /tmp/pr.json)"
+          head_ref="$(jq -r '.head.ref // ""' /tmp/pr.json)"
+          head_repo="$(jq -r '.head.repo.full_name // empty' /tmp/pr.json)"
+          base="$(jq -r '.base.sha // ""' /tmp/pr.json)"
+          if [ -z "$head_repo" ]; then head_repo="$repo"; fi
+          jq -n \
+            --arg subject "$SUBJECT" \
+            --arg repo "$repo" \
+            --argjson pr "$pr" \
+            --arg state "$state" \
+            --argjson draft "$draft" \
+            --arg head "$head" \
+            --arg head_ref "$head_ref" \
+            --arg head_repo "$head_repo" \
+            --arg base "$base" \
+            '{subject:$subject,repo:$repo,pr:$pr,state:$state,draft:$draft,head:$head,head_ref:$head_ref,head_repo:$head_repo,base:$base}' > out/metadata.json
+          {
+            echo "repo=$repo"
+            echo "pr=$pr"
+            echo "slug=$slug"
+            echo "state=$state"
+            echo "draft=$draft"
+            echo "head=$head"
+            echo "head_ref=$head_ref"
+            echo "head_repo=$head_repo"
+            echo "base=$base"
+            if [ "$state" = "open" ]; then echo "skip=false"; else echo "skip=true"; fi
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check out immutable current head
+        if: steps.meta.outputs.skip != 'true'
+        shell: bash
+        env:
+          REPO: ${{ steps.meta.outputs.repo }}
+          HEAD_REPO: ${{ steps.meta.outputs.head_repo }}
+          HEAD_SHA: ${{ steps.meta.outputs.head }}
+          BASE_SHA: ${{ steps.meta.outputs.base }}
+        run: |
+          set -euo pipefail
+          gh repo clone "$HEAD_REPO" source -- --no-checkout --filter=blob:none
+          cd source
+          git remote add audit-base "https://github.com/$REPO.git"
+          git fetch --no-tags --depth=1 origin "$HEAD_SHA"
+          git fetch --no-tags --depth=1 audit-base "$BASE_SHA"
+          git checkout -q --detach "$HEAD_SHA"
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+
+      - name: Review-surface integrity
+        if: steps.meta.outputs.skip != 'true'
+        id: review
+        shell: bash
+        env:
+          HEAD_SHA: ${{ steps.meta.outputs.head }}
+          BASE_SHA: ${{ steps.meta.outputs.base }}
+        run: |
+          set -euo pipefail
+          cd source
+          set +e
+          git diff --check "$BASE_SHA" "$HEAD_SHA" > ../out/review-surface.log 2>&1
+          rc=$?
+          set -e
+          echo "$rc" > ../out/review-surface.rc
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+
+      - name: Format and execute Rust gates
+        if: steps.meta.outputs.skip != 'true'
+        id: rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd source
+          if [ ! -f Cargo.toml ]; then
+            printf '%s\n' "no Cargo.toml" > ../out/rust-skip.txt
+            echo "has_rust=false" >> "$GITHUB_OUTPUT"
+            echo "fmt_rc=0" >> "$GITHUB_OUTPUT"
+            echo "check_rc=0" >> "$GITHUB_OUTPUT"
+            echo "test_rc=0" >> "$GITHUB_OUTPUT"
+            echo "clippy_rc=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "has_rust=true" >> "$GITHUB_OUTPUT"
+          set +e
+          cargo fmt --all > ../out/cargo-fmt.log 2>&1
+          fmt_rc=$?
+          set -e
+          echo "$fmt_rc" > ../out/cargo-fmt.rc
+          git diff --name-only --diff-filter=ACMRTUXB > ../out/formatted-files.txt || true
+          mkdir -p ../out/files
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            if [ -f "$path" ]; then
+              mkdir -p "../out/files/$(dirname "$path")"
+              cp "$path" "../out/files/$path"
+            fi
+          done < ../out/formatted-files.txt
+          git diff --binary > ../out/rustfmt.patch || true
+          cargo_lock=()
+          if [ -f Cargo.lock ]; then
+            cargo_lock+=(--locked)
+            printf '%s\n' "locked" > ../out/lock-mode.txt
+          else
+            printf '%s\n' "unlocked-missing-Cargo.lock" > ../out/lock-mode.txt
+          fi
+          run_gate() {
+            local name="$1"
+            shift
+            set +e
+            timeout 600s "$@" > "../out/${name}.log" 2>&1
+            local rc=$?
+            set -e
+            echo "$rc" > "../out/${name}.rc"
+            echo "$rc"
+          }
+          check_rc="$(run_gate cargo-check cargo check "${cargo_lock[@]}" --all-targets)"
+          test_rc="$(run_gate cargo-test cargo test "${cargo_lock[@]}" --all-targets)"
+          clippy_rc="$(run_gate cargo-clippy cargo clippy "${cargo_lock[@]}" --all-targets -- -D warnings)"
+          echo "fmt_rc=$fmt_rc" >> "$GITHUB_OUTPUT"
+          echo "check_rc=$check_rc" >> "$GITHUB_OUTPUT"
+          echo "test_rc=$test_rc" >> "$GITHUB_OUTPUT"
+          echo "clippy_rc=$clippy_rc" >> "$GITHUB_OUTPUT"
+
+      - name: Write classification
+        if: always()
+        shell: bash
+        env:
+          SUBJECT: ${{ matrix.subject }}
+          STATE: ${{ steps.meta.outputs.state }}
+          DRAFT: ${{ steps.meta.outputs.draft }}
+          HEAD_SHA: ${{ steps.meta.outputs.head }}
+          HEAD_REF: ${{ steps.meta.outputs.head_ref }}
+          HEAD_REPO: ${{ steps.meta.outputs.head_repo }}
+          BASE_SHA: ${{ steps.meta.outputs.base }}
+          REVIEW_RC: ${{ steps.review.outputs.rc || '0' }}
+          HAS_RUST: ${{ steps.rust.outputs.has_rust || 'false' }}
+          FMT_RC: ${{ steps.rust.outputs.fmt_rc || '0' }}
+          CHECK_RC: ${{ steps.rust.outputs.check_rc || '0' }}
+          TEST_RC: ${{ steps.rust.outputs.test_rc || '0' }}
+          CLIPPY_RC: ${{ steps.rust.outputs.clippy_rc || '0' }}
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          formatted_count=0
+          if [ -f out/formatted-files.txt ]; then
+            formatted_count="$(awk 'NF{c++} END{print c+0}' out/formatted-files.txt)"
+          fi
+          jq -n \
+            --arg subject "$SUBJECT" \
+            --arg state "${STATE:-unknown}" \
+            --argjson draft "${DRAFT:-false}" \
+            --arg head "$HEAD_SHA" \
+            --arg head_ref "$HEAD_REF" \
+            --arg head_repo "$HEAD_REPO" \
+            --arg base "$BASE_SHA" \
+            --argjson review_rc "${REVIEW_RC:-0}" \
+            --argjson has_rust "$HAS_RUST" \
+            --argjson fmt_rc "${FMT_RC:-0}" \
+            --argjson check_rc "${CHECK_RC:-0}" \
+            --argjson test_rc "${TEST_RC:-0}" \
+            --argjson clippy_rc "${CLIPPY_RC:-0}" \
+            --argjson formatted_count "$formatted_count" \
+            '{subject:$subject,state:$state,draft:$draft,head:$head,head_ref:$head_ref,head_repo:$head_repo,base:$base,review_rc:$review_rc,has_rust:$has_rust,fmt_rc:$fmt_rc,check_rc:$check_rc,test_rc:$test_rc,clippy_rc:$clippy_rc,formatted_count:$formatted_count}' \
+            > out/status.json
+
+      - name: Upload per-PR evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: harden-${{ steps.meta.outputs.slug }}
+          path: out/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Enforce current-head gates
+        if: steps.meta.outputs.skip != 'true'
+        shell: bash
+        env:
+          REVIEW_RC: ${{ steps.review.outputs.rc || '0' }}
+          FMT_RC: ${{ steps.rust.outputs.fmt_rc || '0' }}
+          CHECK_RC: ${{ steps.rust.outputs.check_rc || '0' }}
+          TEST_RC: ${{ steps.rust.outputs.test_rc || '0' }}
+          CLIPPY_RC: ${{ steps.rust.outputs.clippy_rc || '0' }}
+        run: |
+          set -euo pipefail
+          rc=0
+          for value in "$REVIEW_RC" "$FMT_RC" "$CHECK_RC" "$TEST_RC" "$CLIPPY_RC"; do
+            if [ "$value" -ne 0 ]; then rc=1; fi
+          done
+          exit "$rc"
+
+  collect:
+    if: always()
+    needs: harden
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download all per-PR evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p bundle
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --pattern 'harden-*' --dir bundle
+
+      - name: Aggregate hardening ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          find bundle -name status.json -print0 | sort -z | xargs -0 jq -s 'sort_by(.subject)' > current-red-hardening.json
+          count="$(jq 'length' current-red-hardening.json)"
+          test "$count" -eq 35
+          jq -r '.[] | [.subject,.state,(.draft|tostring),.head,(.review_rc|tostring),(.fmt_rc|tostring),(.check_rc|tostring),(.test_rc|tostring),(.clippy_rc|tostring),(.formatted_count|tostring)] | @tsv' current-red-hardening.json > current-red-hardening.tsv
+          jq '{total:length,open:[.[]|select(.state=="open")]|length,closed:[.[]|select(.state!="open")]|length,clean:[.[]|select(.state=="open" and .review_rc==0 and .fmt_rc==0 and .check_rc==0 and .test_rc==0 and .clippy_rc==0)]|length,format_repairs:[.[]|select(.state=="open" and .formatted_count>0)]|length,still_red:[.[]|select(.state=="open" and ((.review_rc!=0) or (.fmt_rc!=0) or (.check_rc!=0) or (.test_rc!=0) or (.clippy_rc!=0)))]|length}' current-red-hardening.json > current-red-hardening-summary.json
+          cp current-red-hardening.json bundle/
+          cp current-red-hardening.tsv bundle/
+          cp current-red-hardening-summary.json bundle/
+
+      - name: Upload combined hardening bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: current-red-hardening-bundle
+          path: bundle/
+          if-no-files-found: error
+          retention-days: 14
